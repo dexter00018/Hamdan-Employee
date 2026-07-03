@@ -23,30 +23,48 @@ export default function LoginPage() {
         password,
       });
 
-      if (authError) throw authError;
-
-      if (authData?.user) {
-        const { data: profile, error: profileError } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', authData.user.id)
-          .single();
-
-        if (profileError) throw profileError;
-
-        // Redirect logic
-        if (profile?.role === 'super_admin') {
-          router.push('/super-admin');
-        } else if (profile?.role === 'admin') {
-          router.push('/hr');
-        } else {
-          router.push('/employee');
-        }
-        
-        router.refresh();
+      if (authError) {
+        // Surface the exact Supabase error so it's visible in the UI,
+        // not just the console. This makes 400-style auth errors
+        // (wrong password, unconfirmed email, etc.) easy to diagnose.
+        console.error('Auth error:', authError);
+        throw new Error(authError.message);
       }
+
+      if (!authData?.user) {
+        throw new Error('Walang natanggap na user data mula sa server.');
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', authData.user.id)
+        .single();
+
+      if (profileError) {
+        console.error('Profile fetch error:', profileError);
+        throw new Error(
+          'Naka-login ka, pero hindi mahanap ang profile mo: ' + profileError.message
+        );
+      }
+
+      // Redirect based on role. 'admin' covers both HR Admin accounts
+      // created via the Super Admin form. 'super_admin' is a separate,
+      // higher-privilege role you'd assign manually in Supabase (it's
+      // not one of the two options in the "Create Account" form).
+      if (profile?.role === 'super_admin') {
+        router.push('/super-admin');
+      } else if (profile?.role === 'admin') {
+        router.push('/hr');
+      } else if (profile?.role === 'employee') {
+        router.push('/employee');
+      } else {
+        throw new Error(`Hindi kilalang role: "${profile?.role}". Kontakin ang Super Admin.`);
+      }
+
+      router.refresh();
     } catch (err: any) {
-      setError(err.message || 'Maling email o password.');
+      setError(err?.message || 'Maling email o password.');
     } finally {
       setLoading(false);
     }
@@ -54,12 +72,12 @@ export default function LoginPage() {
 
   return (
     <main className="relative min-h-screen flex flex-col items-center justify-center p-6 bg-gray-50">
-      
+
       {/* BACKGROUND IMAGE */}
       <div className="fixed inset-0 z-0">
-        <Image 
-          src="/images/hamdan-logo.png" 
-          alt="Background" 
+        <Image
+          src="/images/hamdan-logo.png"
+          alt="Background"
           fill
           className="object-cover opacity-[0.05] blur-sm"
           priority
@@ -85,7 +103,7 @@ export default function LoginPage() {
         <div className="text-center mb-10">
             <h2 className="text-2xl font-black text-gray-900">Employee Login</h2>
         </div>
-        
+
         {error && (
           <div className="bg-red-50 text-red-600 text-sm p-4 rounded-xl border border-red-100 text-center mb-6 font-bold">
             {error}
@@ -95,28 +113,28 @@ export default function LoginPage() {
         <form onSubmit={handleLogin} className="space-y-6">
           <div>
             <label className="block text-sm font-bold text-gray-500 uppercase tracking-widest mb-2 ml-1">Username</label>
-            <input 
-              type="email" 
-              required 
-              value={email} 
+            <input
+              type="email"
+              required
+              value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="w-full px-6 py-4 rounded-2xl border border-gray-200 focus:ring-4 focus:ring-blue-600/20 outline-none transition bg-gray-50 text-lg"
             />
           </div>
-          
+
           <div>
             <label className="block text-sm font-bold text-gray-500 uppercase tracking-widest mb-2 ml-1">Password</label>
-            <input 
-              type="password" 
-              required 
-              value={password} 
+            <input
+              type="password"
+              required
+              value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full px-6 py-4 rounded-2xl border border-gray-200 focus:ring-4 focus:ring-blue-600/20 outline-none transition bg-gray-50 text-lg"
             />
           </div>
-          
-          <button 
-            type="submit" 
+
+          <button
+            type="submit"
             disabled={loading}
             className="btn-primary"
           >
@@ -124,7 +142,7 @@ export default function LoginPage() {
           </button>
         </form>
       </div>
-      
+
       <p className="relative z-10 text-sm text-gray-400 mt-10 font-medium">
         © {new Date().getFullYear()} Hamdan Engineering Consultancy. All rights reserved.
       </p>
