@@ -1,5 +1,8 @@
 'use client';
 
+// Mahalaga: Para hindi subukang i-prerender ng Next.js ang page na ito
+export const dynamic = 'force-dynamic';
+
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -23,43 +26,34 @@ export default function ResetPasswordPage() {
     }
 
     const params = new URLSearchParams(hash);
-
     const access_token = params.get('access_token');
     const refresh_token = params.get('refresh_token');
-    const expires_in = params.get('expires_in'); // seconds
-    const type = params.get('type'); // should be "recovery"
+    const expires_in = params.get('expires_in');
+    const type = params.get('type');
 
     if (!access_token || !refresh_token || !expires_in || !type) {
       setErrorMsg('Invalid reset token data.');
       return;
     }
 
-    // Optional: ensure it's recovery
     if (type !== 'recovery') {
-      // you can still allow, but better to block
       setErrorMsg('This token is not for password recovery.');
       return;
     }
-
-    const expiresAt = Math.floor(Date.now() / 1000) + Number(expires_in);
 
     supabase.auth
       .setSession({
         access_token,
         refresh_token,
       })
-      .then(() => {
-        // Clean up URL fragment (optional but recommended)
-        // so tokens don't remain in the address bar
+      .then(({ error }) => {
+        if (error) throw error;
         window.history.replaceState(null, '', window.location.pathname);
-
-        // If you want, you can also set ready only after session is usable
         setReady(true);
       })
       .catch((e: any) => {
         setErrorMsg(e?.message ?? 'Failed to initialize reset session.');
       });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const onSubmit = async (e: React.FormEvent) => {
@@ -100,7 +94,6 @@ export default function ResetPasswordPage() {
         ) : (
           <form onSubmit={onSubmit} className="space-y-3">
             <label className="block text-sm font-semibold">New Password</label>
-
             <input
               type="password"
               required
@@ -109,7 +102,6 @@ export default function ResetPasswordPage() {
               className="w-full p-3 border rounded"
               placeholder="Enter new password"
             />
-
             <button
               type="submit"
               disabled={loading || newPassword.length < 6}
@@ -117,10 +109,6 @@ export default function ResetPasswordPage() {
             >
               {loading ? 'Updating…' : 'Update Password'}
             </button>
-
-            <p className="text-xs text-gray-500">
-              After updating, you can log in using your new password.
-            </p>
           </form>
         )}
       </section>
