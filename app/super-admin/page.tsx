@@ -131,16 +131,23 @@ export default function SuperAdminDashboard() {
       // Keep log_date consistent with the corrected time_in (in PH time)
       const newLogDate = editingLog.timeInLocal.split('T')[0];
 
-      const { error } = await supabase
+      const { data: updatedRows, error } = await supabase
         .from('attendance_logs')
         .update({
           time_in: newTimeInISO,
           log_date: newLogDate,
           status: editingLog.status,
         })
-        .eq('id', editingLog.id);
+        .eq('id', editingLog.id)
+        .select();
 
       if (error) throw error;
+
+      if (!updatedRows || updatedRows.length === 0) {
+        throw new Error(
+          'Walang na-update na record. Kadalasan RLS policy issue ito — siguraduhing may UPDATE policy ang attendance_logs table para sa admin/super_admin role.'
+        );
+      }
 
       setMessage({ type: 'success', text: 'Attendance record updated.' });
       setEditingLog(null);

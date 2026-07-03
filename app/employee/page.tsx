@@ -4,6 +4,9 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import Image from 'next/image';
 
+const LATE_CUTOFF_HOUR = 9;
+const LATE_CUTOFF_MINUTE = 15;
+
 export default function EmployeeDashboard() {
   const [loading, setLoading] = useState(false);
   const [isAlreadyTimedIn, setIsAlreadyTimedIn] = useState(false);
@@ -50,7 +53,7 @@ export default function EmployeeDashboard() {
 
     const { data: historyData, error: historyError } = await supabase
       .from('attendance_logs')
-      .select('log_date, time_in')
+      .select('log_date, time_in, status')
       .eq('user_id', user.id)
       .order('log_date', { ascending: false });
 
@@ -65,6 +68,30 @@ export default function EmployeeDashboard() {
     setInitLoading(false);
   };
 
+  // Determine Present vs Late based on Philippine time, regardless of
+  // what timezone the employee's device/browser is set to.
+  const getStatusForNow = () => {
+    const now = new Date();
+    const fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Manila',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    const parts = fmt.formatToParts(now).reduce((acc: any, p) => {
+      acc[p.type] = p.value;
+      return acc;
+    }, {});
+    const hour = parseInt(parts.hour, 10);
+    const minute = parseInt(parts.minute, 10);
+
+    const isLate =
+      hour > LATE_CUTOFF_HOUR ||
+      (hour === LATE_CUTOFF_HOUR && minute > LATE_CUTOFF_MINUTE);
+
+    return isLate ? 'Late' : 'Present';
+  };
+
   const handleTimeIn = async () => {
     setLoading(true);
     setMessage('');
@@ -73,16 +100,21 @@ export default function EmployeeDashboard() {
       if (!user) throw new Error("You are not logged in!");
 
       const today = new Date().toISOString().split('T')[0];
+      const status = getStatusForNow();
 
       const { error } = await supabase.from('attendance_logs').insert([{
         user_id: user.id,
         time_in: new Date().toISOString(),
         log_date: today,
-        status: 'Present'
+        status,
       }]);
 
       if (error) throw error;
-      setMessage("Success! Attendance recorded.");
+      setMessage(
+        status === 'Late'
+          ? 'Na-record ang time in mo, pero medyo late ka na ngayon.'
+          : 'Success! Attendance recorded.'
+      );
       setIsAlreadyTimedIn(true);
       await initializeDashboard();
     } catch (err: any) {
@@ -91,6 +123,8 @@ export default function EmployeeDashboard() {
       setLoading(false);
     }
   };
+
+  const statusTagClass = (s: string | null) => (s === 'Late' ? 'tag-late' : 'tag-present');
 
   return (
     <main className="min-h-screen p-4 md:p-8">
@@ -142,6 +176,9 @@ export default function EmployeeDashboard() {
             <div className="card-style p-10 text-center">
               <h1 className="text-blue-600 text-5xl font-semibold tabular-nums tracking-tighter">{time || '--:--:--'}</h1>
               <p className="mt-2 text-slate-400 font-medium uppercase text-[10px] tracking-widest">{date}</p>
+              <p className="mt-3 text-[11px] text-slate-400 font-medium">
+                Late cutoff: 9:15 AM (Philippine Time)
+              </p>
             </div>
 
             <button
@@ -167,7 +204,16 @@ export default function EmployeeDashboard() {
                       <div className="font-medium text-slate-900">{new Date(log.log_date).toLocaleDateString('en-US', { weekday: 'long' })}</div>
                       <div className="label-branded mb-0">{log.log_date}</div>
                     </div>
-                    <div className="font-semibold text-slate-700">{new Date(log.time_in).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                    <div className="flex items-center gap-3">
+                      <span className={statusTagClass(log.status)}>{log.status}</span>
+                      <div className="font-semibold text-slate-700">
+                        {new Date(log.time_in).toLocaleTimeString('en-US', {
+                          timeZone: 'Asia/Manila',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>

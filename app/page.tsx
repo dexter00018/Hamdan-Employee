@@ -24,10 +24,10 @@ export default function LoginPage() {
       });
 
       if (authError) {
-        // Surface the exact Supabase error so it's visible in the UI,
-        // not just the console. This makes 400-style auth errors
-        // (wrong password, unconfirmed email, etc.) easy to diagnose.
-        console.error('Auth error:', authError);
+        // Surface the exact Supabase error in the UI's red error box.
+        // (Not using console.error here on purpose — Next.js dev mode
+        // pops up its error overlay for any console.error call, even
+        // ones we've already caught and handled gracefully like this.)
         throw new Error(authError.message);
       }
 
