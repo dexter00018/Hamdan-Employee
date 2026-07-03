@@ -1,26 +1,135 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* Ito ang kailangan para makilala ng Tailwind ang @apply sa v4 */
+@reference "tailwindcss";
+
+@theme {
+  /* ---- Base palette: soft pastel, Notion/Linear-inspired ---- */
+  --color-slate-50: #faf9fc;   /* page background */
+  --color-slate-100: #f1eef9;  /* subtle borders / hover bg */
+  --color-slate-200: #e4dff2;  /* borders */
+  --color-slate-400: #9691a8;  /* muted text */
+  --color-slate-600: #5b5670;  /* secondary text */
+  --color-slate-700: #433f57;  /* body text */
+  --color-slate-900: #2d2a3e;  /* headings / high-contrast text */
+
+  /* ---- Primary: muted violet (brand) ---- */
+  --color-blue-50: #f1effd;
+  --color-blue-400: #a49af2;
+  --color-blue-600: #7c6ff0;
+
+  /* ---- Accent: soft amber ---- */
+  --color-amber-50: #fef6e6;
+  --color-amber-500: #f5c361;
+  --color-amber-700: #a5730f;
+
+  /* ---- Status: success (Present) ---- */
+  --color-green-50: #eafaf2;
+  --color-green-600: #34a870;
+  --color-green-700: #1f7a52;
+
+  /* ---- Status: warning (Late) ---- */
+  --color-orange-50: #fff3e0;
+  --color-orange-600: #e08a2e;
+  --color-orange-700: #a5620f;
+
+  /* ---- Status: info (Excused) / Employee role ---- */
+  --color-sky-50: #eaf4fd;
+  --color-sky-600: #3d94dd;
+  --color-sky-700: #256bab;
+
+  /* ---- Admin role ---- */
+  --color-purple-50: #f4eefc;
+  --color-purple-600: #9b6fe0;
+  --color-purple-700: #7448bd;
+
+  /* ---- Danger ---- */
+  --color-rose-50: #fdeef1;
+  --color-rose-600: #e2597a;
+  --color-rose-700: #b23b5a;
+
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-700 antialiased font-sans leading-relaxed;
+  }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  h1 { @apply text-4xl font-extrabold text-slate-900; font-family: var(--font-display); letter-spacing: -0.01em; }
+  h2 { @apply text-2xl font-bold text-slate-900; font-family: var(--font-display); }
+  h3 { @apply text-lg font-bold text-slate-900; font-family: var(--font-display); }
+
+  .label-branded {
+    @apply text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer components {
+  /* Base card: soft shadow, rounded, a whisper of violet border */
+  .card-style {
+    @apply bg-white p-6 rounded-2xl shadow-sm border border-slate-100;
+  }
+
+  /* Branding header: gets a cheerful accent stripe on top */
+  .branding-box {
+    @apply relative bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex justify-between items-center overflow-hidden;
+  }
+  .branding-box::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, var(--color-blue-600), var(--color-amber-500));
+  }
+
+  .btn-primary {
+    @apply w-full text-white py-3 rounded-xl font-semibold text-sm transition-all duration-200;
+    background: var(--color-blue-600);
+  }
+  .btn-primary:hover {
+    background: #6a5ce0;
+  }
+
+  /* Role tags */
+  .tag-admin {
+    @apply px-3 py-1 rounded-full font-bold text-[10px] uppercase tracking-wider;
+    background: var(--color-purple-50);
+    color: var(--color-purple-700);
+  }
+
+  .tag-employee {
+    @apply px-3 py-1 rounded-full font-bold text-[10px] uppercase tracking-wider;
+    background: var(--color-sky-50);
+    color: var(--color-sky-700);
+  }
+
+  /* Status tags */
+  .tag-present {
+    @apply px-3 py-1 rounded-full font-bold text-[10px] uppercase tracking-wider;
+    background: var(--color-green-50);
+    color: var(--color-green-700);
+  }
+
+  .tag-late {
+    @apply px-3 py-1 rounded-full font-bold text-[10px] uppercase tracking-wider;
+    background: var(--color-orange-50);
+    color: var(--color-orange-700);
+  }
+
+  .tag-excused {
+    @apply px-3 py-1 rounded-full font-bold text-[10px] uppercase tracking-wider;
+    background: var(--color-sky-50);
+    color: var(--color-sky-700);
+  }
+}
+
+@layer utilities {
+  .input-field {
+    @apply w-full p-3 border border-slate-200 rounded-xl outline-none text-sm transition-colors bg-white;
+  }
+  .input-field:focus {
+    border-color: var(--color-blue-400);
+  }
 }
