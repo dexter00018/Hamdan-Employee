@@ -25,9 +25,12 @@ export default function HRDashboard() {
   const [loadingData, setLoadingData] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Filter States
+  // Filter States — defaults to "today" (Philippine time) so HR sees
+  // today's attendance by default instead of the entire history.
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedDate, setSelectedDate] = useState('');
+  const [selectedDate, setSelectedDate] = useState(() =>
+    new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())
+  );
 
   // Modal States
   const [editOpen, setEditOpen] = useState(false);
@@ -145,13 +148,22 @@ export default function HRDashboard() {
     }
   };
 
+  // Converts a UTC ISO timestamp to its Philippine calendar date
+  // ("YYYY-MM-DD"). Comparing this instead of the raw UTC prefix avoids
+  // misfiling records near midnight (PH is UTC+8, so a log_time_in of
+  // "2026-07-05T17:30:00Z" is already July 6 in Manila).
+  const toManilaDateString = (iso: string) =>
+    new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date(iso));
+
   // Filter Logic
   const filteredAttendance = useMemo(() => {
     return attendance.filter((log) => {
       const matchesSearch = log.profiles?.full_name
         ?.toLowerCase()
         .includes(searchTerm.toLowerCase());
-      const matchesDate = selectedDate ? log.time_in?.startsWith(selectedDate) : true;
+      const matchesDate = selectedDate
+        ? log.time_in && toManilaDateString(log.time_in) === selectedDate
+        : true;
       return matchesSearch && matchesDate;
     });
   }, [attendance, searchTerm, selectedDate]);
@@ -195,6 +207,27 @@ export default function HRDashboard() {
     return 'tag-present';
   };
 
+  // Today's date in Philippine time, for the "Present/Late Today" stats.
+  const todayManila = useMemo(() => {
+    const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' });
+    return fmt.format(new Date()); // "YYYY-MM-DD"
+  }, []);
+
+  const todaysLogs = useMemo(
+    () => attendance.filter((log) => log.time_in && toManilaDateString(log.time_in) === todayManila),
+    [attendance, todayManila]
+  );
+  const presentTodayCount = todaysLogs.length;
+  const lateTodayCount = todaysLogs.filter((l) => l.status === 'Late').length;
+
+  const initials = (name: string | null) =>
+    (name || '?')
+      .split(' ')
+      .map((n) => n[0])
+      .slice(0, 2)
+      .join('')
+      .toUpperCase();
+
   return (
     <main className="min-h-screen p-4 md:p-8">
       <div className="max-w-6xl mx-auto space-y-8">
@@ -214,6 +247,22 @@ export default function HRDashboard() {
             {errorMsg}
           </div>
         )}
+
+        {/* Quick Stats */}
+        <div className="grid grid-cols-3 gap-3 md:gap-4">
+          <div className="card-dark flex flex-col items-center justify-center !p-4 md:!p-6 text-center">
+            <p className="stat-number text-2xl md:text-3xl text-white">{profiles.length}</p>
+            <p className="text-white/60 text-[10px] font-bold uppercase tracking-widest mt-1">Total Employees</p>
+          </div>
+          <div className="card-style flex flex-col items-center justify-center !p-4 md:!p-6 text-center">
+            <p className="stat-number text-2xl md:text-3xl text-green-600">{presentTodayCount}</p>
+            <p className="label-branded mt-1">Present Today</p>
+          </div>
+          <div className="card-style flex flex-col items-center justify-center !p-4 md:!p-6 text-center">
+            <p className="stat-number text-2xl md:text-3xl text-orange-600">{lateTodayCount}</p>
+            <p className="label-branded mt-1">Late Today</p>
+          </div>
+        </div>
 
         {/* Announcements */}
         <section className="card-style">
@@ -272,9 +321,14 @@ export default function HRDashboard() {
                 <p className="text-slate-400 text-sm">No employees found.</p>
               )}
               {profiles.map((p) => (
-                <button key={p.id} onClick={() => openEdit(p)} className="w-full text-left p-4 rounded-xl hover:bg-slate-50 border border-slate-100 transition">
-                  <div className="font-medium text-slate-900">{p.full_name}</div>
-                  <div className="label-branded mb-0 mt-1 text-blue-600">{p.designation}</div>
+                <button key={p.id} onClick={() => openEdit(p)} className="w-full flex items-center gap-3 text-left p-4 rounded-2xl hover:bg-slate-50 border border-slate-100 transition">
+                  <div className="flex-shrink-0 w-10 h-10 rounded-full bg-blue-50 text-blue-600 font-bold text-xs flex items-center justify-center">
+                    {initials(p.full_name)}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="font-medium text-slate-900 truncate">{p.full_name}</div>
+                    <div className="label-branded mb-0 mt-1 text-blue-600 truncate">{p.designation}</div>
+                  </div>
                 </button>
               ))}
             </div>
@@ -283,8 +337,15 @@ export default function HRDashboard() {
           {/* Attendance History */}
           <section className="card-style lg:col-span-2 overflow-hidden !p-0">
             <div className="p-8 border-b border-slate-100 flex flex-col md:flex-row gap-4 justify-between items-center">
-              <h3>Attendance History</h3>
-              <div className="flex gap-2 w-full md:w-auto">
+              <h3>
+                Attendance History
+                {selectedDate && (
+                  <span className="block text-[11px] font-medium text-slate-400 normal-case tracking-normal mt-1">
+                    {selectedDate === todayManila ? "Showing today's records" : `Showing records for ${selectedDate}`}
+                  </span>
+                )}
+              </h3>
+              <div className="flex flex-wrap gap-2 w-full md:w-auto">
                 <input
                   className="input-field"
                   placeholder="Search name..."
@@ -297,6 +358,22 @@ export default function HRDashboard() {
                   value={selectedDate}
                   onChange={(e) => setSelectedDate(e.target.value)}
                 />
+                {selectedDate !== todayManila && (
+                  <button
+                    onClick={() => setSelectedDate(todayManila)}
+                    className="text-blue-600 font-bold text-xs whitespace-nowrap"
+                  >
+                    Today
+                  </button>
+                )}
+                {selectedDate && (
+                  <button
+                    onClick={() => setSelectedDate('')}
+                    className="text-slate-400 font-bold text-xs whitespace-nowrap"
+                  >
+                    View All
+                  </button>
+                )}
               </div>
             </div>
 
@@ -359,7 +436,7 @@ export default function HRDashboard() {
             <input className="input-field mb-3" value={editing.employee_id} onChange={e => setEditing({...editing, employee_id: e.target.value})} placeholder="Employee ID" />
             <input className="input-field mb-6" value={editing.designation} onChange={e => setEditing({...editing, designation: e.target.value})} placeholder="Designation" />
             <div className="flex gap-3">
-              <button className="flex-1 p-3 bg-slate-100 rounded-xl font-medium text-sm" onClick={() => setEditOpen(false)}>Cancel</button>
+              <button className="flex-1 p-3 bg-slate-100 rounded-full font-medium text-sm" onClick={() => setEditOpen(false)}>Cancel</button>
               <button className="flex-1 btn-primary" onClick={saveEdit} disabled={saveLoading}>
                 {saveLoading ? 'Saving...' : 'Save'}
               </button>

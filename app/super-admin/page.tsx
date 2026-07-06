@@ -32,6 +32,9 @@ export default function SuperAdminDashboard() {
   const [attendanceLogs, setAttendanceLogs] = useState<any[]>([]);
   const [attendanceLoading, setAttendanceLoading] = useState(false);
   const [attendanceSearch, setAttendanceSearch] = useState('');
+  const [attendanceDateFilter, setAttendanceDateFilter] = useState(() =>
+    new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())
+  );
   const [editingLog, setEditingLog] = useState<{
     id: string;
     employeeName: string;
@@ -107,11 +110,20 @@ export default function SuperAdminDashboard() {
     return new Date(`${value}:00+08:00`).toISOString();
   };
 
-  const filteredAttendanceLogs = attendanceLogs.filter((log) =>
-    log.profiles?.full_name
+  const toManilaDateString = (iso: string) =>
+    new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date(iso));
+
+  const todayManila = toManilaDateString(new Date().toISOString());
+
+  const filteredAttendanceLogs = attendanceLogs.filter((log) => {
+    const matchesSearch = log.profiles?.full_name
       ?.toLowerCase()
-      .includes(attendanceSearch.toLowerCase())
-  );
+      .includes(attendanceSearch.toLowerCase());
+    const matchesDate = attendanceDateFilter
+      ? log.time_in && toManilaDateString(log.time_in) === attendanceDateFilter
+      : true;
+    return matchesSearch && matchesDate;
+  });
 
   const startEditLog = (log: any) => {
     setEditingLog({
@@ -283,6 +295,18 @@ export default function SuperAdminDashboard() {
     return 'tag-present';
   };
 
+  const initials = (name: string | null) =>
+    (name || '?')
+      .split(' ')
+      .map((n) => n[0])
+      .slice(0, 2)
+      .join('')
+      .toUpperCase();
+
+  const totalAccounts = employees.length;
+  const totalAdmins = employees.filter((e) => e.role === 'admin').length;
+  const totalEmployeesCount = employees.filter((e) => e.role === 'employee').length;
+
   return (
     <main className="min-h-screen relative p-4 md:p-8">
       <div className="fixed inset-0 z-0">
@@ -297,10 +321,10 @@ export default function SuperAdminDashboard() {
 
       <div className="relative z-10 max-w-6xl mx-auto space-y-6">
         {/* BRANDING HEADER */}
-        <header className="branding-box">
+        <header className="branding-box flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <h1>HAMDAN ENGINEERING</h1>
-            <p className="text-[18px] font-bold text-blue-600 uppercase tracking-widest">
+            <p className="text-[13px] font-bold text-slate-600 uppercase tracking-widest mt-1">
               Super Admin Portal
             </p>
           </div>
@@ -309,7 +333,7 @@ export default function SuperAdminDashboard() {
             onClick={() =>
               supabase.auth.signOut().then(() => (window.location.href = '/'))
             }
-            className="bg-red-50 text-red-600 px-10 py-2 rounded-xl font-bold text-sm hover:bg-red-100 transition"
+            className="bg-white/70 text-slate-700 px-6 py-2.5 rounded-full font-bold text-sm hover:bg-white transition"
             type="button"
           >
             Log Out
@@ -318,7 +342,7 @@ export default function SuperAdminDashboard() {
 
         {message && (
           <div
-            className={`p-4 rounded-xl text-sm font-bold ${
+            className={`p-4 rounded-2xl text-sm font-bold ${
               message.type === 'success'
                 ? 'bg-green-50 text-green-700'
                 : 'bg-red-50 text-red-700'
@@ -327,6 +351,22 @@ export default function SuperAdminDashboard() {
             {message.text}
           </div>
         )}
+
+        {/* QUICK STATS */}
+        <div className="grid grid-cols-3 gap-3 md:gap-4">
+          <div className="card-dark flex flex-col items-center justify-center !p-4 md:!p-6 text-center">
+            <p className="stat-number text-2xl md:text-3xl text-white">{totalAccounts}</p>
+            <p className="text-white/60 text-[10px] font-bold uppercase tracking-widest mt-1">Total Accounts</p>
+          </div>
+          <div className="card-style flex flex-col items-center justify-center !p-4 md:!p-6 text-center">
+            <p className="stat-number text-2xl md:text-3xl text-sky-600">{totalEmployeesCount}</p>
+            <p className="label-branded mt-1">Employees</p>
+          </div>
+          <div className="card-style flex flex-col items-center justify-center !p-4 md:!p-6 text-center">
+            <p className="stat-number text-2xl md:text-3xl text-purple-600">{totalAdmins}</p>
+            <p className="label-branded mt-1">HR Admins</p>
+          </div>
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* FORM CARD */}
@@ -386,8 +426,8 @@ export default function SuperAdminDashboard() {
                 <button
                   type="button"
                   onClick={() => setRole('employee')}
-                  className={`p-3 rounded-xl font-bold ${
-                    role === 'employee' ? 'bg-blue-600 text-white' : 'bg-slate-100'
+                  className={`p-3 rounded-full font-bold text-sm transition ${
+                    role === 'employee' ? 'bg-sky-600 text-white' : 'bg-slate-100 text-slate-600'
                   }`}
                 >
                   Employee
@@ -395,8 +435,8 @@ export default function SuperAdminDashboard() {
                 <button
                   type="button"
                   onClick={() => setRole('admin')}
-                  className={`p-3 rounded-xl font-bold ${
-                    role === 'admin' ? 'bg-purple-600 text-white' : 'bg-slate-100'
+                  className={`p-3 rounded-full font-bold text-sm transition ${
+                    role === 'admin' ? 'bg-purple-600 text-white' : 'bg-slate-100 text-slate-600'
                   }`}
                 >
                   HR Admin
@@ -407,7 +447,7 @@ export default function SuperAdminDashboard() {
                 <button
                   type="button"
                   onClick={resetForm}
-                  className="w-full p-3 rounded-xl font-bold bg-slate-100 text-slate-600"
+                  className="w-full p-3 rounded-full font-bold bg-slate-100 text-slate-600"
                 >
                   Cancel Edit
                 </button>
@@ -456,8 +496,8 @@ export default function SuperAdminDashboard() {
               <table className="w-full text-left">
                 <thead>
                   <tr className="text-slate-400 text-xs font-bold uppercase tracking-widest border-b border-slate-100">
+                    <th className="pb-4">Employee</th>
                     <th className="pb-4">Emp ID</th>
-                    <th className="pb-4">Name</th>
                     <th className="pb-4">Role</th>
                     <th className="pb-4 text-right">Action</th>
                   </tr>
@@ -469,11 +509,16 @@ export default function SuperAdminDashboard() {
                       key={emp.id}
                       className="hover:bg-slate-50 transition-colors"
                     >
+                      <td className="py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="flex-shrink-0 w-9 h-9 rounded-full bg-blue-50 text-blue-600 font-bold text-xs flex items-center justify-center">
+                            {initials(emp.full_name)}
+                          </div>
+                          <span className="font-bold text-slate-900">{emp.full_name}</span>
+                        </div>
+                      </td>
                       <td className="py-4 font-mono font-bold text-slate-500 text-sm">
                         {emp.employee_id || '-'}
-                      </td>
-                      <td className="py-4 font-bold text-slate-900">
-                        {emp.full_name}
                       </td>
                       <td className="py-4">
                         <span className={roleTagClass(emp.role)}>{emp.role}</span>
@@ -499,18 +544,51 @@ export default function SuperAdminDashboard() {
         <section className="card-style">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
             <div>
-              <h3>Attendance Records</h3>
+              <h3>
+                Attendance Records
+                {attendanceDateFilter && (
+                  <span className="block text-[11px] font-medium text-slate-400 normal-case tracking-normal mt-1">
+                    {attendanceDateFilter === todayManila
+                      ? "Showing today's records"
+                      : `Showing records for ${attendanceDateFilter}`}
+                  </span>
+                )}
+              </h3>
               <p className="text-sm text-slate-400 mt-1">
                 I-edit ang time in ng employee para sa dispute o nakalimutang time in.
               </p>
             </div>
-            <input
-              type="text"
-              placeholder="Search employee..."
-              value={attendanceSearch}
-              onChange={(e) => setAttendanceSearch(e.target.value)}
-              className="input-field md:w-64"
-            />
+            <div className="flex flex-wrap gap-2 items-center w-full md:w-auto">
+              <input
+                type="text"
+                placeholder="Search employee..."
+                value={attendanceSearch}
+                onChange={(e) => setAttendanceSearch(e.target.value)}
+                className="input-field md:w-56"
+              />
+              <input
+                type="date"
+                value={attendanceDateFilter}
+                onChange={(e) => setAttendanceDateFilter(e.target.value)}
+                className="input-field md:w-auto"
+              />
+              {attendanceDateFilter !== todayManila && (
+                <button
+                  onClick={() => setAttendanceDateFilter(todayManila)}
+                  className="text-blue-600 font-bold text-xs whitespace-nowrap"
+                >
+                  Today
+                </button>
+              )}
+              {attendanceDateFilter && (
+                <button
+                  onClick={() => setAttendanceDateFilter('')}
+                  className="text-slate-400 font-bold text-xs whitespace-nowrap"
+                >
+                  View All
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -619,7 +697,7 @@ export default function SuperAdminDashboard() {
             <div className="flex gap-3">
               <button
                 type="button"
-                className="flex-1 p-3 bg-slate-100 rounded-xl font-medium text-sm"
+                className="flex-1 p-3 bg-slate-100 rounded-full font-medium text-sm"
                 onClick={() => setEditingLog(null)}
               >
                 Cancel

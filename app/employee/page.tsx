@@ -220,6 +220,14 @@ export default function EmployeeDashboard() {
     return new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   };
 
+  // Circular progress ring: on-time percentage (0-100)
+  const onTimePercentage = summary.present > 0 
+    ? Math.round((summary.onTime / summary.present) * 100) 
+    : 0;
+
+  const circumference = 2 * Math.PI * 45; // radius 45
+  const strokeDashoffset = circumference - (onTimePercentage / 100) * circumference;
+
   return (
     <main className="min-h-screen p-4 md:p-8">
       <div className="max-w-6xl mx-auto space-y-6 md:space-y-8">
@@ -248,15 +256,15 @@ export default function EmployeeDashboard() {
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 md:gap-4">
           <div className="card-style !p-4 md:!p-6 text-center">
             <p className="stat-number text-2xl md:text-3xl text-blue-600">{summary.present}</p>
-            <p className="label-branded mt-1">Days Present ({formatMonthLabel(summaryMonthKey)})</p>
+            <p className="label-branded mt-1">Days Present</p>
           </div>
           <div className="card-style !p-4 md:!p-6 text-center">
             <p className="stat-number text-2xl md:text-3xl text-orange-600">{summary.late}</p>
-            <p className="label-branded mt-1">Late ({formatMonthLabel(summaryMonthKey)})</p>
+            <p className="label-branded mt-1">Late</p>
           </div>
           <div className="card-style !p-4 md:!p-6 text-center col-span-2 sm:col-span-1">
             <p className="stat-number text-2xl md:text-3xl text-green-600">{summary.onTime}</p>
-            <p className="label-branded mt-1">On-Time ({formatMonthLabel(summaryMonthKey)})</p>
+            <p className="label-branded mt-1">On-Time</p>
           </div>
         </div>
 
@@ -299,6 +307,46 @@ export default function EmployeeDashboard() {
               {loading ? 'Processing...' : isAlreadyTimedIn ? 'Already Timed In' : 'Time In'}
             </button>
 
+            {/* Attendance Rate Ring */}
+            <div className="card-style flex flex-col items-center justify-center py-8">
+              <p className="label-branded">On-Time Rate ({formatMonthLabel(summaryMonthKey)})</p>
+              <div className="relative w-32 h-32 my-4">
+                <svg
+                  className="w-full h-full transform -rotate-90"
+                  viewBox="0 0 120 120"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  {/* Background ring */}
+                  <circle
+                    cx="60"
+                    cy="60"
+                    r="45"
+                    fill="none"
+                    stroke="#e6f1e6"
+                    strokeWidth="8"
+                  />
+                  {/* Progress ring */}
+                  <circle
+                    cx="60"
+                    cy="60"
+                    r="45"
+                    fill="none"
+                    stroke="#2fbd6c"
+                    strokeWidth="8"
+                    strokeDasharray={circumference}
+                    strokeDashoffset={strokeDashoffset}
+                    strokeLinecap="round"
+                    className="transition-all duration-500"
+                  />
+                </svg>
+                {/* Center text */}
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <p className="stat-number text-3xl text-green-600">{onTimePercentage}%</p>
+                  <p className="text-slate-400 text-xs font-medium">On-Time</p>
+                </div>
+              </div>
+            </div>
+
             {/* Announcements */}
             {announcementLoading ? (
               <div className="card-style">
@@ -309,23 +357,20 @@ export default function EmployeeDashboard() {
                 <p className="text-red-500 text-sm">{announcementError}</p>
               </div>
             ) : announcement ? (
-              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 to-blue-600 p-6 md:p-8 shadow-lg shadow-blue-600/20">
-                <div className="absolute -right-6 -top-6 w-32 h-32 rounded-full bg-white/5"></div>
-                <div className="absolute -right-2 top-10 w-16 h-16 rounded-full bg-white/5"></div>
-
-                <div className="relative flex items-start gap-4">
-                  <div className="flex-shrink-0 w-11 h-11 rounded-xl bg-amber-500 flex items-center justify-center text-xl">
+              <div className="card-dark">
+                <div className="flex items-start gap-4">
+                  <div className="flex-shrink-0 w-11 h-11 rounded-2xl bg-green-500 flex items-center justify-center text-xl">
                     📣
                   </div>
                   <div className="flex-1 min-w-0">
-                    <span className="inline-block bg-amber-500 text-slate-900 text-[10px] font-extrabold uppercase tracking-widest px-3 py-1 rounded-full mb-3">
+                    <span className="inline-block bg-green-500 text-slate-900 text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full mb-3">
                       Announcement
                     </span>
                     <p className="text-white text-base md:text-lg font-medium whitespace-pre-wrap leading-relaxed">
                       {announcement}
                     </p>
                     {announcementUpdatedAt && (
-                      <p className="text-blue-100/70 text-[11px] font-medium uppercase tracking-widest mt-4">
+                      <p className="text-green-100/70 text-[11px] font-medium uppercase tracking-widest mt-4">
                         Updated: {announcementUpdatedAt}
                       </p>
                     )}
