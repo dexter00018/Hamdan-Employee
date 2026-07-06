@@ -4,132 +4,194 @@
 @reference "tailwindcss";
 
 @theme {
-  /* ---- Base palette: soft pastel, Notion/Linear-inspired ---- */
-  --color-slate-50: #faf9fc;   /* page background */
-  --color-slate-100: #f1eef9;  /* subtle borders / hover bg */
-  --color-slate-200: #e4dff2;  /* borders */
-  --color-slate-400: #9691a8;  /* muted text */
-  --color-slate-600: #5b5670;  /* secondary text */
-  --color-slate-700: #433f57;  /* body text */
-  --color-slate-900: #2d2a3e;  /* headings / high-contrast text */
+  /* ---- Base palette: clean, high-contrast, Nike Training Club-inspired ---- */
+  --color-slate-50: #f6f7f9;   /* page background */
+  --color-slate-100: #ececf1;  /* subtle borders / hover bg */
+  --color-slate-200: #dbdee6;  /* borders */
+  --color-slate-400: #8a8f9c;  /* muted text */
+  --color-slate-600: #4b4f5c;  /* secondary text */
+  --color-slate-700: #292d36;  /* body text */
+  --color-slate-900: #101114;  /* headings / near-black ink */
 
-  /* ---- Primary: muted violet (brand) ---- */
-  --color-blue-50: #f1effd;
-  --color-blue-400: #a49af2;
-  --color-blue-600: #7c6ff0;
+  /* ---- Primary: vivid electric blue (brand + links + focus) ---- */
+  --color-blue-50: #e9efff;
+  --color-blue-400: #5c82ff;
+  --color-blue-600: #2451ff;
 
-  /* ---- Accent: soft amber ---- */
-  --color-amber-50: #fef6e6;
-  --color-amber-500: #f5c361;
-  --color-amber-700: #a5730f;
+  /* ---- Signature accent: VOLT (Nike's iconic energy color) ---- */
+  --color-amber-50: #fbffdc;
+  --color-amber-500: #d7ff3e;
+  --color-amber-700: #6b8a00;
 
-  /* ---- Status: success (Present) ---- */
-  --color-green-50: #eafaf2;
-  --color-green-600: #34a870;
-  --color-green-700: #1f7a52;
+  /* ---- Status: success (Present) — vivid green ---- */
+  --color-green-50: #e4fbea;
+  --color-green-600: #17a94a;
+  --color-green-700: #0c7a34;
 
-  /* ---- Status: warning (Late) ---- */
-  --color-orange-50: #fff3e0;
-  --color-orange-600: #e08a2e;
-  --color-orange-700: #a5620f;
+  /* ---- Status: warning (Late) — blaze orange ---- */
+  --color-orange-50: #ffeee2;
+  --color-orange-600: #ff5a1f;
+  --color-orange-700: #c23f0e;
 
-  /* ---- Status: info (Excused) / Employee role ---- */
-  --color-sky-50: #eaf4fd;
-  --color-sky-600: #3d94dd;
-  --color-sky-700: #256bab;
+  /* ---- Status: info (Excused) / Employee role — vivid sky ---- */
+  --color-sky-50: #e6f4ff;
+  --color-sky-600: #0e86ff;
+  --color-sky-700: #0a5fc2;
 
-  /* ---- Admin role ---- */
-  --color-purple-50: #f4eefc;
-  --color-purple-600: #9b6fe0;
-  --color-purple-700: #7448bd;
+  /* ---- Admin role — flare magenta ---- */
+  --color-purple-50: #ffe9f3;
+  --color-purple-600: #ff2d78;
+  --color-purple-700: #c1155a;
 
   /* ---- Danger ---- */
-  --color-rose-50: #fdeef1;
-  --color-rose-600: #e2597a;
-  --color-rose-700: #b23b5a;
+  --color-rose-50: #ffe7ec;
+  --color-rose-600: #f23d5c;
+  --color-rose-700: #b01e3a;
 
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
   --font-display: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+  /* Condensed face reserved ONLY for big stat numbers (clock, summary
+     cards) — a deliberate, restrained nod to sport-app stat displays.
+     Add Oswald in layout.tsx (see note shared alongside this file). */
+  --font-stat: 'Oswald', ui-sans-serif, system-ui, sans-serif;
 }
 
 @layer base {
-  body {
-    @apply bg-slate-50 text-slate-700 antialiased font-sans leading-relaxed;
+  html {
+    @apply overflow-x-hidden;
   }
 
-  h1 { @apply text-4xl font-extrabold text-slate-900; font-family: var(--font-display); letter-spacing: -0.01em; }
+  body {
+    @apply bg-slate-50 text-slate-700 antialiased font-sans leading-relaxed overflow-x-hidden;
+  }
+
+  /* Give every page a little breathing room above the iOS home indicator */
+  main {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+
+  h1 {
+    @apply text-3xl md:text-4xl font-extrabold text-slate-900 uppercase tracking-tight;
+    font-family: var(--font-display);
+  }
   h2 { @apply text-2xl font-bold text-slate-900; font-family: var(--font-display); }
-  h3 { @apply text-lg font-bold text-slate-900; font-family: var(--font-display); }
+
+  /* Section headers get a small colored marker — a repeating signature
+     that ties every card/modal on the site back to the same identity. */
+  h3 {
+    @apply relative pl-3 text-base md:text-lg font-extrabold uppercase tracking-wide text-slate-900;
+    font-family: var(--font-display);
+  }
+  h3::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 2px;
+    bottom: 2px;
+    width: 4px;
+    border-radius: 2px;
+    background: linear-gradient(180deg, var(--color-blue-600), var(--color-amber-500));
+  }
 
   .label-branded {
     @apply text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1;
   }
+
+  /* Reserve for big numeric displays: the clock, summary card counts.
+     Use sparingly — this is the one place condensed type shows up. */
+  .stat-number {
+    font-family: var(--font-stat);
+    @apply font-medium tabular-nums;
+  }
 }
 
 @layer components {
-  /* Base card: soft shadow, rounded, a whisper of violet border */
+  /* Base card: clean white container, quiet on purpose so the color
+     lives in tags, buttons, and the header stripe instead. */
   .card-style {
-    @apply bg-white p-6 rounded-2xl shadow-sm border border-slate-100;
+    @apply bg-white p-6 rounded-2xl shadow-sm border border-slate-200;
   }
 
-  /* Branding header: gets a cheerful accent stripe on top */
+  /* Branding header: thicker, more energetic accent stripe on top */
   .branding-box {
-    @apply relative bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex justify-between items-center overflow-hidden;
+    @apply relative bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex justify-between items-center overflow-hidden;
   }
   .branding-box::before {
     content: '';
     position: absolute;
     top: 0; left: 0; right: 0;
-    height: 4px;
+    height: 6px;
     background: linear-gradient(90deg, var(--color-blue-600), var(--color-amber-500));
   }
 
+  /* Signature button: chunky, uppercase, tactile "press" shadow —
+     the one deliberately bold element on the page. Ink-black fill with
+     an offset volt shadow that flattens on press, like a sticker. */
   .btn-primary {
-    @apply w-full text-white py-3 rounded-xl font-semibold text-sm transition-all duration-200;
-    background: var(--color-blue-600);
+    @apply w-full text-white py-4 rounded-xl font-extrabold text-sm uppercase tracking-wide
+           transition-all duration-150 min-h-[48px];
+    background: var(--color-slate-900);
+    box-shadow: 4px 4px 0 0 var(--color-amber-500);
   }
   .btn-primary:hover {
-    background: #6a5ce0;
+    transform: translate(-1px, -1px);
+    box-shadow: 5px 5px 0 0 var(--color-amber-500);
+  }
+  .btn-primary:active {
+    transform: translate(2px, 2px);
+    box-shadow: 1px 1px 0 0 var(--color-amber-500);
+  }
+  .btn-primary:disabled {
+    @apply opacity-50 cursor-not-allowed;
+    transform: none;
+    box-shadow: 4px 4px 0 0 var(--color-slate-200);
   }
 
   /* Role tags */
   .tag-admin {
-    @apply px-3 py-1 rounded-full font-bold text-[10px] uppercase tracking-wider;
+    @apply px-3 py-1.5 rounded-full font-extrabold text-[10px] uppercase tracking-wider border;
     background: var(--color-purple-50);
     color: var(--color-purple-700);
+    border-color: color-mix(in srgb, var(--color-purple-600) 25%, transparent);
   }
 
   .tag-employee {
-    @apply px-3 py-1 rounded-full font-bold text-[10px] uppercase tracking-wider;
+    @apply px-3 py-1.5 rounded-full font-extrabold text-[10px] uppercase tracking-wider border;
     background: var(--color-sky-50);
     color: var(--color-sky-700);
+    border-color: color-mix(in srgb, var(--color-sky-600) 25%, transparent);
   }
 
   /* Status tags */
   .tag-present {
-    @apply px-3 py-1 rounded-full font-bold text-[10px] uppercase tracking-wider;
+    @apply px-3 py-1.5 rounded-full font-extrabold text-[10px] uppercase tracking-wider border;
     background: var(--color-green-50);
     color: var(--color-green-700);
+    border-color: color-mix(in srgb, var(--color-green-600) 25%, transparent);
   }
 
   .tag-late {
-    @apply px-3 py-1 rounded-full font-bold text-[10px] uppercase tracking-wider;
+    @apply px-3 py-1.5 rounded-full font-extrabold text-[10px] uppercase tracking-wider border;
     background: var(--color-orange-50);
     color: var(--color-orange-700);
+    border-color: color-mix(in srgb, var(--color-orange-600) 25%, transparent);
   }
 
   .tag-excused {
-    @apply px-3 py-1 rounded-full font-bold text-[10px] uppercase tracking-wider;
+    @apply px-3 py-1.5 rounded-full font-extrabold text-[10px] uppercase tracking-wider border;
     background: var(--color-sky-50);
     color: var(--color-sky-700);
+    border-color: color-mix(in srgb, var(--color-sky-600) 25%, transparent);
   }
 }
 
 @layer utilities {
   .input-field {
-    @apply w-full p-3 border border-slate-200 rounded-xl outline-none text-sm transition-colors bg-white;
+    @apply w-full p-3.5 border-2 border-slate-200 rounded-xl outline-none text-sm
+           transition-colors bg-white min-h-[48px];
   }
   .input-field:focus {
-    border-color: var(--color-blue-400);
+    border-color: var(--color-blue-600);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-blue-600) 15%, transparent);
   }
 }

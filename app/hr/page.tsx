@@ -34,8 +34,17 @@ export default function HRDashboard() {
   const [editing, setEditing] = useState({ id: null as string | null, full_name: '', employee_id: '', designation: '' });
   const [saveLoading, setSaveLoading] = useState(false);
 
+  // Announcement States
+  const [announcementId, setAnnouncementId] = useState<string | null>(null);
+  const [announcementContent, setAnnouncementContent] = useState('');
+  const [announcementUpdatedAt, setAnnouncementUpdatedAt] = useState<string | null>(null);
+  const [announcementLoading, setAnnouncementLoading] = useState(true);
+  const [announcementSaving, setAnnouncementSaving] = useState(false);
+  const [announcementMsg, setAnnouncementMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
   useEffect(() => {
     refreshAllData();
+    fetchAnnouncement();
   }, []);
 
   const refreshAllData = async () => {
@@ -67,6 +76,73 @@ export default function HRDashboard() {
     setAttendance(att.data || []);
     setProfiles(prof.data || []);
     setLoadingData(false);
+  };
+
+  // Loads the current published announcement (if any) so HR can see and
+  // edit what's already live before publishing changes.
+  const fetchAnnouncement = async () => {
+    setAnnouncementLoading(true);
+    const { data, error } = await supabase
+      .from('announcements')
+      .select('id, content, updated_at')
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error fetching announcement:', error);
+      setAnnouncementMsg({ type: 'error', text: error.message });
+      setAnnouncementLoading(false);
+      return;
+    }
+
+    setAnnouncementId(data?.id ?? null);
+    setAnnouncementContent(data?.content ?? '');
+    setAnnouncementUpdatedAt(data?.updated_at ?? null);
+    setAnnouncementLoading(false);
+  };
+
+  // Publishes the announcement. If one already exists we UPDATE it (so
+  // there's always a single "current" announcement employees see);
+  // otherwise we INSERT the first one. RLS only allows admin/super_admin
+  // roles to write to this table.
+  const publishAnnouncement = async () => {
+    setAnnouncementSaving(true);
+    setAnnouncementMsg(null);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (announcementId) {
+        const { error } = await supabase
+          .from('announcements')
+          .update({
+            content: announcementContent,
+            updated_at: new Date().toISOString(),
+            updated_by: user?.id ?? null,
+          })
+          .eq('id', announcementId);
+
+        if (error) throw error;
+      } else {
+        const { data, error } = await supabase
+          .from('announcements')
+          .insert([{ content: announcementContent, updated_by: user?.id ?? null }])
+          .select('id, updated_at')
+          .single();
+
+        if (error) throw error;
+        setAnnouncementId(data.id);
+      }
+
+      setAnnouncementMsg({ type: 'success', text: 'Na-publish ang announcement.' });
+      await fetchAnnouncement();
+    } catch (err: any) {
+      console.error('Error publishing announcement:', err);
+      setAnnouncementMsg({ type: 'error', text: err?.message ?? 'Failed to publish announcement.' });
+    } finally {
+      setAnnouncementSaving(false);
+    }
   };
 
   // Filter Logic
@@ -123,7 +199,7 @@ export default function HRDashboard() {
     <main className="min-h-screen p-4 md:p-8">
       <div className="max-w-6xl mx-auto space-y-8">
         {/* Header */}
-        <header className="branding-box">
+        <header className="branding-box flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <h1>HAMDAN ENGINEERING</h1>
             <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">HR Portal | Attendance</p>
@@ -138,6 +214,51 @@ export default function HRDashboard() {
             {errorMsg}
           </div>
         )}
+
+        {/* Announcements */}
+        <section className="card-style">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+            <h3 className="mb-0">Announcements</h3>
+            {announcementUpdatedAt && (
+              <p className="text-slate-400 text-[11px] font-medium uppercase tracking-widest">
+                Last published: {new Date(announcementUpdatedAt).toLocaleString('en-US', {
+                  timeZone: 'Asia/Manila',
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </p>
+            )}
+          </div>
+
+          {announcementMsg && (
+            <div className={`p-3 rounded-xl text-sm font-bold mb-4 ${announcementMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+              {announcementMsg.text}
+            </div>
+          )}
+
+          {announcementLoading ? (
+            <p className="text-slate-400 text-sm">Loading...</p>
+          ) : (
+            <>
+              <textarea
+                className="input-field w-full min-h-[100px] resize-y"
+                placeholder="I-type ang announcement na makikita ng lahat ng employees..."
+                value={announcementContent}
+                onChange={(e) => setAnnouncementContent(e.target.value)}
+              />
+              <button
+                onClick={publishAnnouncement}
+                disabled={announcementSaving || !announcementContent.trim()}
+                className="btn-primary mt-4 disabled:opacity-50"
+              >
+                {announcementSaving ? 'Publishing...' : announcementId ? 'Update Announcement' : 'Publish Announcement'}
+              </button>
+            </>
+          )}
+        </section>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Employee Sidebar */}
