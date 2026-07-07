@@ -8,6 +8,7 @@ import Spinner, { LoadingRow } from '@/components/Spinner';
 type AttendanceLog = {
   id: string;
   time_in: string | null;
+  time_out: string | null;
   status: string | null;
   profiles?: { full_name: string | null };
 };
