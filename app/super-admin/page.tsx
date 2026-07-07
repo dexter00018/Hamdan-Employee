@@ -67,6 +67,7 @@ export default function SuperAdminDashboard() {
     id: string;
     employeeName: string;
     timeInLocal: string; // datetime-local value, in PH time
+    timeOutLocal: string; // datetime-local value, in PH time (can be empty)
     status: string;
   } | null>(null);
   const [logSaving, setLogSaving] = useState(false);
@@ -98,7 +99,7 @@ export default function SuperAdminDashboard() {
     setAttendanceLoading(true);
     const { data, error } = await supabase
       .from('attendance_logs')
-      .select('id, time_in, log_date, status, profiles(full_name)')
+      .select('id, time_in, time_out, log_date, status, profiles(full_name)')
       .order('time_in', { ascending: false })
       .limit(200);
 
@@ -161,6 +162,7 @@ export default function SuperAdminDashboard() {
       id: log.id,
       employeeName: log.profiles?.full_name ?? 'Unknown',
       timeInLocal: log.time_in ? toManilaInputValue(log.time_in) : '',
+      timeOutLocal: log.time_out ? toManilaInputValue(log.time_out) : '',
       status: log.status ?? 'Present',
     });
   };
@@ -173,11 +175,16 @@ export default function SuperAdminDashboard() {
       const newTimeInISO = manilaInputValueToUTCISO(editingLog.timeInLocal);
       // Keep log_date consistent with the corrected time_in (in PH time)
       const newLogDate = editingLog.timeInLocal.split('T')[0];
+      // time_out is optional -- only convert it if the admin filled it in.
+      const newTimeOutISO = editingLog.timeOutLocal
+        ? manilaInputValueToUTCISO(editingLog.timeOutLocal)
+        : null;
 
       const { data: updatedRows, error } = await supabase
         .from('attendance_logs')
         .update({
           time_in: newTimeInISO,
+          time_out: newTimeOutISO,
           log_date: newLogDate,
           status: editingLog.status,
         })
@@ -752,6 +759,7 @@ export default function SuperAdminDashboard() {
                   <th className="pb-4">Employee</th>
                   <th className="pb-4">Date</th>
                   <th className="pb-4">Time In</th>
+                  <th className="pb-4">Time Out</th>
                   <th className="pb-4">Status</th>
                   <th className="pb-4 text-right">Action</th>
                 </tr>
@@ -759,7 +767,7 @@ export default function SuperAdminDashboard() {
               <tbody className="divide-y divide-slate-100">
                 {attendanceLoading && (
                   <tr>
-                    <td colSpan={5} className="py-8">
+                    <td colSpan={6} className="py-8">
                       <LoadingRow label="Loading attendance records..." />
                     </td>
                   </tr>
@@ -790,6 +798,15 @@ export default function SuperAdminDashboard() {
                             })
                           : 'N/A'}
                       </td>
+                      <td className="py-4 text-slate-600 text-sm">
+                        {log.time_out
+                          ? new Date(log.time_out).toLocaleTimeString('en-US', {
+                              timeZone: 'Asia/Manila',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })
+                          : '—'}
+                      </td>
                       <td className="py-4">
                         <span className={statusTagClass(log.status)}>{log.status}</span>
                       </td>
@@ -807,7 +824,7 @@ export default function SuperAdminDashboard() {
 
                 {!attendanceLoading && filteredAttendanceLogs.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="py-8 text-center text-slate-400 text-sm">
+                    <td colSpan={6} className="py-8 text-center text-slate-400 text-sm">
                       No attendance records found.
                     </td>
                   </tr>
@@ -834,6 +851,26 @@ export default function SuperAdminDashboard() {
                 setEditingLog({ ...editingLog, timeInLocal: e.target.value })
               }
             />
+
+            <label className="label-branded">Time Out (Philippine Time)</label>
+            <input
+              type="datetime-local"
+              className="input-field mb-1"
+              value={editingLog.timeOutLocal}
+              onChange={(e) =>
+                setEditingLog({ ...editingLog, timeOutLocal: e.target.value })
+              }
+            />
+            {editingLog.timeOutLocal && (
+              <button
+                type="button"
+                onClick={() => setEditingLog({ ...editingLog, timeOutLocal: '' })}
+                className="text-slate-400 text-xs font-bold hover:text-slate-600 mb-4"
+              >
+                Clear time out
+              </button>
+            )}
+            {!editingLog.timeOutLocal && <div className="mb-4" />}
 
             <label className="label-branded">Status</label>
             <select

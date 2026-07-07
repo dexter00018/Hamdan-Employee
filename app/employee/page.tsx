@@ -10,7 +10,8 @@ const LATE_CUTOFF_MINUTE = 15;
 
 export default function EmployeeDashboard() {
   const [loading, setLoading] = useState(false);
-  const [isAlreadyTimedIn, setIsAlreadyTimedIn] = useState(false);
+  const [timeOutLoading, setTimeOutLoading] = useState(false);
+  const [todayLog, setTodayLog] = useState<{ id: string; time_in: string | null; time_out: string | null; status: string | null } | null>(null);
   const [message, setMessage] = useState('');
   const [time, setTime] = useState('');
   const [date, setDate] = useState('');
@@ -70,7 +71,10 @@ export default function EmployeeDashboard() {
       return;
     }
 
-    const today = new Date().toISOString().split('T')[0];
+    // Use the Manila calendar date, not the browser's local/UTC date --
+    // otherwise an employee whose device is set to a timezone behind
+    // UTC could see the wrong "today" near midnight.
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date());
 
     const { data: profileData, error: profileError } = await supabase
       .from('profiles')
@@ -87,7 +91,7 @@ export default function EmployeeDashboard() {
 
     const { data: historyData, error: historyError } = await supabase
       .from('attendance_logs')
-      .select('log_date, time_in, status')
+      .select('id, log_date, time_in, time_out, status')
       .eq('user_id', user.id)
       .order('log_date', { ascending: false });
 
@@ -97,8 +101,8 @@ export default function EmployeeDashboard() {
     }
 
     setHistory(historyData || []);
-    const hasTimedInToday = historyData?.some(log => log.log_date === today);
-    setIsAlreadyTimedIn(!!hasTimedInToday);
+    const foundTodayLog = historyData?.find(log => log.log_date === today);
+    setTodayLog(foundTodayLog ?? null);
     setInitLoading(false);
   };
 
@@ -144,11 +148,6 @@ export default function EmployeeDashboard() {
     setLoading(true);
     setMessage('');
     try {
-      // Time-in now goes through our own API route instead of a direct
-      // client-side insert. This lets us enforce the office-network
-      // check and compute the server-side timestamp/status in one place
-      // that can't be bypassed by editing client JS -- the button being
-      // disabled below is just a courtesy; this is the real gate.
       const res = await fetch('/api/time-in', { method: 'POST' });
       const result = await res.json();
 
@@ -161,12 +160,31 @@ export default function EmployeeDashboard() {
           ? 'Time in recorded, but you are marked as late today.'
           : 'Success! Attendance recorded.'
       );
-      setIsAlreadyTimedIn(true);
       await initializeDashboard();
     } catch (err: any) {
       setMessage("Error: " + err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleTimeOut = async () => {
+    setTimeOutLoading(true);
+    setMessage('');
+    try {
+      const res = await fetch('/api/time-out', { method: 'POST' });
+      const result = await res.json();
+
+      if (!res.ok) {
+        throw new Error(result.error || 'Failed to record time-out.');
+      }
+
+      setMessage('Time out recorded. See you tomorrow!');
+      await initializeDashboard();
+    } catch (err: any) {
+      setMessage("Error: " + err.message);
+    } finally {
+      setTimeOutLoading(false);
     }
   };
 
@@ -301,30 +319,78 @@ export default function EmployeeDashboard() {
               </p>
             </div>
 
-            <button
-              onClick={handleTimeIn}
-              disabled={loading || isAlreadyTimedIn || initLoading || checkingNetwork || officeNetworkAllowed === false}
-              className="btn-primary"
-            >
-              {loading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <Spinner size="sm" />
-                  Processing...
-                </span>
-              ) : checkingNetwork ? (
-                <span className="flex items-center justify-center gap-2">
-                  <Spinner size="sm" />
-                  Checking network...
-                </span>
-              ) : isAlreadyTimedIn ? 'Already Timed In'
-                : officeNetworkAllowed === false ? 'Not on Office Network'
-                : 'Time In'}
-            </button>
+            {!todayLog ? (
+              // State 1: hasn't timed in yet today
+              <button
+                onClick={handleTimeIn}
+                disabled={loading || initLoading || checkingNetwork || officeNetworkAllowed === false}
+                className="btn-primary"
+              >
+                {loading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <Spinner size="sm" />
+                    Processing...
+                  </span>
+                ) : checkingNetwork ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <Spinner size="sm" />
+                    Checking network...
+                  </span>
+                ) : officeNetworkAllowed === false ? 'Not on Office Network'
+                  : 'Time In'}
+              </button>
+            ) : !todayLog.time_out ? (
+              // State 2: timed in, hasn't timed out yet
+              <button
+                onClick={handleTimeOut}
+                disabled={timeOutLoading || checkingNetwork || officeNetworkAllowed === false}
+                className="btn-primary"
+              >
+                {timeOutLoading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <Spinner size="sm" />
+                    Processing...
+                  </span>
+                ) : checkingNetwork ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <Spinner size="sm" />
+                    Checking network...
+                  </span>
+                ) : officeNetworkAllowed === false ? 'Not on Office Network'
+                  : 'Time Out'}
+              </button>
+            ) : (
+              // State 3: fully done for today
+              <button disabled className="btn-primary opacity-50 cursor-not-allowed">
+                Completed for Today
+              </button>
+            )}
 
-            {!checkingNetwork && officeNetworkAllowed === false && !isAlreadyTimedIn && (
+            {todayLog?.time_in && (
+              <p className="text-center text-slate-400 text-xs font-medium -mt-4">
+                Timed in at{' '}
+                {new Date(todayLog.time_in).toLocaleTimeString('en-US', {
+                  timeZone: 'Asia/Manila',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+                {todayLog.time_out && (
+                  <>
+                    {' '}· Timed out at{' '}
+                    {new Date(todayLog.time_out).toLocaleTimeString('en-US', {
+                      timeZone: 'Asia/Manila',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </>
+                )}
+              </p>
+            )}
+
+            {!checkingNetwork && officeNetworkAllowed === false && !(todayLog?.time_out) && (
               <div className="flex items-center justify-between gap-3 -mt-4 px-1">
                 <p className="text-orange-600 text-xs font-medium">
-                  ⚠️ You must be connected to the office network to time in.
+                  ⚠️ You must be connected to the office network to {todayLog ? 'time out' : 'time in'}.
                 </p>
                 <button
                   onClick={checkOfficeNetwork}
@@ -448,12 +514,31 @@ export default function EmployeeDashboard() {
                     </div>
                     <div className="flex items-center gap-3">
                       <span className={statusTagClass(log.status)}>{log.status}</span>
-                      <div className="font-semibold text-slate-700">
-                        {new Date(log.time_in).toLocaleTimeString('en-US', {
-                          timeZone: 'Asia/Manila',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
+                      <div className="text-right">
+                        <div className="font-semibold text-slate-700">
+                          {log.time_in
+                            ? new Date(log.time_in).toLocaleTimeString('en-US', {
+                                timeZone: 'Asia/Manila',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })
+                            : '--:--'}
+                          {log.time_out && (
+                            <>
+                              {' '}–{' '}
+                              {new Date(log.time_out).toLocaleTimeString('en-US', {
+                                timeZone: 'Asia/Manila',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </>
+                          )}
+                        </div>
+                        {!log.time_out && (
+                          <div className="text-slate-400 text-[10px] font-medium uppercase tracking-wide">
+                            No time out
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

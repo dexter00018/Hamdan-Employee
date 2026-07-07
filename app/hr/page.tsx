@@ -414,13 +414,14 @@ export default function HRDashboard() {
                   <th className="px-8 py-4">Employee</th>
                   <th className="px-8 py-4">Date</th>
                   <th className="px-8 py-4">Time In</th>
+                  <th className="px-8 py-4">Time Out</th>
                   <th className="px-8 py-4">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {loadingData && attendance.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="px-8 py-8">
+                    <td colSpan={5} className="px-8 py-8">
                       <LoadingRow label="Loading attendance history..." />
                     </td>
                   </tr>
@@ -447,6 +448,15 @@ export default function HRDashboard() {
                           })
                         : 'N/A'}
                     </td>
+                    <td className="px-8 py-4 text-slate-600">
+                      {log.time_out
+                        ? new Date(log.time_out).toLocaleTimeString('en-US', {
+                            timeZone: 'Asia/Manila',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })
+                        : '—'}
+                    </td>
                     <td className="px-8 py-4">
                       <span className={statusTagClass(log.status)}>{log.status}</span>
                     </td>
@@ -454,7 +464,7 @@ export default function HRDashboard() {
                 ))}
                 {!loadingData && filteredAttendance.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="px-8 py-8 text-center text-slate-400 text-sm">
+                    <td colSpan={5} className="px-8 py-8 text-center text-slate-400 text-sm">
                       No attendance records found.
                     </td>
                   </tr>
