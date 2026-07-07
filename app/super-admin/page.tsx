@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import Image from 'next/image';
 
@@ -30,6 +30,32 @@ export default function SuperAdminDashboard() {
 
   // Attendance records (for dispute/late corrections)
   const [attendanceLogs, setAttendanceLogs] = useState<any[]>([]);
+
+  // Translates raw Postgres/Auth error text into a friendly, specific
+  // message the user can actually act on, instead of showing the raw
+  // "duplicate key value violates unique constraint ..." text.
+  const getFriendlyErrorMessage = (rawMessage: string): string => {
+    const msg = rawMessage.toLowerCase();
+
+    if (msg.includes('profiles_employee_id_key') || (msg.includes('employee_id') && msg.includes('duplicate'))) {
+      return 'This Employee ID is already in use by another account. Please use a different one.';
+    }
+    if (msg.includes('already been registered') || msg.includes('already registered') || (msg.includes('email') && msg.includes('duplicate'))) {
+      return 'An account with this email already exists.';
+    }
+    if (msg.includes('password') && (msg.includes('short') || msg.includes('least'))) {
+      return 'Password is too short. It must be at least 6 characters.';
+    }
+    if (msg.includes('invalid') && msg.includes('email')) {
+      return 'This email address is not a valid format.';
+    }
+    if (msg.includes('duplicate key value violates unique constraint')) {
+      // Generic fallback for any other unique constraint we haven't
+      // special-cased above -- still better than the raw SQL text.
+      return 'Another account is already using the same information (e.g. Employee ID or Email). Please check and try again.';
+    }
+    return rawMessage;
+  };
   const [attendanceLoading, setAttendanceLoading] = useState(false);
   const [attendanceSearch, setAttendanceSearch] = useState('');
   const [attendanceDateFilter, setAttendanceDateFilter] = useState(() =>
@@ -157,7 +183,7 @@ export default function SuperAdminDashboard() {
 
       if (!updatedRows || updatedRows.length === 0) {
         throw new Error(
-          'Walang na-update na record. Kadalasan RLS policy issue ito — siguraduhing may UPDATE policy ang attendance_logs table para sa admin/super_admin role.'
+          'No record was updated. This is usually an RLS policy issue — make sure the attendance_logs table has an UPDATE policy for the admin/super_admin role.'
         );
       }
 
@@ -246,14 +272,15 @@ export default function SuperAdminDashboard() {
 
       setMessage({
         type: 'success',
-        text: `Matagumpay na nairehistro si ${fullName}!`,
+        text: `Account created successfully for ${fullName}!`,
       });
 
       resetForm();
       await fetchEmployees();
     } catch (err: any) {
       console.error(err);
-      setMessage({ type: 'error', text: err?.message ?? 'Something went wrong' });
+      const friendly = getFriendlyErrorMessage(err?.message ?? 'Something went wrong');
+      setMessage({ type: 'error', text: friendly });
     } finally {
       setLoading(false);
     }
@@ -286,6 +313,76 @@ export default function SuperAdminDashboard() {
       setResetLoading(false);
     }
   };
+
+  // Real-time warning: flags if the Employee ID being typed already
+  // belongs to another account, so the admin sees it BEFORE submitting
+  // instead of only after a failed save. Excludes the profile currently
+  // being edited (so editing someone's own record doesn't false-flag).
+  const employeeIdConflict = useMemo(() => {
+    const trimmed = employeeId.trim().toLowerCase();
+    if (!trimmed) return null;
+    const match = employees.find(
+      (emp) =>
+        emp.employee_id?.trim().toLowerCase() === trimmed && emp.id !== editingId
+    );
+    return match ? match.full_name : null;
+  }, [employeeId, employees, editingId]);
+
+  // Same idea for Full Name -- not a hard DB constraint, but duplicate
+  // names are a common source of mix-ups, so we warn (non-blocking).
+  const fullNameConflict = useMemo(() => {
+    const trimmed = fullName.trim().toLowerCase();
+    if (!trimmed) return null;
+    const match = employees.find(
+      (emp) =>
+        emp.full_name?.trim().toLowerCase() === trimmed && emp.id !== editingId
+    );
+    return match ? true : false;
+  }, [fullName, employees, editingId]);
+
+  // Email can't be checked client-side (emails live in auth.users, not
+  // the profiles table the browser can read), so we debounce a call to
+  // our own /api/check-email route as the admin types.
+  const [emailConflict, setEmailConflict] = useState(false);
+  const [emailChecking, setEmailChecking] = useState(false);
+
+  useEffect(() => {
+    // Only relevant when creating a new account, not editing an existing
+    // one (edit mode doesn't show/change the email field at all).
+    if (editingId || !email.trim()) {
+      setEmailConflict(false);
+      return;
+    }
+
+    const basicEmailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!basicEmailPattern.test(email.trim())) {
+      setEmailConflict(false);
+      return;
+    }
+
+    setEmailChecking(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch('/api/check-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: email.trim() }),
+        });
+        const result = await res.json();
+        setEmailConflict(!!result.exists);
+      } catch (err) {
+        console.error('Error checking email availability:', err);
+        // Fail open -- don't block the form just because the check
+        // itself failed; the server-side create step will still catch
+        // a real duplicate.
+        setEmailConflict(false);
+      } finally {
+        setEmailChecking(false);
+      }
+    }, 500); // debounce so we're not firing a request on every keystroke
+
+    return () => clearTimeout(timer);
+  }, [email, editingId]);
 
   const roleTagClass = (r: string) => (r === 'admin' ? 'tag-admin' : 'tag-employee');
 
@@ -376,22 +473,36 @@ export default function SuperAdminDashboard() {
             </h3>
 
             <form onSubmit={handleSave} className="space-y-4">
-              <input
-                type="text"
-                placeholder="Full Name"
-                required
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                className="input-field"
-              />
+              <div>
+                <input
+                  type="text"
+                  placeholder="Full Name"
+                  required
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  className="input-field"
+                />
+                {fullNameConflict && (
+                  <p className="text-orange-600 text-xs font-medium mt-1.5 ml-1">
+                    ⚠️ Another account already uses this name. Make sure you're not accidentally editing the wrong employee.
+                  </p>
+                )}
+              </div>
 
-              <input
-                type="text"
-                placeholder="Employee ID"
-                value={employeeId}
-                onChange={(e) => setEmployeeId(e.target.value)}
-                className="input-field"
-              />
+              <div>
+                <input
+                  type="text"
+                  placeholder="Employee ID"
+                  value={employeeId}
+                  onChange={(e) => setEmployeeId(e.target.value)}
+                  className="input-field"
+                />
+                {employeeIdConflict && (
+                  <p className="text-red-600 text-xs font-medium mt-1.5 ml-1">
+                    ⚠️ This Employee ID is already used by {employeeIdConflict}. Please use a different one.
+                  </p>
+                )}
+              </div>
 
               <input
                 type="text"
@@ -403,14 +514,26 @@ export default function SuperAdminDashboard() {
 
               {!editingId && (
                 <>
-                  <input
-                    type="email"
-                    placeholder="Email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="input-field"
-                  />
+                  <div>
+                    <input
+                      type="email"
+                      placeholder="Email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="input-field"
+                    />
+                    {emailChecking && (
+                      <p className="text-slate-400 text-xs font-medium mt-1.5 ml-1">
+                        Checking email availability...
+                      </p>
+                    )}
+                    {!emailChecking && emailConflict && (
+                      <p className="text-red-600 text-xs font-medium mt-1.5 ml-1">
+                        ⚠️ An account with this email already exists.
+                      </p>
+                    )}
+                  </div>
                   <input
                     type="password"
                     placeholder="Password"
@@ -453,9 +576,13 @@ export default function SuperAdminDashboard() {
                 </button>
               )}
 
-              <button disabled={loading} className="btn-primary">
+              <button disabled={loading || !!employeeIdConflict || emailConflict} className="btn-primary">
                 {loading
                   ? 'Processing...'
+                  : employeeIdConflict
+                  ? 'Fix Employee ID Conflict First'
+                  : emailConflict
+                  ? 'Fix Email Conflict First'
                   : editingId
                   ? 'Save Changes'
                   : 'Create Account'}
@@ -555,7 +682,7 @@ export default function SuperAdminDashboard() {
                 )}
               </h3>
               <p className="text-sm text-slate-400 mt-1">
-                I-edit ang time in ng employee para sa dispute o nakalimutang time in.
+                Edit an employee's time in for disputes or forgotten time-ins.
               </p>
             </div>
             <div className="flex flex-wrap gap-2 items-center w-full md:w-auto">
@@ -654,7 +781,7 @@ export default function SuperAdminDashboard() {
                 {!attendanceLoading && filteredAttendanceLogs.length === 0 && (
                   <tr>
                     <td colSpan={5} className="py-8 text-center text-slate-400 text-sm">
-                      Walang attendance records na nahanap.
+                      No attendance records found.
                     </td>
                   </tr>
                 )}

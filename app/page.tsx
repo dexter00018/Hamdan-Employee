@@ -32,7 +32,7 @@ export default function LoginPage() {
       }
 
       if (!authData?.user) {
-        throw new Error('Walang natanggap na user data mula sa server.');
+        throw new Error('No user data was received from the server.');
       }
 
       const { data: profile, error: profileError } = await supabase
@@ -44,7 +44,7 @@ export default function LoginPage() {
       if (profileError) {
         console.error('Profile fetch error:', profileError);
         throw new Error(
-          'Naka-login ka, pero hindi mahanap ang profile mo: ' + profileError.message
+          "You're logged in, but we couldn't find your profile: " + profileError.message
         );
       }
 
@@ -59,12 +59,12 @@ export default function LoginPage() {
       } else if (profile?.role === 'employee') {
         router.push('/employee');
       } else {
-        throw new Error(`Hindi kilalang role: "${profile?.role}". Kontakin ang Super Admin.`);
+        throw new Error(`Unrecognized role: "${profile?.role}". Please contact the Super Admin.`);
       }
 
       router.refresh();
     } catch (err: any) {
-      setError(err?.message || 'Maling email o password.');
+      setError(err?.message || 'Incorrect email or password.');
     } finally {
       setLoading(false);
     }

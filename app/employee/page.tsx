@@ -110,7 +110,7 @@ export default function EmployeeDashboard() {
       );
     } catch (err: any) {
       console.error('Error fetching announcement:', err);
-      setAnnouncementError('Hindi ma-fetch ang announcement ngayon.');
+      setAnnouncementError('Failed to load the announcement right now.');
     } finally {
       setAnnouncementLoading(false);
     }
@@ -165,7 +165,7 @@ export default function EmployeeDashboard() {
       if (error) throw error;
       setMessage(
         status === 'Late'
-          ? 'Na-record ang time in mo, pero medyo late ka na ngayon.'
+          ? 'Time in recorded, but you are marked as late today.'
           : 'Success! Attendance recorded.'
       );
       setIsAlreadyTimedIn(true);
@@ -379,7 +379,7 @@ export default function EmployeeDashboard() {
               </div>
             ) : (
               <div className="card-style border-2 border-dashed border-slate-200 text-center">
-                <p className="text-slate-400 text-sm">Walang bagong announcement sa ngayon.</p>
+                <p className="text-slate-400 text-sm">No new announcements right now.</p>
               </div>
             )}
 

@@ -138,7 +138,7 @@ export default function HRDashboard() {
         setAnnouncementId(data.id);
       }
 
-      setAnnouncementMsg({ type: 'success', text: 'Na-publish ang announcement.' });
+      setAnnouncementMsg({ type: 'success', text: 'Announcement published successfully.' });
       await fetchAnnouncement();
     } catch (err: any) {
       console.error('Error publishing announcement:', err);
@@ -178,6 +178,33 @@ export default function HRDashboard() {
     setEditOpen(true);
   };
 
+  // Translates raw Postgres error text into a friendly, specific
+  // message, instead of showing the raw "duplicate key value violates
+  // unique constraint ..." text.
+  const getFriendlyErrorMessage = (rawMessage: string): string => {
+    const msg = rawMessage.toLowerCase();
+    if (msg.includes('profiles_employee_id_key') || (msg.includes('employee_id') && msg.includes('duplicate'))) {
+      return 'This Employee ID is already used by another account. Please use a different one.';
+    }
+    if (msg.includes('duplicate key value violates unique constraint')) {
+      return 'Another account is already using the same information. Please check and try again.';
+    }
+    return rawMessage;
+  };
+
+  // Real-time warning: flags if the Employee ID being typed in the edit
+  // modal already belongs to a DIFFERENT employee, so HR sees it before
+  // saving instead of only after a failed update.
+  const editingEmployeeIdConflict = useMemo(() => {
+    const trimmed = editing.employee_id.trim().toLowerCase();
+    if (!trimmed) return null;
+    const match = profiles.find(
+      (p) =>
+        p.employee_id?.trim().toLowerCase() === trimmed && p.id !== editing.id
+    );
+    return match ? match.full_name : null;
+  }, [editing.employee_id, editing.id, profiles]);
+
   const saveEdit = async () => {
     if (!editing.id) return;
     setSaveLoading(true);
@@ -196,7 +223,7 @@ export default function HRDashboard() {
       setEditOpen(false);
     } else {
       console.error('Error saving profile:', error);
-      setErrorMsg(error.message);
+      setErrorMsg(getFriendlyErrorMessage(error.message));
     }
     setSaveLoading(false);
   };
@@ -294,7 +321,7 @@ export default function HRDashboard() {
             <>
               <textarea
                 className="input-field w-full min-h-[100px] resize-y"
-                placeholder="I-type ang announcement na makikita ng lahat ng employees..."
+                placeholder="Type the announcement that all employees will see..."
                 value={announcementContent}
                 onChange={(e) => setAnnouncementContent(e.target.value)}
               />
@@ -433,12 +460,19 @@ export default function HRDashboard() {
           <div className="w-full max-w-sm card-style shadow-2xl">
             <h3 className="mb-6">Edit Profile</h3>
             <input className="input-field mb-3" value={editing.full_name} onChange={e => setEditing({...editing, full_name: e.target.value})} placeholder="Full Name" />
-            <input className="input-field mb-3" value={editing.employee_id} onChange={e => setEditing({...editing, employee_id: e.target.value})} placeholder="Employee ID" />
+            <div className="mb-3">
+              <input className="input-field" value={editing.employee_id} onChange={e => setEditing({...editing, employee_id: e.target.value})} placeholder="Employee ID" />
+              {editingEmployeeIdConflict && (
+                <p className="text-red-600 text-xs font-medium mt-1.5 ml-1">
+                  ⚠️ This Employee ID is already used by {editingEmployeeIdConflict}. Please use a different one.
+                </p>
+              )}
+            </div>
             <input className="input-field mb-6" value={editing.designation} onChange={e => setEditing({...editing, designation: e.target.value})} placeholder="Designation" />
             <div className="flex gap-3">
               <button className="flex-1 p-3 bg-slate-100 rounded-full font-medium text-sm" onClick={() => setEditOpen(false)}>Cancel</button>
-              <button className="flex-1 btn-primary" onClick={saveEdit} disabled={saveLoading}>
-                {saveLoading ? 'Saving...' : 'Save'}
+              <button className="flex-1 btn-primary" onClick={saveEdit} disabled={saveLoading || !!editingEmployeeIdConflict}>
+                {saveLoading ? 'Saving...' : editingEmployeeIdConflict ? 'Fix Conflict First' : 'Save'}
               </button>
             </div>
           </div>
