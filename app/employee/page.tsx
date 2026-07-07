@@ -27,6 +27,28 @@ export default function EmployeeDashboard() {
   const [announcementError, setAnnouncementError] = useState<string | null>(null);
   const [announcementUpdatedAt, setAnnouncementUpdatedAt] = useState<string | null>(null);
 
+  // Office network check -- Time In is only enabled when the request is
+  // coming from the office's known public IP. See
+  // app/api/check-office-network/route.ts for how this is determined.
+  const [officeNetworkAllowed, setOfficeNetworkAllowed] = useState<boolean | null>(null);
+  const [checkingNetwork, setCheckingNetwork] = useState(true);
+
+  const checkOfficeNetwork = async () => {
+    setCheckingNetwork(true);
+    try {
+      const res = await fetch('/api/check-office-network');
+      const result = await res.json();
+      setOfficeNetworkAllowed(!!result.allowed);
+    } catch (err) {
+      console.error('Error checking office network:', err);
+      // Fail closed here -- if we can't verify, don't let them time in
+      // and instead show the "not connected" state with a retry option.
+      setOfficeNetworkAllowed(false);
+    } finally {
+      setCheckingNetwork(false);
+    }
+  };
+
   useEffect(() => {
     const timer = setInterval(() => {
       const now = new Date();
@@ -36,6 +58,7 @@ export default function EmployeeDashboard() {
 
     initializeDashboard();
     fetchAnnouncement();
+    checkOfficeNetwork();
     return () => clearInterval(timer);
   }, []);
 
@@ -117,55 +140,24 @@ export default function EmployeeDashboard() {
     }
   };
 
-  // Determine Present vs Late based on Philippine time, regardless of
-  // what timezone the employee's device/browser is set to.
-  const getStatusForNow = () => {
-    const now = new Date();
-    const fmt = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Asia/Manila',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    });
-    const parts = fmt.formatToParts(now).reduce((acc: any, p) => {
-      acc[p.type] = p.value;
-      return acc;
-    }, {});
-    const hour = parseInt(parts.hour, 10);
-    const minute = parseInt(parts.minute, 10);
-
-    const isLate =
-      hour > LATE_CUTOFF_HOUR ||
-      (hour === LATE_CUTOFF_HOUR && minute > LATE_CUTOFF_MINUTE);
-
-    return isLate ? 'Late' : 'Present';
-  };
-
   const handleTimeIn = async () => {
     setLoading(true);
     setMessage('');
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("You are not logged in!");
+      // Time-in now goes through our own API route instead of a direct
+      // client-side insert. This lets us enforce the office-network
+      // check and compute the server-side timestamp/status in one place
+      // that can't be bypassed by editing client JS -- the button being
+      // disabled below is just a courtesy; this is the real gate.
+      const res = await fetch('/api/time-in', { method: 'POST' });
+      const result = await res.json();
 
-      const today = new Date().toISOString().split('T')[0];
-      const status = getStatusForNow();
+      if (!res.ok) {
+        throw new Error(result.error || 'Failed to record time-in.');
+      }
 
-      // Note: time_in is intentionally omitted here. The attendance_logs
-      // table now defaults time_in to now() at the database level (see
-      // attendance_setup.sql), so a spoofed device clock can no longer
-      // affect the recorded time. `status` is still computed client-side
-      // for instant UI feedback; if you want it fully tamper-proof too,
-      // move that computation into a DB trigger/generated column.
-      const { error } = await supabase.from('attendance_logs').insert([{
-        user_id: user.id,
-        log_date: today,
-        status,
-      }]);
-
-      if (error) throw error;
       setMessage(
-        status === 'Late'
+        result.status === 'Late'
           ? 'Time in recorded, but you are marked as late today.'
           : 'Success! Attendance recorded.'
       );
@@ -311,7 +303,7 @@ export default function EmployeeDashboard() {
 
             <button
               onClick={handleTimeIn}
-              disabled={loading || isAlreadyTimedIn || initLoading}
+              disabled={loading || isAlreadyTimedIn || initLoading || checkingNetwork || officeNetworkAllowed === false}
               className="btn-primary"
             >
               {loading ? (
@@ -319,8 +311,29 @@ export default function EmployeeDashboard() {
                   <Spinner size="sm" />
                   Processing...
                 </span>
-              ) : isAlreadyTimedIn ? 'Already Timed In' : 'Time In'}
+              ) : checkingNetwork ? (
+                <span className="flex items-center justify-center gap-2">
+                  <Spinner size="sm" />
+                  Checking network...
+                </span>
+              ) : isAlreadyTimedIn ? 'Already Timed In'
+                : officeNetworkAllowed === false ? 'Not on Office Network'
+                : 'Time In'}
             </button>
+
+            {!checkingNetwork && officeNetworkAllowed === false && !isAlreadyTimedIn && (
+              <div className="flex items-center justify-between gap-3 -mt-4 px-1">
+                <p className="text-orange-600 text-xs font-medium">
+                  ⚠️ You must be connected to the office network to time in.
+                </p>
+                <button
+                  onClick={checkOfficeNetwork}
+                  className="text-blue-600 text-xs font-bold whitespace-nowrap hover:underline"
+                >
+                  Check again
+                </button>
+              </div>
+            )}
 
             {/* Attendance Rate Ring */}
             <div className="card-style flex flex-col items-center justify-center py-8">
