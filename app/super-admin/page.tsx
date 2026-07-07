@@ -3,9 +3,11 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import Image from 'next/image';
+import Spinner, { LoadingRow } from '@/components/Spinner';
 
 export default function SuperAdminDashboard() {
   const [employees, setEmployees] = useState<any[]>([]);
+  const [employeesLoading, setEmployeesLoading] = useState(true);
 
   // Create account fields
   const [email, setEmail] = useState('');
@@ -75,6 +77,7 @@ export default function SuperAdminDashboard() {
   }, []);
 
   const fetchEmployees = async () => {
+    setEmployeesLoading(true);
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
@@ -83,10 +86,12 @@ export default function SuperAdminDashboard() {
     if (error) {
       console.error('Error fetching profiles:', error);
       setMessage({ type: 'error', text: error.message });
+      setEmployeesLoading(false);
       return;
     }
 
     setEmployees(data || []);
+    setEmployeesLoading(false);
   };
 
   const fetchAttendanceLogs = async () => {
@@ -577,9 +582,12 @@ export default function SuperAdminDashboard() {
               )}
 
               <button disabled={loading || !!employeeIdConflict || emailConflict} className="btn-primary">
-                {loading
-                  ? 'Processing...'
-                  : employeeIdConflict
+                {loading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <Spinner size="sm" />
+                    Processing...
+                  </span>
+                ) : employeeIdConflict
                   ? 'Fix Employee ID Conflict First'
                   : emailConflict
                   ? 'Fix Email Conflict First'
@@ -610,7 +618,12 @@ export default function SuperAdminDashboard() {
                 disabled={resetLoading}
                 className="btn-primary"
               >
-                {resetLoading ? 'Sending...' : 'Send Reset Email'}
+                {resetLoading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <Spinner size="sm" />
+                    Sending...
+                  </span>
+                ) : 'Send Reset Email'}
               </button>
             </form>
           </section>
@@ -631,6 +644,13 @@ export default function SuperAdminDashboard() {
                 </thead>
 
                 <tbody className="divide-y divide-slate-100">
+                  {employeesLoading && employees.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="py-8">
+                        <LoadingRow label="Loading accounts..." />
+                      </td>
+                    </tr>
+                  )}
                   {employees.map((emp) => (
                     <tr
                       key={emp.id}
@@ -661,6 +681,13 @@ export default function SuperAdminDashboard() {
                       </td>
                     </tr>
                   ))}
+                  {!employeesLoading && employees.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="py-8 text-center text-slate-400 text-sm">
+                        No accounts found.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -732,8 +759,8 @@ export default function SuperAdminDashboard() {
               <tbody className="divide-y divide-slate-100">
                 {attendanceLoading && (
                   <tr>
-                    <td colSpan={5} className="py-8 text-center text-slate-400 text-sm">
-                      Loading...
+                    <td colSpan={5} className="py-8">
+                      <LoadingRow label="Loading attendance records..." />
                     </td>
                   </tr>
                 )}
@@ -835,7 +862,12 @@ export default function SuperAdminDashboard() {
                 onClick={saveEditLog}
                 disabled={logSaving || !editingLog.timeInLocal}
               >
-                {logSaving ? 'Saving...' : 'Save'}
+                {logSaving ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <Spinner size="sm" />
+                    Saving...
+                  </span>
+                ) : 'Save'}
               </button>
             </div>
           </div>

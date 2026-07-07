@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import Image from 'next/image';
+import Spinner from '@/components/Spinner';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -138,7 +139,12 @@ export default function LoginPage() {
             disabled={loading}
             className="btn-primary"
           >
-            {loading ? 'Authenticating...' : 'Sign In'}
+            {loading ? (
+              <span className="flex items-center justify-center gap-2">
+                <Spinner size="sm" />
+                Authenticating...
+              </span>
+            ) : 'Sign In'}
           </button>
         </form>
       </div>

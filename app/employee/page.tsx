@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import Image from 'next/image';
+import Spinner, { LoadingRow, LoadingSection } from '@/components/Spinner';
 
 const LATE_CUTOFF_HOUR = 9;
 const LATE_CUTOFF_MINUTE = 15;
@@ -279,7 +280,16 @@ export default function EmployeeDashboard() {
                   <div className="text-slate-400 font-bold">Logo</div>
                 )}
               </div>
-              <h2 className="text-xl font-semibold text-slate-900">{initLoading ? 'Loading...' : (profile?.full_name || 'Unknown')}</h2>
+              <h2 className="text-xl font-semibold text-slate-900 flex items-center justify-center gap-2 min-h-[28px]">
+                {initLoading ? (
+                  <>
+                    <Spinner size="sm" className="text-blue-600" />
+                    <span className="text-slate-400 text-base font-medium">Loading...</span>
+                  </>
+                ) : (
+                  profile?.full_name || 'Unknown'
+                )}
+              </h2>
               <p className="text-blue-600 font-medium text-sm mb-6">{profile?.designation || '---'}</p>
 
               <div className="text-left border-t border-slate-100 pt-6">
@@ -304,7 +314,12 @@ export default function EmployeeDashboard() {
               disabled={loading || isAlreadyTimedIn || initLoading}
               className="btn-primary"
             >
-              {loading ? 'Processing...' : isAlreadyTimedIn ? 'Already Timed In' : 'Time In'}
+              {loading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <Spinner size="sm" />
+                  Processing...
+                </span>
+              ) : isAlreadyTimedIn ? 'Already Timed In' : 'Time In'}
             </button>
 
             {/* Attendance Rate Ring */}
@@ -350,7 +365,7 @@ export default function EmployeeDashboard() {
             {/* Announcements */}
             {announcementLoading ? (
               <div className="card-style">
-                <p className="text-slate-400 text-sm">Loading announcement...</p>
+                <LoadingRow label="Loading announcement..." />
               </div>
             ) : announcementError ? (
               <div className="card-style border border-red-100">
@@ -408,9 +423,7 @@ export default function EmployeeDashboard() {
                 </div>
               </div>
               <div className="space-y-3">
-                {initLoading && (
-                  <p className="text-slate-400 text-sm">Loading...</p>
-                )}
+                {initLoading && <LoadingRow label="Loading attendance history..." />}
                 {!initLoading && filteredHistory.length === 0 && (
                   <p className="text-slate-400 text-sm">No attendance records{monthFilter ? ' for this month' : ''}.</p>
                 )}

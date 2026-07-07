@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import Spinner, { LoadingRow } from '@/components/Spinner';
 
 type AttendanceLog = {
   id: string;
@@ -316,7 +317,7 @@ export default function HRDashboard() {
           )}
 
           {announcementLoading ? (
-            <p className="text-slate-400 text-sm">Loading...</p>
+            <LoadingRow label="Loading current announcement..." />
           ) : (
             <>
               <textarea
@@ -330,7 +331,12 @@ export default function HRDashboard() {
                 disabled={announcementSaving || !announcementContent.trim()}
                 className="btn-primary mt-4 disabled:opacity-50"
               >
-                {announcementSaving ? 'Publishing...' : announcementId ? 'Update Announcement' : 'Publish Announcement'}
+                {announcementSaving ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <Spinner size="sm" />
+                    Publishing...
+                  </span>
+                ) : announcementId ? 'Update Announcement' : 'Publish Announcement'}
               </button>
             </>
           )}
@@ -341,9 +347,7 @@ export default function HRDashboard() {
           <section className="card-style">
             <h3 className="mb-6">Employees</h3>
             <div className="space-y-3">
-              {loadingData && profiles.length === 0 && (
-                <p className="text-slate-400 text-sm">Loading...</p>
-              )}
+              {loadingData && profiles.length === 0 && <LoadingRow label="Loading employees..." />}
               {!loadingData && profiles.length === 0 && (
                 <p className="text-slate-400 text-sm">No employees found.</p>
               )}
@@ -414,6 +418,13 @@ export default function HRDashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
+                {loadingData && attendance.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-8 py-8">
+                      <LoadingRow label="Loading attendance history..." />
+                    </td>
+                  </tr>
+                )}
                 {filteredAttendance.map((log) => (
                   <tr key={log.id} className="hover:bg-slate-50 transition">
                     <td className="px-8 py-4 font-medium text-slate-900">{log.profiles?.full_name}</td>
@@ -472,7 +483,12 @@ export default function HRDashboard() {
             <div className="flex gap-3">
               <button className="flex-1 p-3 bg-slate-100 rounded-full font-medium text-sm" onClick={() => setEditOpen(false)}>Cancel</button>
               <button className="flex-1 btn-primary" onClick={saveEdit} disabled={saveLoading || !!editingEmployeeIdConflict}>
-                {saveLoading ? 'Saving...' : editingEmployeeIdConflict ? 'Fix Conflict First' : 'Save'}
+                {saveLoading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <Spinner size="sm" />
+                    Saving...
+                  </span>
+                ) : editingEmployeeIdConflict ? 'Fix Conflict First' : 'Save'}
               </button>
             </div>
           </div>
