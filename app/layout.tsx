@@ -25,6 +25,11 @@ const oswald = Oswald({
 export const metadata: Metadata = {
   title: "Hamdan Engineering",
   description: "Employee attendance and account management portal",
+  icons: {
+    icon: "/images/h.png",
+    shortcut: "/images/h.png",
+    apple: "/images/h.png",
+  },
 };
 
 export default function RootLayout({

@@ -77,7 +77,7 @@ export default function LoginPage() {
       {/* BACKGROUND IMAGE */}
       <div className="fixed inset-0 z-0">
         <Image
-          src="/images/hamdan-logo.png"
+          src="/images/hamdan.png" 
           alt="Background"
           fill
           className="object-cover opacity-[0.05] blur-sm"
