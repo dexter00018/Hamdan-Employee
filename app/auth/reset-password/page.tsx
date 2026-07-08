@@ -16,44 +16,79 @@ export default function ResetPasswordPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    const hash = window.location.hash?.startsWith('#')
-      ? window.location.hash.slice(1)
-      : window.location.hash;
+    const initSession = async () => {
+      const url = new URL(window.location.href);
 
-    if (!hash) {
-      setErrorMsg('Missing reset token in URL.');
-      return;
-    }
+      // Supabase appends these if the link itself is invalid/expired --
+      // check this first so we can show a clear, specific message
+      // instead of a generic "invalid token" one.
+      const urlError = url.searchParams.get('error') || url.searchParams.get('error_code');
+      const urlErrorDescription = url.searchParams.get('error_description');
+      if (urlError) {
+        setErrorMsg(
+          urlErrorDescription
+            ? decodeURIComponent(urlErrorDescription.replace(/\+/g, ' '))
+            : 'This reset link is invalid or has expired. Please request a new one.'
+        );
+        return;
+      }
 
-    const params = new URLSearchParams(hash);
-    const access_token = params.get('access_token');
-    const refresh_token = params.get('refresh_token');
-    const expires_in = params.get('expires_in');
-    const type = params.get('type');
-
-    if (!access_token || !refresh_token || !expires_in || !type) {
-      setErrorMsg('Invalid reset token data.');
-      return;
-    }
-
-    if (type !== 'recovery') {
-      setErrorMsg('This token is not for password recovery.');
-      return;
-    }
-
-    supabase.auth
-      .setSession({
-        access_token,
-        refresh_token,
-      })
-      .then(({ error }) => {
-        if (error) throw error;
+      // --- Path 1: PKCE flow -- newer Supabase projects send a `?code=`
+      // query param instead of a hash fragment. ---
+      const code = url.searchParams.get('code');
+      if (code) {
+        const { error } = await supabase.auth.exchangeCodeForSession(code);
+        if (error) {
+          setErrorMsg(error.message || 'Failed to initialize reset session.');
+          return;
+        }
         window.history.replaceState(null, '', window.location.pathname);
         setReady(true);
-      })
-      .catch((e: any) => {
-        setErrorMsg(e?.message ?? 'Failed to initialize reset session.');
+        return;
+      }
+
+      // --- Path 2: Implicit flow (older Supabase default) -- token
+      // arrives as a URL hash fragment instead. ---
+      const hash = window.location.hash?.startsWith('#')
+        ? window.location.hash.slice(1)
+        : window.location.hash;
+
+      if (!hash) {
+        setErrorMsg('Missing reset token in URL. Please use the link from your email again, or request a new one.');
+        return;
+      }
+
+      const params = new URLSearchParams(hash);
+      const access_token = params.get('access_token');
+      const refresh_token = params.get('refresh_token');
+      const expires_in = params.get('expires_in');
+      const type = params.get('type');
+
+      if (!access_token || !refresh_token || !expires_in || !type) {
+        setErrorMsg('Invalid reset token data. Please request a new password reset email.');
+        return;
+      }
+
+      if (type !== 'recovery') {
+        setErrorMsg('This token is not for password recovery.');
+        return;
+      }
+
+      const { error } = await supabase.auth.setSession({
+        access_token,
+        refresh_token,
       });
+
+      if (error) {
+        setErrorMsg(error.message || 'Failed to initialize reset session.');
+        return;
+      }
+
+      window.history.replaceState(null, '', window.location.pathname);
+      setReady(true);
+    };
+
+    initSession();
   }, []);
 
   const onSubmit = async (e: React.FormEvent) => {
@@ -89,9 +124,9 @@ export default function ResetPasswordPage() {
           </div>
         )}
 
-        {!ready ? (
+        {!ready && !errorMsg ? (
           <div className="text-sm text-gray-600">Loading reset session…</div>
-        ) : (
+        ) : ready ? (
           <form onSubmit={onSubmit} className="space-y-3">
             <label className="block text-sm font-semibold">New Password</label>
             <input
@@ -110,7 +145,7 @@ export default function ResetPasswordPage() {
               {loading ? 'Updating…' : 'Update Password'}
             </button>
           </form>
-        )}
+        ) : null}
       </section>
     </main>
   );
