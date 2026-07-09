@@ -5,6 +5,24 @@ import { supabase } from '@/lib/supabase';
 import Image from 'next/image';
 import Spinner, { LoadingRow, LoadingSection } from '@/components/Spinner';
 
+function EyeIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function EyeOffIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a21.8 21.8 0 0 1 5.06-6.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a21.8 21.8 0 0 1-3.16 4.66M14.12 14.12a3 3 0 1 1-4.24-4.24" />
+      <line x1="1" y1="1" x2="23" y2="23" />
+    </svg>
+  );
+}
+
 const LATE_CUTOFF_HOUR = 9;
 const LATE_CUTOFF_MINUTE = 15;
 
@@ -18,6 +36,16 @@ export default function EmployeeDashboard() {
   const [profile, setProfile] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
   const [initLoading, setInitLoading] = useState(true);
+
+  // Government ID numbers (SSS/PhilHealth/Pag-IBIG) -- fetched from a
+  // separate, more strictly-secured table. See add_government_ids.sql.
+  const [governmentIds, setGovernmentIds] = useState<{ sss_number: string | null; philhealth_number: string | null; pagibig_number: string | null } | null>(null);
+  const [showGovIdsSection, setShowGovIdsSection] = useState(false);
+  const [visibleFields, setVisibleFields] = useState<{ sss: boolean; philhealth: boolean; pagibig: boolean }>({
+    sss: false,
+    philhealth: false,
+    pagibig: false,
+  });
 
   // History filter (month picker, e.g. "2026-07")
   const [monthFilter, setMonthFilter] = useState('');
@@ -88,6 +116,20 @@ export default function EmployeeDashboard() {
     }
 
     setProfile(profileData);
+
+    // Government IDs live in a separate table with its own RLS -- if
+    // no row exists yet (admin hasn't entered these for the employee),
+    // this just comes back null and the section shows "Not set".
+    const { data: govIdData, error: govIdError } = await supabase
+      .from('employee_government_ids')
+      .select('sss_number, philhealth_number, pagibig_number')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (govIdError) {
+      console.error('Error fetching government IDs:', govIdError);
+    }
+    setGovernmentIds(govIdData ?? null);
 
     const { data: historyData, error: historyError } = await supabase
       .from('attendance_logs')
@@ -189,6 +231,28 @@ export default function EmployeeDashboard() {
   };
 
   const statusTagClass = (s: string | null) => (s === 'Late' ? 'tag-late' : 'tag-present');
+
+  // Renders one masked/unmaskable government ID row, e.g. SSS Number.
+  const renderGovIdRow = (label: string, value: string | null, fieldKey: 'sss' | 'philhealth' | 'pagibig') => (
+    <div>
+      <p className="label-branded mb-1">{label}</p>
+      <div className="flex items-center justify-between gap-2">
+        <p className="font-medium text-slate-700 tabular-nums">
+          {value ? (visibleFields[fieldKey] ? value : '•'.repeat(Math.max(value.length, 6))) : 'Not set'}
+        </p>
+        {value && (
+          <button
+            type="button"
+            onClick={() => setVisibleFields((v) => ({ ...v, [fieldKey]: !v[fieldKey] }))}
+            className="text-slate-400 hover:text-slate-600 flex-shrink-0 transition"
+            aria-label={visibleFields[fieldKey] ? `Hide ${label}` : `Show ${label}`}
+          >
+            {visibleFields[fieldKey] ? <EyeOffIcon /> : <EyeIcon />}
+          </button>
+        )}
+      </div>
+    </div>
+  );
 
   // --- Summary card calculations ---
   // log_date is a plain "YYYY-MM-DD" string, so we parse it manually
@@ -306,6 +370,22 @@ export default function EmployeeDashboard() {
                 <p className="label-branded">Employee ID</p>
                 <p className="font-medium text-slate-700">{profile?.employee_id || '---'}</p>
               </div>
+
+              <button
+                type="button"
+                onClick={() => setShowGovIdsSection((s) => !s)}
+                className="mt-4 text-blue-600 text-xs font-bold hover:underline"
+              >
+                {showGovIdsSection ? 'Hide Details' : 'See More Details'}
+              </button>
+
+              {showGovIdsSection && (
+                <div className="mt-4 pt-4 border-t border-slate-100 text-left space-y-4">
+                  {renderGovIdRow('SSS Number', governmentIds?.sss_number ?? null, 'sss')}
+                  {renderGovIdRow('PhilHealth Number', governmentIds?.philhealth_number ?? null, 'philhealth')}
+                  {renderGovIdRow('Pag-IBIG Number', governmentIds?.pagibig_number ?? null, 'pagibig')}
+                </div>
+              )}
             </div>
           </div>
 

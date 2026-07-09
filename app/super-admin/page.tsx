@@ -33,6 +33,9 @@ export default function SuperAdminDashboard() {
   // Attendance records (for dispute/late corrections)
   const [attendanceLogs, setAttendanceLogs] = useState<any[]>([]);
 
+  // Translates raw Postgres/Auth error text into a friendly, specific
+  // message the user can actually act on, instead of showing the raw
+  // "duplicate key value violates unique constraint ..." text.
   const getFriendlyErrorMessage = (rawMessage: string): string => {
     const msg = rawMessage.toLowerCase();
 
@@ -49,6 +52,8 @@ export default function SuperAdminDashboard() {
       return 'This email address is not a valid format.';
     }
     if (msg.includes('duplicate key value violates unique constraint')) {
+      // Generic fallback for any other unique constraint we haven't
+      // special-cased above -- still better than the raw SQL text.
       return 'Another account is already using the same information (e.g. Employee ID or Email). Please check and try again.';
     }
     return rawMessage;
@@ -61,8 +66,8 @@ export default function SuperAdminDashboard() {
   const [editingLog, setEditingLog] = useState<{
     id: string;
     employeeName: string;
-    timeInLocal: string;
-    timeOutLocal: string;
+    timeInLocal: string; // datetime-local value, in PH time
+    timeOutLocal: string; // datetime-local value, in PH time (can be empty)
     status: string;
   } | null>(null);
   const [logSaving, setLogSaving] = useState(false);
@@ -109,6 +114,11 @@ export default function SuperAdminDashboard() {
     setAttendanceLoading(false);
   };
 
+  // --- Manila timezone helpers ---
+  // The database always stores UTC. The Philippines has a fixed UTC+8
+  // offset (no daylight saving), so we can safely convert both ways
+  // without needing a full timezone library.
+
   const toManilaInputValue = (iso: string) => {
     const d = new Date(iso);
     const fmt = new Intl.DateTimeFormat('en-CA', {
@@ -128,6 +138,7 @@ export default function SuperAdminDashboard() {
   };
 
   const manilaInputValueToUTCISO = (value: string) => {
+    // value looks like "2026-07-03T08:09" (a PH wall-clock time)
     return new Date(`${value}:00+08:00`).toISOString();
   };
 
@@ -162,7 +173,9 @@ export default function SuperAdminDashboard() {
 
     try {
       const newTimeInISO = manilaInputValueToUTCISO(editingLog.timeInLocal);
+      // Keep log_date consistent with the corrected time_in (in PH time)
       const newLogDate = editingLog.timeInLocal.split('T')[0];
+      // time_out is optional -- only convert it if the admin filled it in.
       const newTimeOutISO = editingLog.timeOutLocal
         ? manilaInputValueToUTCISO(editingLog.timeOutLocal)
         : null;
@@ -224,6 +237,9 @@ export default function SuperAdminDashboard() {
 
     try {
       if (editingId) {
+        // Editing an existing profile stays a normal client-side update,
+        // since it doesn't touch auth and RLS should already restrict
+        // this to admins only.
         const { error } = await supabase
           .from('profiles')
           .update({
@@ -242,6 +258,11 @@ export default function SuperAdminDashboard() {
         return;
       }
 
+      // Create mode: call our secure server-side API route instead of
+      // supabase.auth.signUp(). signUp() would create the user AND log
+      // them in on this browser, silently kicking out the admin's own
+      // session. The API route uses the service_role key on the server
+      // to create the user without touching the admin's session at all.
       const res = await fetch('/api/create-employee', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -285,6 +306,10 @@ export default function SuperAdminDashboard() {
     try {
       const redirectTo = `${window.location.origin}/auth/reset-password`;
 
+      // Uses supabaseAuthActions (a plain, non-cookie-syncing client) so
+      // the generated recovery link is implicit-flow / hash-based, not
+      // tied to a PKCE verifier stored in THIS (the admin's) browser --
+      // see lib/supabase.ts for the full explanation.
       const { error } = await supabaseAuthActions.auth.resetPasswordForEmail(resetEmail, {
         redirectTo,
       });
@@ -305,6 +330,10 @@ export default function SuperAdminDashboard() {
     }
   };
 
+  // Real-time warning: flags if the Employee ID being typed already
+  // belongs to another account, so the admin sees it BEFORE submitting
+  // instead of only after a failed save. Excludes the profile currently
+  // being edited (so editing someone's own record doesn't false-flag).
   const employeeIdConflict = useMemo(() => {
     const trimmed = employeeId.trim().toLowerCase();
     if (!trimmed) return null;
@@ -315,6 +344,8 @@ export default function SuperAdminDashboard() {
     return match ? match.full_name : null;
   }, [employeeId, employees, editingId]);
 
+  // Same idea for Full Name -- not a hard DB constraint, but duplicate
+  // names are a common source of mix-ups, so we warn (non-blocking).
   const fullNameConflict = useMemo(() => {
     const trimmed = fullName.trim().toLowerCase();
     if (!trimmed) return null;
@@ -325,10 +356,15 @@ export default function SuperAdminDashboard() {
     return match ? true : false;
   }, [fullName, employees, editingId]);
 
+  // Email can't be checked client-side (emails live in auth.users, not
+  // the profiles table the browser can read), so we debounce a call to
+  // our own /api/check-email route as the admin types.
   const [emailConflict, setEmailConflict] = useState(false);
   const [emailChecking, setEmailChecking] = useState(false);
 
   useEffect(() => {
+    // Only relevant when creating a new account, not editing an existing
+    // one (edit mode doesn't show/change the email field at all).
     if (editingId || !email.trim()) {
       setEmailConflict(false);
       return;
@@ -352,11 +388,14 @@ export default function SuperAdminDashboard() {
         setEmailConflict(!!result.exists);
       } catch (err) {
         console.error('Error checking email availability:', err);
+        // Fail open -- don't block the form just because the check
+        // itself failed; the server-side create step will still catch
+        // a real duplicate.
         setEmailConflict(false);
       } finally {
         setEmailChecking(false);
       }
-    }, 500);
+    }, 500); // debounce so we're not firing a request on every keystroke
 
     return () => clearTimeout(timer);
   }, [email, editingId]);
@@ -394,6 +433,7 @@ export default function SuperAdminDashboard() {
       </div>
 
       <div className="relative z-10 max-w-6xl mx-auto space-y-6">
+        {/* BRANDING HEADER */}
         <header className="branding-box flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <h1>HAMDAN ENGINEERING</h1>
@@ -425,6 +465,7 @@ export default function SuperAdminDashboard() {
           </div>
         )}
 
+        {/* QUICK STATS */}
         <div className="grid grid-cols-3 gap-3 md:gap-4">
           <div className="card-dark flex flex-col items-center justify-center !p-4 md:!p-6 text-center">
             <p className="stat-number text-2xl md:text-3xl text-white">{totalAccounts}</p>
@@ -441,6 +482,7 @@ export default function SuperAdminDashboard() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* FORM CARD */}
           <section className="card-style h-fit">
             <h3 className="mb-6">
               {editingId ? 'Edit Account' : 'Create New Account'}
@@ -566,6 +608,7 @@ export default function SuperAdminDashboard() {
               </button>
             </form>
 
+            {/* RESET PASSWORD FORM */}
             <form
               onSubmit={handleResetPassword}
               className="space-y-3 pt-6 mt-6 border-t border-slate-100"
@@ -596,6 +639,7 @@ export default function SuperAdminDashboard() {
             </form>
           </section>
 
+          {/* TABLE SECTION */}
           <section className="lg:col-span-2 card-style">
             <h3 className="mb-6">User Accounts</h3>
 
@@ -661,6 +705,7 @@ export default function SuperAdminDashboard() {
           </section>
         </div>
 
+        {/* ATTENDANCE RECORDS SECTION (dispute / late corrections) */}
         <section className="card-style">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
             <div>
@@ -794,6 +839,7 @@ export default function SuperAdminDashboard() {
         </section>
       </div>
 
+      {/* EDIT ATTENDANCE MODAL */}
       {editingLog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
           <div className="w-full max-w-sm card-style shadow-2xl">

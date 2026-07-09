@@ -36,7 +36,7 @@ export default function HRDashboard() {
 
   // Modal States
   const [editOpen, setEditOpen] = useState(false);
-  const [editing, setEditing] = useState({ id: null as string | null, full_name: '', employee_id: '', designation: '' });
+  const [editing, setEditing] = useState({ id: null as string | null, full_name: '', employee_id: '', designation: '', sss_number: '', philhealth_number: '', pagibig_number: '' });
   const [saveLoading, setSaveLoading] = useState(false);
 
   // Announcement States
@@ -170,14 +170,34 @@ export default function HRDashboard() {
     });
   }, [attendance, searchTerm, selectedDate]);
 
-  const openEdit = (p: Profile) => {
+  const openEdit = async (p: Profile) => {
     setEditing({
       id: p.id,
       full_name: p.full_name || '',
       employee_id: p.employee_id || '',
       designation: p.designation || '',
+      sss_number: '',
+      philhealth_number: '',
+      pagibig_number: '',
     });
     setEditOpen(true);
+
+    // Government IDs live in a separate table -- fetch this employee's
+    // existing values (if any) so HR can see/update them.
+    const { data: govIdData } = await supabase
+      .from('employee_government_ids')
+      .select('sss_number, philhealth_number, pagibig_number')
+      .eq('user_id', p.id)
+      .maybeSingle();
+
+    if (govIdData) {
+      setEditing((prev) => ({
+        ...prev,
+        sss_number: govIdData.sss_number ?? '',
+        philhealth_number: govIdData.philhealth_number ?? '',
+        pagibig_number: govIdData.pagibig_number ?? '',
+      }));
+    }
   };
 
   // Translates raw Postgres error text into a friendly, specific
@@ -220,13 +240,38 @@ export default function HRDashboard() {
       })
       .eq('id', editing.id);
 
-    if (!error) {
-      await refreshAllData();
-      setEditOpen(false);
-    } else {
+    if (error) {
       console.error('Error saving profile:', error);
       setErrorMsg(getFriendlyErrorMessage(error.message));
+      setSaveLoading(false);
+      return;
     }
+
+    // Upsert government IDs into their own table -- only if HR actually
+    // filled in at least one of the three fields.
+    if (editing.sss_number.trim() || editing.philhealth_number.trim() || editing.pagibig_number.trim()) {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      const { error: govIdError } = await supabase
+        .from('employee_government_ids')
+        .upsert({
+          user_id: editing.id,
+          sss_number: editing.sss_number.trim() || null,
+          philhealth_number: editing.philhealth_number.trim() || null,
+          pagibig_number: editing.pagibig_number.trim() || null,
+          updated_at: new Date().toISOString(),
+          updated_by: currentUser?.id ?? null,
+        }, { onConflict: 'user_id' });
+
+      if (govIdError) {
+        console.error('Error saving government IDs:', govIdError);
+        setErrorMsg(getFriendlyErrorMessage(govIdError.message));
+        setSaveLoading(false);
+        return;
+      }
+    }
+
+    await refreshAllData();
+    setEditOpen(false);
     setSaveLoading(false);
   };
 
@@ -490,7 +535,32 @@ export default function HRDashboard() {
                 </p>
               )}
             </div>
-            <input className="input-field mb-6" value={editing.designation} onChange={e => setEditing({...editing, designation: e.target.value})} placeholder="Designation" />
+            <input className="input-field mb-3" value={editing.designation} onChange={e => setEditing({...editing, designation: e.target.value})} placeholder="Designation" />
+
+            <div className="mb-6 pt-3 border-t border-slate-100">
+              <p className="label-branded mb-3">Government IDs</p>
+              <div className="space-y-3">
+                <input
+                  className="input-field"
+                  value={editing.sss_number}
+                  onChange={(e) => setEditing({ ...editing, sss_number: e.target.value })}
+                  placeholder="SSS Number"
+                />
+                <input
+                  className="input-field"
+                  value={editing.philhealth_number}
+                  onChange={(e) => setEditing({ ...editing, philhealth_number: e.target.value })}
+                  placeholder="PhilHealth Number"
+                />
+                <input
+                  className="input-field"
+                  value={editing.pagibig_number}
+                  onChange={(e) => setEditing({ ...editing, pagibig_number: e.target.value })}
+                  placeholder="Pag-IBIG Number"
+                />
+              </div>
+            </div>
+
             <div className="flex gap-3">
               <button className="flex-1 p-3 bg-slate-100 rounded-full font-medium text-sm" onClick={() => setEditOpen(false)}>Cancel</button>
               <button className="flex-1 btn-primary" onClick={saveEdit} disabled={saveLoading || !!editingEmployeeIdConflict}>
