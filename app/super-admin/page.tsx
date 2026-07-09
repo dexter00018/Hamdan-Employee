@@ -799,6 +799,7 @@ export default function SuperAdminDashboard() {
                               timeZone: 'Asia/Manila',
                               hour: '2-digit',
                               minute: '2-digit',
+                              second: '2-digit',
                             })
                           : 'N/A'}
                       </td>
@@ -808,6 +809,7 @@ export default function SuperAdminDashboard() {
                               timeZone: 'Asia/Manila',
                               hour: '2-digit',
                               minute: '2-digit',
+                              second: '2-digit',
                             })
                           : '—'}
                       </td>

@@ -77,7 +77,7 @@ export default function LoginPage() {
       {/* BACKGROUND IMAGE */}
       <div className="fixed inset-0 z-0">
         <Image
-          src="/images/hamdan.png" 
+          src="/images/hamdan-logo.png"
           alt="Background"
           fill
           className="object-cover opacity-[0.05] blur-sm"
@@ -86,23 +86,23 @@ export default function LoginPage() {
       </div>
 
       {/* LARGE TITLE BOX */}
-      <div className="relative z-10 bg-white/95 px-12 py-10 rounded-3xl shadow-2xl border border-gray-100 mb-8 text-center max-w-2xl w-full">
-        <h1 className="text-5xl md:text-6xl font-black text-gray-900 tracking-tighter leading-tight">
+      <div className="relative z-10 bg-white/95 px-6 py-8 sm:px-12 sm:py-10 rounded-3xl shadow-2xl border border-gray-100 mb-8 text-center max-w-2xl w-full">
+        <h1 className="text-2xl sm:text-4xl md:text-6xl font-black text-gray-900 tracking-tight md:tracking-tighter leading-tight break-words">
           HAMDAN ENGINEERING CONSULTANCY
         </h1>
-        <div className="flex items-center justify-center gap-4 mt-6">
-          <div className="h-px w-16 bg-blue-600"></div>
-          <p className="label-branded text-base font-extrabold tracking-[0.3em]">
+        <div className="flex items-center justify-center gap-3 sm:gap-4 mt-4 sm:mt-6">
+          <div className="h-px w-10 sm:w-16 bg-blue-600"></div>
+          <p className="label-branded text-xs sm:text-base font-extrabold tracking-[0.2em] sm:tracking-[0.3em] whitespace-nowrap">
             Representative Office
           </p>
-          <div className="h-px w-16 bg-blue-600"></div>
+          <div className="h-px w-10 sm:w-16 bg-blue-600"></div>
         </div>
       </div>
 
       {/* LOGIN CARD */}
-      <div className="relative z-10 w-full max-w-lg bg-white p-12 rounded-3xl shadow-2xl border border-gray-100">
-        <div className="text-center mb-10">
-            <h2 className="text-2xl font-black text-gray-900">Employee Login</h2>
+      <div className="relative z-10 w-full max-w-lg bg-white p-6 sm:p-12 rounded-3xl shadow-2xl border border-gray-100">
+        <div className="text-center mb-8 sm:mb-10">
+            <h2 className="text-xl sm:text-2xl font-black text-gray-900">Employee Login</h2>
         </div>
 
         {error && (
@@ -111,7 +111,7 @@ export default function LoginPage() {
           </div>
         )}
 
-        <form onSubmit={handleLogin} className="space-y-6">
+        <form onSubmit={handleLogin} className="space-y-5 sm:space-y-6">
           <div>
             <label className="block text-sm font-bold text-gray-500 uppercase tracking-widest mb-2 ml-1">Username</label>
             <input
@@ -119,7 +119,7 @@ export default function LoginPage() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-6 py-4 rounded-2xl border border-gray-200 focus:ring-4 focus:ring-blue-600/20 outline-none transition bg-gray-50 text-lg"
+              className="w-full px-4 py-3.5 sm:px-6 sm:py-4 rounded-2xl border border-gray-200 focus:ring-4 focus:ring-blue-600/20 outline-none transition bg-gray-50 text-base sm:text-lg"
             />
           </div>
 
@@ -130,7 +130,7 @@ export default function LoginPage() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-6 py-4 rounded-2xl border border-gray-200 focus:ring-4 focus:ring-blue-600/20 outline-none transition bg-gray-50 text-lg"
+              className="w-full px-4 py-3.5 sm:px-6 sm:py-4 rounded-2xl border border-gray-200 focus:ring-4 focus:ring-blue-600/20 outline-none transition bg-gray-50 text-base sm:text-lg"
             />
           </div>
 

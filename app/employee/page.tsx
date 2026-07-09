@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import Image from 'next/image';
 import Spinner, { LoadingRow, LoadingSection } from '@/components/Spinner';
@@ -30,6 +30,95 @@ export default function EmployeeDashboard() {
   const [loading, setLoading] = useState(false);
   const [timeOutLoading, setTimeOutLoading] = useState(false);
   const [todayLog, setTodayLog] = useState<{ id: string; time_in: string | null; time_out: string | null; status: string | null } | null>(null);
+
+  // 7PM time-out reminder -- an in-page toast, not a real push
+  // notification, so it only appears while this tab is open. Uses a
+  // ref for todayLog because the interval below is set up once on
+  // mount and would otherwise always see the stale (null) value from
+  // that first render.
+  const [showTimeOutReminder, setShowTimeOutReminder] = useState(false);
+  const todayLogRef = useRef(todayLog);
+  const reminderDismissedRef = useRef(false);
+  const soundPlayedRef = useRef(false);
+
+  // Browsers (esp. Chrome) block audio from a freshly-created
+  // AudioContext unless it was created/resumed directly inside a user
+  // gesture (a click/tap). Our sounds get triggered from a timer and a
+  // Realtime event -- neither counts as a gesture. The fix: create ONE
+  // AudioContext and "unlock" it on the very first click/tap/keypress
+  // anywhere on the page (which will already have happened long before
+  // 7PM or an announcement update in normal use), then keep reusing
+  // that same already-running context for every sound after that.
+  const audioContextRef = useRef<AudioContext | null>(null);
+
+  useEffect(() => {
+    const unlockAudio = () => {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!audioContextRef.current) {
+        audioContextRef.current = new AudioContextClass();
+      }
+      if (audioContextRef.current.state === 'suspended') {
+        audioContextRef.current.resume();
+      }
+    };
+
+    window.addEventListener('click', unlockAudio);
+    window.addEventListener('touchstart', unlockAudio);
+    window.addEventListener('keydown', unlockAudio);
+
+    return () => {
+      window.removeEventListener('click', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+    };
+  }, []);
+
+  useEffect(() => {
+    todayLogRef.current = todayLog;
+  }, [todayLog]);
+
+  // Two-tone chime generated with the Web Audio API -- no audio file
+  // needed. Browsers generally allow this once the person has already
+  // interacted with the page at all (e.g. logging in, clicking
+  // anything), which will already be true by 7PM in normal use.
+  const playNotificationSound = () => {
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!audioContextRef.current) {
+        audioContextRef.current = new AudioContextClass();
+      }
+      const ctx = audioContextRef.current;
+      if (ctx.state === 'suspended') {
+        ctx.resume();
+      }
+      const now = ctx.currentTime;
+
+      const playTone = (freq: number, start: number, duration: number, peakVolume = 0.15) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.0001, now + start);
+        gain.gain.exponentialRampToValueAtTime(peakVolume, now + start + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + start + duration);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now + start);
+        osc.stop(now + start + duration);
+      };
+
+      // Two sharp, high-pitched beeps -- classic "beep beep" alert.
+      playTone(1800, 0, 0.15, 0.18);
+      playTone(1800, 0.25, 0.15, 0.18);
+    } catch (err) {
+      console.error('Error playing notification sound:', err);
+    }
+  };
+
+  const dismissReminder = () => {
+    reminderDismissedRef.current = true;
+    setShowTimeOutReminder(false);
+  };
   const [message, setMessage] = useState('');
   const [time, setTime] = useState('');
   const [date, setDate] = useState('');
@@ -55,6 +144,7 @@ export default function EmployeeDashboard() {
   const [announcementLoading, setAnnouncementLoading] = useState(true);
   const [announcementError, setAnnouncementError] = useState<string | null>(null);
   const [announcementUpdatedAt, setAnnouncementUpdatedAt] = useState<string | null>(null);
+  const [showAnnouncementToast, setShowAnnouncementToast] = useState(false);
 
   // Office network check -- Time In is only enabled when the request is
   // coming from the office's known public IP. See
@@ -83,12 +173,75 @@ export default function EmployeeDashboard() {
       const now = new Date();
       setTime(now.toLocaleTimeString('en-GB', { hour12: false }));
       setDate(now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }));
+
+      // Check Philippine time specifically (not the device's local
+      // time) so the reminder is correct regardless of how the
+      // employee's device clock/timezone is set.
+      const manilaHour = parseInt(
+        new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', hour12: false }).format(now),
+        10
+      );
+
+      if (
+        manilaHour >= 19 &&
+        todayLogRef.current?.time_in &&
+        !todayLogRef.current?.time_out &&
+        !reminderDismissedRef.current
+      ) {
+        if (!soundPlayedRef.current) {
+          playNotificationSound();
+          soundPlayedRef.current = true;
+        }
+        setShowTimeOutReminder(true);
+      }
     }, 1000);
 
     initializeDashboard();
     fetchAnnouncement();
     checkOfficeNetwork();
     return () => clearInterval(timer);
+  }, []);
+
+  // Live announcement updates -- listens for INSERT/UPDATE on the
+  // announcements table via Supabase Realtime, so a new/edited
+  // announcement from HR shows up (with a sound + toast) immediately,
+  // without the employee needing to refresh the page. Requires Realtime
+  // to be enabled for this table (see enable_announcements_realtime.sql).
+  useEffect(() => {
+    const channel = supabase
+      .channel('employee-announcements')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'announcements' },
+        (payload) => {
+          if (payload.eventType === 'DELETE') return;
+
+          const newRow = payload.new as { content?: string; updated_at?: string };
+          setAnnouncement(newRow.content || '');
+          setAnnouncementError(null);
+          setAnnouncementUpdatedAt(
+            newRow.updated_at
+              ? new Date(newRow.updated_at).toLocaleString('en-US', {
+                  timeZone: 'Asia/Manila',
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })
+              : null
+          );
+
+          playNotificationSound();
+          setShowAnnouncementToast(true);
+          setTimeout(() => setShowAnnouncementToast(false), 6000);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const initializeDashboard = async () => {
@@ -222,6 +375,7 @@ export default function EmployeeDashboard() {
       }
 
       setMessage('Time out recorded. See you tomorrow!');
+      setShowTimeOutReminder(false);
       await initializeDashboard();
     } catch (err: any) {
       setMessage("Error: " + err.message);
@@ -453,6 +607,7 @@ export default function EmployeeDashboard() {
                   timeZone: 'Asia/Manila',
                   hour: '2-digit',
                   minute: '2-digit',
+                  second: '2-digit',
                 })}
                 {todayLog.time_out && (
                   <>
@@ -461,6 +616,7 @@ export default function EmployeeDashboard() {
                       timeZone: 'Asia/Manila',
                       hour: '2-digit',
                       minute: '2-digit',
+                      second: '2-digit',
                     })}
                   </>
                 )}
@@ -601,6 +757,7 @@ export default function EmployeeDashboard() {
                                 timeZone: 'Asia/Manila',
                                 hour: '2-digit',
                                 minute: '2-digit',
+                                second: '2-digit',
                               })
                             : '--:--'}
                           {log.time_out && (
@@ -610,6 +767,7 @@ export default function EmployeeDashboard() {
                                 timeZone: 'Asia/Manila',
                                 hour: '2-digit',
                                 minute: '2-digit',
+                                second: '2-digit',
                               })}
                             </>
                           )}
@@ -628,6 +786,67 @@ export default function EmployeeDashboard() {
           </div>
         </div>
       </div>
+
+      {/* New Announcement Toast (auto-dismisses after 6s) */}
+      {showAnnouncementToast && (
+        <div className="fixed top-4 left-4 right-4 sm:left-auto sm:right-6 sm:top-6 sm:max-w-sm z-50">
+          <div className="rounded-2xl bg-slate-900 text-white p-4 shadow-2xl flex items-start gap-3">
+            <div className="flex-shrink-0 w-9 h-9 rounded-xl bg-green-500 flex items-center justify-center text-lg">
+              📣
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-white font-semibold text-sm">New announcement posted!</p>
+              <p className="text-white/60 text-xs mt-1 line-clamp-2">{announcement}</p>
+            </div>
+            <button
+              onClick={() => setShowAnnouncementToast(false)}
+              className="text-white/40 hover:text-white flex-shrink-0"
+              aria-label="Close notification"
+              type="button"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 7PM Time-Out Reminder (in-page only -- disappears if tab is closed) */}
+      {showTimeOutReminder && (
+        <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:bottom-6 sm:max-w-sm z-50">
+          <div className="rounded-2xl bg-slate-900 text-white p-4 shadow-2xl flex items-start gap-3">
+            <div className="flex-shrink-0 w-9 h-9 rounded-xl bg-amber-500 flex items-center justify-center text-lg">
+              🔔
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-white font-semibold text-sm">Don't forget to time out!</p>
+              <p className="text-white/60 text-xs mt-1">It's already past 7:00 PM.</p>
+              <div className="flex gap-2 mt-3">
+                <button
+                  onClick={handleTimeOut}
+                  disabled={timeOutLoading}
+                  className="text-xs font-bold bg-white text-slate-900 px-3 py-1.5 rounded-full hover:bg-white/90 transition disabled:opacity-50"
+                >
+                  {timeOutLoading ? 'Processing...' : 'Time Out Now'}
+                </button>
+                <button
+                  onClick={dismissReminder}
+                  className="text-xs font-bold text-white/60 hover:text-white px-3 py-1.5 transition"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+            <button
+              onClick={dismissReminder}
+              className="text-white/40 hover:text-white flex-shrink-0"
+              aria-label="Close reminder"
+              type="button"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
