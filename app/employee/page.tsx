@@ -108,8 +108,8 @@ export default function EmployeeDashboard() {
       };
 
       // Two sharp, high-pitched beeps -- classic "beep beep" alert.
-      playTone(1800, 0, 0.15, 0.18);
-      playTone(1800, 0.25, 0.15, 0.18);
+      playTone(1800, 0, 0.15, 0.5);
+      playTone(1800, 0.25, 0.15, 0.5);
     } catch (err) {
       console.error('Error playing notification sound:', err);
     }
@@ -126,14 +126,16 @@ export default function EmployeeDashboard() {
   const [history, setHistory] = useState<any[]>([]);
   const [initLoading, setInitLoading] = useState(true);
 
-  // Government ID numbers (SSS/PhilHealth/Pag-IBIG) -- fetched from a
-  // separate, more strictly-secured table. See add_government_ids.sql.
-  const [governmentIds, setGovernmentIds] = useState<{ sss_number: string | null; philhealth_number: string | null; pagibig_number: string | null } | null>(null);
+  // Government ID numbers / employment details -- fetched from a
+  // separate, more strictly-secured table. See add_government_ids.sql
+  // and add_tin_and_hired_date.sql.
+  const [governmentIds, setGovernmentIds] = useState<{ sss_number: string | null; philhealth_number: string | null; pagibig_number: string | null; tin_number: string | null; hired_date: string | null } | null>(null);
   const [showGovIdsSection, setShowGovIdsSection] = useState(false);
-  const [visibleFields, setVisibleFields] = useState<{ sss: boolean; philhealth: boolean; pagibig: boolean }>({
+  const [visibleFields, setVisibleFields] = useState<{ sss: boolean; philhealth: boolean; pagibig: boolean; tin: boolean }>({
     sss: false,
     philhealth: false,
     pagibig: false,
+    tin: false,
   });
 
   // History filter (month picker, e.g. "2026-07")
@@ -275,7 +277,7 @@ export default function EmployeeDashboard() {
     // this just comes back null and the section shows "Not set".
     const { data: govIdData, error: govIdError } = await supabase
       .from('employee_government_ids')
-      .select('sss_number, philhealth_number, pagibig_number')
+      .select('sss_number, philhealth_number, pagibig_number, tin_number, hired_date')
       .eq('user_id', user.id)
       .maybeSingle();
 
@@ -386,13 +388,21 @@ export default function EmployeeDashboard() {
 
   const statusTagClass = (s: string | null) => (s === 'Late' ? 'tag-late' : 'tag-present');
 
+  // Masks a value except for its first 2 characters, e.g. "34" + dots
+  // for the rest -- shows just enough to help the employee recognize
+  // "yes, this is my number" without exposing the whole thing.
+  const maskValue = (value: string) => {
+    if (value.length <= 2) return value;
+    return value.slice(0, 2) + '•'.repeat(value.length - 2);
+  };
+
   // Renders one masked/unmaskable government ID row, e.g. SSS Number.
-  const renderGovIdRow = (label: string, value: string | null, fieldKey: 'sss' | 'philhealth' | 'pagibig') => (
+  const renderGovIdRow = (label: string, value: string | null, fieldKey: 'sss' | 'philhealth' | 'pagibig' | 'tin') => (
     <div>
       <p className="label-branded mb-1">{label}</p>
       <div className="flex items-center justify-between gap-2">
         <p className="font-medium text-slate-700 tabular-nums">
-          {value ? (visibleFields[fieldKey] ? value : '•'.repeat(Math.max(value.length, 6))) : 'Not set'}
+          {value ? (visibleFields[fieldKey] ? value : maskValue(value)) : 'Not set'}
         </p>
         {value && (
           <button
@@ -407,6 +417,13 @@ export default function EmployeeDashboard() {
       </div>
     </div>
   );
+
+  // Hired Date isn't sensitive like a government ID number, so it's
+  // just shown plainly -- no masking/eye icon needed.
+  const formatHiredDate = (dateStr: string) => {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  };
 
   // --- Summary card calculations ---
   // log_date is a plain "YYYY-MM-DD" string, so we parse it manually
@@ -538,6 +555,13 @@ export default function EmployeeDashboard() {
                   {renderGovIdRow('SSS Number', governmentIds?.sss_number ?? null, 'sss')}
                   {renderGovIdRow('PhilHealth Number', governmentIds?.philhealth_number ?? null, 'philhealth')}
                   {renderGovIdRow('Pag-IBIG Number', governmentIds?.pagibig_number ?? null, 'pagibig')}
+                  {renderGovIdRow('TIN Number', governmentIds?.tin_number ?? null, 'tin')}
+                  <div>
+                    <p className="label-branded mb-1">Hired Date</p>
+                    <p className="font-medium text-slate-700">
+                      {governmentIds?.hired_date ? formatHiredDate(governmentIds.hired_date) : 'Not set'}
+                    </p>
+                  </div>
                 </div>
               )}
             </div>

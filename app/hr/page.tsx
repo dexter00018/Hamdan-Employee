@@ -36,7 +36,7 @@ export default function HRDashboard() {
 
   // Modal States
   const [editOpen, setEditOpen] = useState(false);
-  const [editing, setEditing] = useState({ id: null as string | null, full_name: '', employee_id: '', designation: '', sss_number: '', philhealth_number: '', pagibig_number: '' });
+  const [editing, setEditing] = useState({ id: null as string | null, full_name: '', employee_id: '', designation: '', sss_number: '', philhealth_number: '', pagibig_number: '', tin_number: '', hired_date: '' });
   const [saveLoading, setSaveLoading] = useState(false);
 
   // Announcement States
@@ -179,6 +179,8 @@ export default function HRDashboard() {
       sss_number: '',
       philhealth_number: '',
       pagibig_number: '',
+      tin_number: '',
+      hired_date: '',
     });
     setEditOpen(true);
 
@@ -186,7 +188,7 @@ export default function HRDashboard() {
     // existing values (if any) so HR can see/update them.
     const { data: govIdData } = await supabase
       .from('employee_government_ids')
-      .select('sss_number, philhealth_number, pagibig_number')
+      .select('sss_number, philhealth_number, pagibig_number, tin_number, hired_date')
       .eq('user_id', p.id)
       .maybeSingle();
 
@@ -196,6 +198,8 @@ export default function HRDashboard() {
         sss_number: govIdData.sss_number ?? '',
         philhealth_number: govIdData.philhealth_number ?? '',
         pagibig_number: govIdData.pagibig_number ?? '',
+        tin_number: govIdData.tin_number ?? '',
+        hired_date: govIdData.hired_date ?? '',
       }));
     }
   };
@@ -248,8 +252,14 @@ export default function HRDashboard() {
     }
 
     // Upsert government IDs into their own table -- only if HR actually
-    // filled in at least one of the three fields.
-    if (editing.sss_number.trim() || editing.philhealth_number.trim() || editing.pagibig_number.trim()) {
+    // filled in at least one of the fields.
+    if (
+      editing.sss_number.trim() ||
+      editing.philhealth_number.trim() ||
+      editing.pagibig_number.trim() ||
+      editing.tin_number.trim() ||
+      editing.hired_date.trim()
+    ) {
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       const { error: govIdError } = await supabase
         .from('employee_government_ids')
@@ -258,6 +268,8 @@ export default function HRDashboard() {
           sss_number: editing.sss_number.trim() || null,
           philhealth_number: editing.philhealth_number.trim() || null,
           pagibig_number: editing.pagibig_number.trim() || null,
+          tin_number: editing.tin_number.trim() || null,
+          hired_date: editing.hired_date.trim() || null,
           updated_at: new Date().toISOString(),
           updated_by: currentUser?.id ?? null,
         }, { onConflict: 'user_id' });
@@ -540,7 +552,7 @@ export default function HRDashboard() {
             <input className="input-field mb-3" value={editing.designation} onChange={e => setEditing({...editing, designation: e.target.value})} placeholder="Designation" />
 
             <div className="mb-6 pt-3 border-t border-slate-100">
-              <p className="label-branded mb-3">Government IDs</p>
+              <p className="label-branded mb-3">Government IDs &amp; Employment Details</p>
               <div className="space-y-3">
                 <input
                   className="input-field"
@@ -560,6 +572,21 @@ export default function HRDashboard() {
                   onChange={(e) => setEditing({ ...editing, pagibig_number: e.target.value })}
                   placeholder="Pag-IBIG Number"
                 />
+                <input
+                  className="input-field"
+                  value={editing.tin_number}
+                  onChange={(e) => setEditing({ ...editing, tin_number: e.target.value })}
+                  placeholder="TIN Number"
+                />
+                <div>
+                  <label className="label-branded">Hired Date</label>
+                  <input
+                    type="date"
+                    className="input-field"
+                    value={editing.hired_date}
+                    onChange={(e) => setEditing({ ...editing, hired_date: e.target.value })}
+                  />
+                </div>
               </div>
             </div>
 
