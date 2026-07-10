@@ -125,6 +125,26 @@
     box-shadow: none;
   }
 
+  /* Danger variant: same pill shape/sizing as btn-primary, but red --
+     used for Time Out, so it's visually distinct from Time In. */
+  .btn-danger {
+    @apply w-full text-white py-4 rounded-full font-semibold text-sm transition-all duration-200 min-h-[48px];
+    background: var(--color-rose-600);
+  }
+  .btn-danger:hover {
+    background: var(--color-rose-700);
+    transform: translateY(-1px);
+    box-shadow: 0 10px 24px -8px rgba(242, 61, 92, 0.4);
+  }
+  .btn-danger:active {
+    transform: translateY(0);
+  }
+  .btn-danger:disabled {
+    @apply opacity-50 cursor-not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+
   /* Role tags */
   .tag-admin {
     @apply px-3 py-1.5 rounded-full font-bold text-[10px] uppercase tracking-wider;

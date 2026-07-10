@@ -36,7 +36,7 @@ export default function HRDashboard() {
 
   // Modal States
   const [editOpen, setEditOpen] = useState(false);
-  const [editing, setEditing] = useState({ id: null as string | null, full_name: '', employee_id: '', designation: '', sss_number: '', philhealth_number: '', pagibig_number: '', tin_number: '', hired_date: '' });
+  const [editing, setEditing] = useState({ id: null as string | null, full_name: '', employee_id: '', designation: '', sss_number: '', philhealth_number: '', pagibig_number: '', tin_number: '', hired_date: '', employment_status: '' });
   const [saveLoading, setSaveLoading] = useState(false);
 
   // Announcement States
@@ -181,6 +181,7 @@ export default function HRDashboard() {
       pagibig_number: '',
       tin_number: '',
       hired_date: '',
+      employment_status: '',
     });
     setEditOpen(true);
 
@@ -188,7 +189,7 @@ export default function HRDashboard() {
     // existing values (if any) so HR can see/update them.
     const { data: govIdData } = await supabase
       .from('employee_government_ids')
-      .select('sss_number, philhealth_number, pagibig_number, tin_number, hired_date')
+      .select('sss_number, philhealth_number, pagibig_number, tin_number, hired_date, employment_status')
       .eq('user_id', p.id)
       .maybeSingle();
 
@@ -200,6 +201,7 @@ export default function HRDashboard() {
         pagibig_number: govIdData.pagibig_number ?? '',
         tin_number: govIdData.tin_number ?? '',
         hired_date: govIdData.hired_date ?? '',
+        employment_status: govIdData.employment_status ?? '',
       }));
     }
   };
@@ -258,7 +260,8 @@ export default function HRDashboard() {
       editing.philhealth_number.trim() ||
       editing.pagibig_number.trim() ||
       editing.tin_number.trim() ||
-      editing.hired_date.trim()
+      editing.hired_date.trim() ||
+      editing.employment_status.trim()
     ) {
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       const { error: govIdError } = await supabase
@@ -270,6 +273,7 @@ export default function HRDashboard() {
           pagibig_number: editing.pagibig_number.trim() || null,
           tin_number: editing.tin_number.trim() || null,
           hired_date: editing.hired_date.trim() || null,
+          employment_status: editing.employment_status.trim() || null,
           updated_at: new Date().toISOString(),
           updated_by: currentUser?.id ?? null,
         }, { onConflict: 'user_id' });
@@ -586,6 +590,19 @@ export default function HRDashboard() {
                     value={editing.hired_date}
                     onChange={(e) => setEditing({ ...editing, hired_date: e.target.value })}
                   />
+                </div>
+                <div>
+                  <label className="label-branded">Employment Status</label>
+                  <select
+                    className="input-field"
+                    value={editing.employment_status}
+                    onChange={(e) => setEditing({ ...editing, employment_status: e.target.value })}
+                  >
+                    <option value="">Not set</option>
+                    <option value="Regular">Regular</option>
+                    <option value="Probationary">Probationary</option>
+                    <option value="Contractual">Contractual</option>
+                  </select>
                 </div>
               </div>
             </div>

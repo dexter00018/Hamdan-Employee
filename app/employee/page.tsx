@@ -107,9 +107,29 @@ export default function EmployeeDashboard() {
         osc.stop(now + start + duration);
       };
 
-      // Two sharp, high-pitched beeps -- classic "beep beep" alert.
-      playTone(1800, 0, 0.15, 0.5);
-      playTone(1800, 0.25, 0.15, 0.5);
+      // Soft "pop" tone with a gentle downward pitch bend -- this is
+      // what gives it that bubbly/bouncy Messenger-style feel instead
+      // of a flat, robotic beep.
+      const playPop = (startFreq: number, endFreq: number, start: number, duration: number, peakVolume = 0.7) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(startFreq, now + start);
+        osc.frequency.exponentialRampToValueAtTime(endFreq, now + start + duration);
+        gain.gain.setValueAtTime(0.0001, now + start);
+        gain.gain.exponentialRampToValueAtTime(peakVolume, now + start + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + start + duration);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now + start);
+        osc.stop(now + start + duration);
+      };
+
+      // Two soft ascending "bloop-bloop" pops, Messenger-style: the
+      // second pop is higher-pitched than the first, each with a
+      // slight downward glide for that bubbly character.
+      playPop(900, 700, 0, 0.28, 1.0);
+      playPop(1300, 1000, 0.24, 0.4, 1.0);
     } catch (err) {
       console.error('Error playing notification sound:', err);
     }
@@ -129,7 +149,7 @@ export default function EmployeeDashboard() {
   // Government ID numbers / employment details -- fetched from a
   // separate, more strictly-secured table. See add_government_ids.sql
   // and add_tin_and_hired_date.sql.
-  const [governmentIds, setGovernmentIds] = useState<{ sss_number: string | null; philhealth_number: string | null; pagibig_number: string | null; tin_number: string | null; hired_date: string | null } | null>(null);
+  const [governmentIds, setGovernmentIds] = useState<{ sss_number: string | null; philhealth_number: string | null; pagibig_number: string | null; tin_number: string | null; hired_date: string | null; employment_status: string | null } | null>(null);
   const [showGovIdsSection, setShowGovIdsSection] = useState(false);
   const [visibleFields, setVisibleFields] = useState<{ sss: boolean; philhealth: boolean; pagibig: boolean; tin: boolean }>({
     sss: false,
@@ -277,7 +297,7 @@ export default function EmployeeDashboard() {
     // this just comes back null and the section shows "Not set".
     const { data: govIdData, error: govIdError } = await supabase
       .from('employee_government_ids')
-      .select('sss_number, philhealth_number, pagibig_number, tin_number, hired_date')
+      .select('sss_number, philhealth_number, pagibig_number, tin_number, hired_date, employment_status')
       .eq('user_id', user.id)
       .maybeSingle();
 
@@ -562,6 +582,20 @@ export default function EmployeeDashboard() {
                       {governmentIds?.hired_date ? formatHiredDate(governmentIds.hired_date) : 'Not set'}
                     </p>
                   </div>
+                  <div>
+                    <p className="label-branded mb-1">Employment Status</p>
+                    {governmentIds?.employment_status ? (
+                      <span className={
+                        governmentIds.employment_status === 'Regular' ? 'tag-present'
+                        : governmentIds.employment_status === 'Probationary' ? 'tag-late'
+                        : 'tag-excused'
+                      }>
+                        {governmentIds.employment_status}
+                      </span>
+                    ) : (
+                      <p className="font-medium text-slate-700">Not set</p>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -602,7 +636,7 @@ export default function EmployeeDashboard() {
               <button
                 onClick={handleTimeOut}
                 disabled={timeOutLoading || checkingNetwork || officeNetworkAllowed === false}
-                className="btn-primary"
+                className="btn-danger"
               >
                 {timeOutLoading ? (
                   <span className="flex items-center justify-center gap-2">
