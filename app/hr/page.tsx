@@ -41,8 +41,9 @@ export default function HRDashboard() {
   // from selectedDate for payroll-period review instead of a single day.
   const [cutoffFilter, setCutoffFilter] = useState('');
 
-  // Modal States
-  const [editOpen, setEditOpen] = useState(false);
+  // Which modal is open: null | 'choice' | 'edit' | 'payslips'
+  const [modalMode, setModalMode] = useState<null | 'choice' | 'edit' | 'payslips'>(null);
+  const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null);
   const [editing, setEditing] = useState({ id: null as string | null, full_name: '', employee_id: '', designation: '', sss_number: '', philhealth_number: '', pagibig_number: '', tin_number: '', hired_date: '', employment_status: '' });
   const [saveLoading, setSaveLoading] = useState(false);
 
@@ -338,6 +339,13 @@ export default function HRDashboard() {
     return half === 'H1' ? `${monthName} 1-15, ${y}` : `${monthName} 16-31, ${y}`;
   };
 
+  // Opens the choice modal — HR picks Edit Profile or Payslips
+  const openProfileChoice = (p: Profile) => {
+    setSelectedProfile(p);
+    setModalMode('choice');
+  };
+
+  // Opens the Edit Profile modal for the selected profile
   const openEdit = async (p: Profile) => {
     setEditing({
       id: p.id,
@@ -351,15 +359,8 @@ export default function HRDashboard() {
       hired_date: '',
       employment_status: '',
     });
-    setEditOpen(true);
-    setPayslipFile(null);
-    setPayslipCutoff('');
-    setPayslipMsg(null);
-    if (payslipFileRef.current) payslipFileRef.current.value = '';
-    fetchEmployeePayslips(p.id);
+    setModalMode('edit');
 
-    // Government IDs live in a separate table -- fetch this employee's
-    // existing values (if any) so HR can see/update them.
     const { data: govIdData } = await supabase
       .from('employee_government_ids')
       .select('sss_number, philhealth_number, pagibig_number, tin_number, hired_date, employment_status')
@@ -377,6 +378,21 @@ export default function HRDashboard() {
         employment_status: govIdData.employment_status ?? '',
       }));
     }
+  };
+
+  // Opens the Payslips modal for the selected profile
+  const openPayslipsModal = (p: Profile) => {
+    setPayslipFile(null);
+    setPayslipCutoff('');
+    setPayslipMsg(null);
+    if (payslipFileRef.current) payslipFileRef.current.value = '';
+    fetchEmployeePayslips(p.id);
+    setModalMode('payslips');
+  };
+
+  const closeModal = () => {
+    setModalMode(null);
+    setSelectedProfile(null);
   };
 
   // Translates raw Postgres error text into a friendly, specific
@@ -460,7 +476,7 @@ export default function HRDashboard() {
     }
 
     await refreshAllData();
-    setEditOpen(false);
+    setModalMode(null);
     setSaveLoading(false);
   };
 
@@ -798,7 +814,7 @@ export default function HRDashboard() {
                 <p className="text-slate-400 text-sm">No employees found.</p>
               )}
               {profiles.map((p) => (
-                <button key={p.id} onClick={() => openEdit(p)} className="w-full flex items-center gap-3 text-left p-4 rounded-2xl hover:bg-slate-50 border border-slate-100 transition">
+                <button key={p.id} onClick={() => openProfileChoice(p)} className="w-full flex items-center gap-3 text-left p-4 rounded-2xl hover:bg-slate-50 border border-slate-100 transition">
                   <div className="flex-shrink-0 w-10 h-10 rounded-full bg-blue-50 text-blue-600 font-bold text-xs flex items-center justify-center">
                     {initials(p.full_name)}
                   </div>
@@ -949,65 +965,81 @@ export default function HRDashboard() {
         </div>
       </div>
 
-      {/* Edit Modal */}
-      {editOpen && (
+      {/* ── CHOICE MODAL ── */}
+      {modalMode === 'choice' && selectedProfile && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm card-style shadow-2xl">
-            <h3 className="mb-6">Edit Profile</h3>
+          <div className="w-full max-w-xs card-style shadow-2xl text-center">
+            <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-blue-50 text-blue-600 font-bold text-sm flex items-center justify-center">
+              {initials(selectedProfile.full_name)}
+            </div>
+            <h3 className="mb-1">{selectedProfile.full_name}</h3>
+            <p className="text-slate-400 text-xs mb-6">{selectedProfile.designation || '---'}</p>
+            <div className="space-y-3">
+              <button
+                type="button"
+                onClick={() => openEdit(selectedProfile)}
+                className="w-full py-3 rounded-full bg-slate-900 text-white font-bold text-sm hover:bg-slate-700 transition"
+              >
+                ✏️ Edit Profile
+              </button>
+              <button
+                type="button"
+                onClick={() => openPayslipsModal(selectedProfile)}
+                className="w-full py-3 rounded-full bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 transition"
+              >
+                📄 Payslips
+              </button>
+              <button
+                type="button"
+                onClick={closeModal}
+                className="w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 transition"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── EDIT PROFILE MODAL ── */}
+      {modalMode === 'edit' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm card-style shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="mb-0">Edit Profile</h3>
+              <button
+                type="button"
+                onClick={() => { setModalMode('choice'); }}
+                className="text-slate-400 hover:text-slate-600 text-xs font-bold"
+              >
+                ← Back
+              </button>
+            </div>
             <input className="input-field mb-3" value={editing.full_name} onChange={e => setEditing({...editing, full_name: e.target.value})} placeholder="Full Name" />
             <div className="mb-3">
               <input className="input-field" value={editing.employee_id} onChange={e => setEditing({...editing, employee_id: e.target.value})} placeholder="Employee ID" />
               {editingEmployeeIdConflict && (
                 <p className="text-red-600 text-xs font-medium mt-1.5 ml-1">
-                  ⚠️ This Employee ID is already used by {editingEmployeeIdConflict}. Please use a different one.
+                  ⚠️ This Employee ID is already used by {editingEmployeeIdConflict}.
                 </p>
               )}
             </div>
-            <input className="input-field mb-3" value={editing.designation} onChange={e => setEditing({...editing, designation: e.target.value})} placeholder="Designation" />
+            <input className="input-field mb-6" value={editing.designation} onChange={e => setEditing({...editing, designation: e.target.value})} placeholder="Designation" />
 
             <div className="mb-6 pt-3 border-t border-slate-100">
               <p className="label-branded mb-3">Government IDs &amp; Employment Details</p>
               <div className="space-y-3">
-                <input
-                  className="input-field"
-                  value={editing.sss_number}
-                  onChange={(e) => setEditing({ ...editing, sss_number: e.target.value })}
-                  placeholder="SSS Number"
-                />
-                <input
-                  className="input-field"
-                  value={editing.philhealth_number}
-                  onChange={(e) => setEditing({ ...editing, philhealth_number: e.target.value })}
-                  placeholder="PhilHealth Number"
-                />
-                <input
-                  className="input-field"
-                  value={editing.pagibig_number}
-                  onChange={(e) => setEditing({ ...editing, pagibig_number: e.target.value })}
-                  placeholder="Pag-IBIG Number"
-                />
-                <input
-                  className="input-field"
-                  value={editing.tin_number}
-                  onChange={(e) => setEditing({ ...editing, tin_number: e.target.value })}
-                  placeholder="TIN Number"
-                />
+                <input className="input-field" value={editing.sss_number} onChange={(e) => setEditing({ ...editing, sss_number: e.target.value })} placeholder="SSS Number" />
+                <input className="input-field" value={editing.philhealth_number} onChange={(e) => setEditing({ ...editing, philhealth_number: e.target.value })} placeholder="PhilHealth Number" />
+                <input className="input-field" value={editing.pagibig_number} onChange={(e) => setEditing({ ...editing, pagibig_number: e.target.value })} placeholder="Pag-IBIG Number" />
+                <input className="input-field" value={editing.tin_number} onChange={(e) => setEditing({ ...editing, tin_number: e.target.value })} placeholder="TIN Number" />
                 <div>
                   <label className="label-branded">Hired Date</label>
-                  <input
-                    type="date"
-                    className="input-field"
-                    value={editing.hired_date}
-                    onChange={(e) => setEditing({ ...editing, hired_date: e.target.value })}
-                  />
+                  <input type="date" className="input-field" value={editing.hired_date} onChange={(e) => setEditing({ ...editing, hired_date: e.target.value })} />
                 </div>
                 <div>
                   <label className="label-branded">Employment Status</label>
-                  <select
-                    className="input-field"
-                    value={editing.employment_status}
-                    onChange={(e) => setEditing({ ...editing, employment_status: e.target.value })}
-                  >
+                  <select className="input-field" value={editing.employment_status} onChange={(e) => setEditing({ ...editing, employment_status: e.target.value })}>
                     <option value="">Not set</option>
                     <option value="Regular">Regular</option>
                     <option value="Probationary">Probationary</option>
@@ -1017,89 +1049,105 @@ export default function HRDashboard() {
               </div>
             </div>
 
-            <div className="mb-6 pt-3 border-t border-slate-100">
-              <p className="label-branded mb-3">Payslips</p>
+            <div className="flex gap-3">
+              <button className="flex-1 p-3 bg-slate-100 rounded-full font-medium text-sm" onClick={closeModal}>Cancel</button>
+              <button className="flex-1 btn-primary" onClick={saveEdit} disabled={saveLoading || !!editingEmployeeIdConflict}>
+                {saveLoading ? (
+                  <span className="flex items-center justify-center gap-2"><Spinner size="sm" />Saving...</span>
+                ) : editingEmployeeIdConflict ? 'Fix Conflict First' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-              {/* Existing payslips list */}
-              {employeePayslipsLoading ? (
-                <p className="text-slate-400 text-xs mb-3">Loading payslips...</p>
-              ) : employeePayslips.length === 0 ? (
-                <p className="text-slate-400 text-xs mb-3">No payslips uploaded yet.</p>
-              ) : (
-                <div className="space-y-2 mb-4">
-                  {employeePayslips.map((ps) => (
-                    <div key={ps.id} className="flex items-center justify-between gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-slate-800 truncate">{ps.cutoff_label}</p>
-                        <p className="text-slate-400 text-[10px] truncate">{ps.file_name}</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => deletePayslip(ps.id, (ps as any).file_path, editing.id!)}
-                        className="flex-shrink-0 text-rose-500 hover:text-rose-700 text-xs font-bold transition"
-                        title="Delete payslip"
-                      >
-                        ✕
-                      </button>
+      {/* ── PAYSLIPS MODAL ── */}
+      {modalMode === 'payslips' && selectedProfile && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm card-style shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h3 className="mb-0">Payslips</h3>
+                <p className="text-slate-400 text-xs mt-1">{selectedProfile.full_name}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalMode('choice')}
+                className="text-slate-400 hover:text-slate-600 text-xs font-bold"
+              >
+                ← Back
+              </button>
+            </div>
+
+            {/* Existing payslips */}
+            {employeePayslipsLoading ? (
+              <p className="text-slate-400 text-xs mb-4">Loading payslips...</p>
+            ) : employeePayslips.length === 0 ? (
+              <div className="text-center py-6 border-2 border-dashed border-slate-200 rounded-2xl mb-4">
+                <p className="text-slate-400 text-sm">No payslips uploaded yet.</p>
+              </div>
+            ) : (
+              <div className="space-y-2 mb-6">
+                {employeePayslips.map((ps) => (
+                  <div key={ps.id} className="flex items-center justify-between gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-800 truncate">{ps.cutoff_label}</p>
+                      <p className="text-slate-400 text-[10px] truncate">{ps.file_name}</p>
+                      <p className="text-slate-300 text-[10px]">
+                        {new Date(ps.uploaded_at).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' })}
+                      </p>
                     </div>
-                  ))}
+                    <button
+                      type="button"
+                      onClick={() => deletePayslip(ps.id, (ps as any).file_path, selectedProfile.id)}
+                      className="flex-shrink-0 text-rose-500 hover:text-rose-700 text-xs font-bold transition px-2"
+                      title="Delete payslip"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Upload new payslip */}
+            <div className="space-y-3 pt-4 border-t border-slate-100">
+              <p className="label-branded">Upload New Payslip</p>
+
+              {payslipMsg && (
+                <div className={`p-2.5 rounded-xl text-xs font-bold ${payslipMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                  {payslipMsg.text}
                 </div>
               )}
 
-              {/* Upload new payslip */}
-              <div className="space-y-3 pt-3 border-t border-slate-100">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Upload New Payslip</p>
+              <select className="input-field" value={payslipCutoff} onChange={(e) => setPayslipCutoff(e.target.value)}>
+                <option value="">Select cutoff period...</option>
+                {generateCutoffOptions().map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
 
-                {payslipMsg && (
-                  <div className={`p-2.5 rounded-xl text-xs font-bold ${payslipMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                    {payslipMsg.text}
-                  </div>
-                )}
+              <input
+                ref={payslipFileRef}
+                type="file"
+                accept="application/pdf"
+                onChange={(e) => setPayslipFile(e.target.files?.[0] ?? null)}
+                className="input-field text-sm file:mr-3 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"
+              />
 
-                <select
-                  className="input-field"
-                  value={payslipCutoff}
-                  onChange={(e) => setPayslipCutoff(e.target.value)}
-                >
-                  <option value="">Select cutoff period...</option>
-                  {generateCutoffOptions().map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
+              <button
+                type="button"
+                onClick={() => uploadPayslip(selectedProfile.id)}
+                disabled={payslipUploading || !payslipFile || !payslipCutoff}
+                className="w-full py-3 rounded-full bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 transition disabled:opacity-50"
+              >
+                {payslipUploading ? (
+                  <span className="flex items-center justify-center gap-2"><Spinner size="sm" />Uploading...</span>
+                ) : 'Upload PDF'}
+              </button>
 
-                <input
-                  ref={payslipFileRef}
-                  type="file"
-                  accept="application/pdf"
-                  onChange={(e) => setPayslipFile(e.target.files?.[0] ?? null)}
-                  className="input-field text-sm file:mr-3 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"
-                />
-
-                <button
-                  type="button"
-                  onClick={() => editing.id && uploadPayslip(editing.id)}
-                  disabled={payslipUploading || !payslipFile || !payslipCutoff}
-                  className="w-full py-2.5 rounded-full bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition disabled:opacity-50"
-                >
-                  {payslipUploading ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <Spinner size="sm" />
-                      Uploading...
-                    </span>
-                  ) : 'Upload PDF'}
-                </button>
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <button className="flex-1 p-3 bg-slate-100 rounded-full font-medium text-sm" onClick={() => setEditOpen(false)}>Cancel</button>
-              <button className="flex-1 btn-primary" onClick={saveEdit} disabled={saveLoading || !!editingEmployeeIdConflict}>
-                {saveLoading ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <Spinner size="sm" />
-                    Saving...
-                  </span>
-                ) : editingEmployeeIdConflict ? 'Fix Conflict First' : 'Save'}
+              <button type="button" onClick={closeModal} className="w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 transition">
+                Close
               </button>
             </div>
           </div>
