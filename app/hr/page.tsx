@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import Spinner, { LoadingRow } from '@/components/Spinner';
@@ -53,6 +53,15 @@ export default function HRDashboard() {
   const [announcementLoading, setAnnouncementLoading] = useState(true);
   const [announcementSaving, setAnnouncementSaving] = useState(false);
   const [announcementMsg, setAnnouncementMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Payslip upload states
+  const [payslipFile, setPayslipFile] = useState<File | null>(null);
+  const [payslipCutoff, setPayslipCutoff] = useState('');
+  const [payslipUploading, setPayslipUploading] = useState(false);
+  const [payslipMsg, setPayslipMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [employeePayslips, setEmployeePayslips] = useState<{ id: string; cutoff_label: string; file_name: string; uploaded_at: string }[]>([]);
+  const [employeePayslipsLoading, setEmployeePayslipsLoading] = useState(false);
+  const payslipFileRef = useRef<HTMLInputElement>(null);
 
   // Attendance Disputes
   const [disputes, setDisputes] = useState<any[]>([]);
@@ -343,6 +352,11 @@ export default function HRDashboard() {
       employment_status: '',
     });
     setEditOpen(true);
+    setPayslipFile(null);
+    setPayslipCutoff('');
+    setPayslipMsg(null);
+    if (payslipFileRef.current) payslipFileRef.current.value = '';
+    fetchEmployeePayslips(p.id);
 
     // Government IDs live in a separate table -- fetch this employee's
     // existing values (if any) so HR can see/update them.
@@ -456,7 +470,95 @@ export default function HRDashboard() {
     return 'tag-present';
   };
 
-  // Today's date in Philippine time, for the "Present/Late Today" stats.
+  // Fetch payslips for the employee currently open in the edit modal.
+  const fetchEmployeePayslips = async (userId: string) => {
+    setEmployeePayslipsLoading(true);
+    const { data, error } = await supabase
+      .from('payslips')
+      .select('id, cutoff_label, file_name, file_path, uploaded_at')
+      .eq('user_id', userId)
+      .order('uploaded_at', { ascending: false });
+    if (error) console.error('Error fetching employee payslips:', error);
+    setEmployeePayslips((data || []) as { id: string; cutoff_label: string; file_name: string; file_path: string; uploaded_at: string }[]);
+    setEmployeePayslipsLoading(false);
+  };
+
+  // Generate cutoff options: current month ± 3 months, both halves.
+  const generateCutoffOptions = () => {
+    const options: { value: string; label: string }[] = [];
+    const now = new Date();
+    for (let offset = -3; offset <= 3; offset++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const monthName = d.toLocaleDateString('en-US', { month: 'long' });
+      options.push({ value: `${y}-${m}:H1`, label: `${monthName} 1-15, ${y}` });
+      options.push({ value: `${y}-${m}:H2`, label: `${monthName} 16-31, ${y}` });
+    }
+    return options.reverse();
+  };
+
+  const uploadPayslip = async (employeeId: string) => {
+    if (!payslipFile || !payslipCutoff) {
+      setPayslipMsg({ type: 'error', text: 'Please select a file and a cutoff period.' });
+      return;
+    }
+    if (payslipFile.type !== 'application/pdf') {
+      setPayslipMsg({ type: 'error', text: 'Only PDF files are allowed.' });
+      return;
+    }
+    setPayslipUploading(true);
+    setPayslipMsg(null);
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      const cutoffOption = generateCutoffOptions().find(o => o.value === payslipCutoff);
+      const cutoffLabel = cutoffOption?.label || payslipCutoff;
+      const filePath = `${employeeId}/${payslipCutoff.replace(':', '_')}_${Date.now()}.pdf`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('payslips')
+        .upload(filePath, payslipFile, { contentType: 'application/pdf', upsert: false });
+      if (uploadError) throw uploadError;
+
+      const { error: dbError } = await supabase.from('payslips').insert([{
+        user_id: employeeId,
+        cutoff_period: payslipCutoff,
+        cutoff_label: cutoffLabel,
+        file_path: filePath,
+        file_name: payslipFile.name,
+        uploaded_by: currentUser?.id ?? null,
+      }]);
+      if (dbError) {
+        await supabase.storage.from('payslips').remove([filePath]);
+        throw dbError;
+      }
+
+      setPayslipMsg({ type: 'success', text: `Payslip uploaded for ${cutoffLabel}.` });
+      setPayslipFile(null);
+      setPayslipCutoff('');
+      if (payslipFileRef.current) payslipFileRef.current.value = '';
+      await fetchEmployeePayslips(employeeId);
+    } catch (err: any) {
+      console.error('Error uploading payslip:', err);
+      setPayslipMsg({ type: 'error', text: err?.message ?? 'Failed to upload payslip.' });
+    } finally {
+      setPayslipUploading(false);
+    }
+  };
+
+  const deletePayslip = async (payslipId: string, filePath: string, employeeId: string) => {
+    if (!confirm('Delete this payslip? This cannot be undone.')) return;
+    try {
+      await supabase.storage.from('payslips').remove([filePath]);
+      const { error } = await supabase.from('payslips').delete().eq('id', payslipId);
+      if (error) throw error;
+      await fetchEmployeePayslips(employeeId);
+    } catch (err: any) {
+      console.error('Error deleting payslip:', err);
+      alert('Failed to delete payslip: ' + err.message);
+    }
+  };
+
   const todayManila = useMemo(() => {
     const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' });
     return fmt.format(new Date()); // "YYYY-MM-DD"
@@ -912,6 +1014,80 @@ export default function HRDashboard() {
                     <option value="Contractual">Contractual</option>
                   </select>
                 </div>
+              </div>
+            </div>
+
+            <div className="mb-6 pt-3 border-t border-slate-100">
+              <p className="label-branded mb-3">Payslips</p>
+
+              {/* Existing payslips list */}
+              {employeePayslipsLoading ? (
+                <p className="text-slate-400 text-xs mb-3">Loading payslips...</p>
+              ) : employeePayslips.length === 0 ? (
+                <p className="text-slate-400 text-xs mb-3">No payslips uploaded yet.</p>
+              ) : (
+                <div className="space-y-2 mb-4">
+                  {employeePayslips.map((ps) => (
+                    <div key={ps.id} className="flex items-center justify-between gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-slate-800 truncate">{ps.cutoff_label}</p>
+                        <p className="text-slate-400 text-[10px] truncate">{ps.file_name}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => deletePayslip(ps.id, (ps as any).file_path, editing.id!)}
+                        className="flex-shrink-0 text-rose-500 hover:text-rose-700 text-xs font-bold transition"
+                        title="Delete payslip"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Upload new payslip */}
+              <div className="space-y-3 pt-3 border-t border-slate-100">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Upload New Payslip</p>
+
+                {payslipMsg && (
+                  <div className={`p-2.5 rounded-xl text-xs font-bold ${payslipMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                    {payslipMsg.text}
+                  </div>
+                )}
+
+                <select
+                  className="input-field"
+                  value={payslipCutoff}
+                  onChange={(e) => setPayslipCutoff(e.target.value)}
+                >
+                  <option value="">Select cutoff period...</option>
+                  {generateCutoffOptions().map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+
+                <input
+                  ref={payslipFileRef}
+                  type="file"
+                  accept="application/pdf"
+                  onChange={(e) => setPayslipFile(e.target.files?.[0] ?? null)}
+                  className="input-field text-sm file:mr-3 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"
+                />
+
+                <button
+                  type="button"
+                  onClick={() => editing.id && uploadPayslip(editing.id)}
+                  disabled={payslipUploading || !payslipFile || !payslipCutoff}
+                  className="w-full py-2.5 rounded-full bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition disabled:opacity-50"
+                >
+                  {payslipUploading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <Spinner size="sm" />
+                      Uploading...
+                    </span>
+                  ) : 'Upload PDF'}
+                </button>
               </div>
             </div>
 

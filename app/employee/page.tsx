@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import Image from 'next/image';
-import Spinner, { LoadingRow, LoadingSection } from '@/components/Spinner';
+import Spinner, { LoadingRow } from '@/components/Spinner';
 
 function EyeIcon() {
   return (
@@ -22,9 +22,6 @@ function EyeOffIcon() {
     </svg>
   );
 }
-
-const LATE_CUTOFF_HOUR = 9;
-const LATE_CUTOFF_MINUTE = 15;
 
 export default function EmployeeDashboard() {
   const [loading, setLoading] = useState(false);
@@ -93,18 +90,8 @@ export default function EmployeeDashboard() {
       }
       const now = ctx.currentTime;
 
-      const playTone = (freq: number, start: number, duration: number, peakVolume = 0.15) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0.0001, now + start);
-        gain.gain.exponentialRampToValueAtTime(peakVolume, now + start + 0.03);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + start + duration);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start(now + start);
-        osc.stop(now + start + duration);
+      const playTone = (_freq: number, _start: number, _duration: number, _peakVolume = 0.15) => {
+        // reserved for future use
       };
 
       // Soft "pop" tone with a gentle downward pitch bend -- this is
@@ -223,6 +210,7 @@ export default function EmployeeDashboard() {
     fetchAnnouncement();
     checkOfficeNetwork();
     fetchMyDisputes();
+    fetchPayslips();
     return () => clearInterval(timer);
   }, []);
 
@@ -423,6 +411,21 @@ export default function EmployeeDashboard() {
     }
   };
 
+  // Called when the employee clicks Time Out.
+  // If it's before 7PM Manila time, show a warning first.
+  const handleTimeOutClick = () => {
+    const now = new Date();
+    const manilaHour = parseInt(
+      new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', hour12: false }).format(now),
+      10
+    );
+    if (manilaHour < 19) {
+      setShowEarlyTimeOutWarning(true);
+    } else {
+      handleTimeOut();
+    }
+  };
+
   const handleTimeOut = async () => {
     setTimeOutLoading(true);
     setMessage('');
@@ -445,6 +448,49 @@ export default function EmployeeDashboard() {
   };
 
   const statusTagClass = (s: string | null) => (s === 'Late' ? 'tag-late' : 'tag-present');
+
+  // --- Early time-out warning (before 7PM) ---
+  const [showEarlyTimeOutWarning, setShowEarlyTimeOutWarning] = useState(false);
+
+  // --- Payslips ---
+  const [payslips, setPayslips] = useState<{ id: string; cutoff_label: string; cutoff_period: string; file_name: string; file_path: string; uploaded_at: string }[]>([]);
+  const [payslipsLoading, setPayslipsLoading] = useState(true);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  const fetchPayslips = async () => {
+    setPayslipsLoading(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setPayslipsLoading(false); return; }
+    const { data, error } = await supabase
+      .from('payslips')
+      .select('id, cutoff_label, cutoff_period, file_name, file_path, uploaded_at')
+      .eq('user_id', user.id)
+      .order('uploaded_at', { ascending: false });
+    if (error) console.error('Error fetching payslips:', error);
+    setPayslips(data || []);
+    setPayslipsLoading(false);
+  };
+
+  const downloadPayslip = async (payslip: { id: string; file_path: string; file_name: string }) => {
+    setDownloadingId(payslip.id);
+    try {
+      const { data, error } = await supabase.storage
+        .from('payslips')
+        .download(payslip.file_path);
+      if (error) throw error;
+      const url = URL.createObjectURL(data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = payslip.file_name;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      console.error('Error downloading payslip:', err);
+      alert('Failed to download payslip: ' + err.message);
+    } finally {
+      setDownloadingId(null);
+    }
+  };
 
   // --- Attendance Disputes ---
   // Employees can dispute a day tagged "Late" (claiming they actually
@@ -784,7 +830,7 @@ export default function EmployeeDashboard() {
             ) : !todayLog.time_out ? (
               // State 2: timed in, hasn't timed out yet
               <button
-                onClick={handleTimeOut}
+                onClick={handleTimeOutClick}
                 disabled={timeOutLoading || checkingNetwork || officeNetworkAllowed === false}
                 className="btn-danger"
               >
@@ -1010,6 +1056,59 @@ export default function EmployeeDashboard() {
                   </div>
                 ))}
               </div>
+            </div>
+
+            {/* My Payslips */}
+            <div className="card-style">
+              <h3 className="mb-6">My Payslips</h3>
+              {payslipsLoading ? (
+                <LoadingRow label="Loading payslips..." />
+              ) : payslips.length === 0 ? (
+                <div className="text-center py-6 border-2 border-dashed border-slate-200 rounded-2xl">
+                  <p className="text-slate-400 text-sm">No payslips uploaded yet.</p>
+                  <p className="text-slate-300 text-xs mt-1">HR will upload your payslip each cutoff period.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {payslips.map((p) => (
+                    <div key={p.id} className="flex items-center justify-between gap-3 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-slate-900 truncate">{p.cutoff_label}</p>
+                        <p className="text-slate-400 text-xs mt-0.5 truncate">{p.file_name}</p>
+                        <p className="text-slate-300 text-[10px] font-medium uppercase tracking-widest mt-1">
+                          Uploaded {new Date(p.uploaded_at).toLocaleDateString('en-US', {
+                            timeZone: 'Asia/Manila',
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                          })}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => downloadPayslip(p)}
+                        disabled={downloadingId === p.id}
+                        className="flex-shrink-0 flex items-center gap-2 bg-slate-900 text-white text-xs font-bold px-4 py-2 rounded-full hover:bg-slate-700 transition disabled:opacity-50"
+                      >
+                        {downloadingId === p.id ? (
+                          <>
+                            <Spinner size="sm" />
+                            Downloading...
+                          </>
+                        ) : (
+                          <>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                              <polyline points="7 10 12 15 17 10"/>
+                              <line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                            Download PDF
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* My Disputes -- persistent log, not just a toast, so the
@@ -1238,6 +1337,50 @@ export default function EmployeeDashboard() {
           </div>
         </div>
       )}
+      {/* Early Time-Out Warning Modal */}
+      {showEarlyTimeOutWarning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm card-style shadow-2xl text-center">
+            <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-amber-50 flex items-center justify-center text-2xl">
+              ⚠️
+            </div>
+            <h3 className="mb-2">Time Out Early?</h3>
+            <p className="text-slate-500 text-sm mb-6">
+              It's not yet 7:00 PM. Are you sure you want to time out now?
+              <br />
+              <span className="text-slate-400 text-xs mt-1 block">
+                Current time: {new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hour12: true })} (PH Time)
+              </span>
+            </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                className="flex-1 p-3 bg-slate-100 rounded-full font-medium text-sm hover:bg-slate-200 transition"
+                onClick={() => setShowEarlyTimeOutWarning(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="flex-1 btn-danger"
+                onClick={() => {
+                  setShowEarlyTimeOutWarning(false);
+                  handleTimeOut();
+                }}
+                disabled={timeOutLoading}
+              >
+                {timeOutLoading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <Spinner size="sm" />
+                    Processing...
+                  </span>
+                ) : 'Yes, Time Out'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </main>
   );
 }
