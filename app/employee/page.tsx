@@ -24,6 +24,7 @@ function EyeOffIcon() {
 }
 
 export default function EmployeeDashboard() {
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [timeOutLoading, setTimeOutLoading] = useState(false);
   const [todayLog, setTodayLog] = useState<{ id: string; time_in: string | null; time_out: string | null; status: string | null } | null>(null);
@@ -211,6 +212,8 @@ export default function EmployeeDashboard() {
     checkOfficeNetwork();
     fetchMyDisputes();
     fetchPayslips();
+    fetchMyLeaves();
+    fetchLeaveCredits();
     return () => clearInterval(timer);
   }, []);
 
@@ -256,41 +259,53 @@ export default function EmployeeDashboard() {
     };
   }, []);
 
-  // Live dispute status updates -- listens for the current employee's
-  // OWN attendance_disputes rows changing (Pending -> Approved/Rejected)
-  // via Supabase Realtime, so they get notified the moment HR decides,
-  // without refreshing. Requires Realtime enabled for this table (see
-  // enable_disputes_realtime.sql).
+  // Live dispute + leave status updates via Supabase Realtime.
+  // Runs only once currentUserId is known (set during initializeDashboard),
+  // so .on() and .subscribe() are always called synchronously — no async gap.
   useEffect(() => {
-    let channel: any = null;
+    if (!currentUserId) return;
 
-    (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      channel = supabase
-        .channel('employee-dispute-updates')
-        .on(
-          'postgres_changes',
-          { event: 'UPDATE', schema: 'public', table: 'attendance_disputes', filter: `user_id=eq.${user.id}` },
-          (payload) => {
-            const newRow = payload.new as { status?: string; dispute_date?: string };
-            if (newRow.status === 'Approved' || newRow.status === 'Rejected') {
-              setDisputeResultToast({ status: newRow.status, date: newRow.dispute_date || '' });
-              playNotificationSound();
-              fetchMyDisputes();
-              initializeDashboard(); // an approval may have changed attendance data
-              setTimeout(() => setDisputeResultToast(null), 8000);
-            }
+    const disputeChannel = supabase
+      .channel('employee-dispute-updates')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'attendance_disputes', filter: `user_id=eq.${currentUserId}` },
+        (payload) => {
+          const newRow = payload.new as { status?: string; dispute_date?: string };
+          if (newRow.status === 'Approved' || newRow.status === 'Rejected') {
+            setDisputeResultToast({ status: newRow.status, date: newRow.dispute_date || '' });
+            playNotificationSound();
+            fetchMyDisputes();
+            initializeDashboard();
+            setTimeout(() => setDisputeResultToast(null), 8000);
           }
-        )
-        .subscribe();
-    })();
+        }
+      )
+      .subscribe();
+
+    const leaveChannel = supabase
+      .channel('employee-leave-updates')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'leave_requests', filter: `user_id=eq.${currentUserId}` },
+        (payload) => {
+          const newRow = payload.new as { status?: string; leave_type?: string };
+          if (newRow.status === 'Approved' || newRow.status === 'Rejected') {
+            setLeaveResultToast({ status: newRow.status, leave_type: newRow.leave_type || 'Leave' });
+            playNotificationSound();
+            fetchMyLeaves();
+            fetchLeaveCredits();
+            setTimeout(() => setLeaveResultToast(null), 8000);
+          }
+        }
+      )
+      .subscribe();
 
     return () => {
-      if (channel) supabase.removeChannel(channel);
+      supabase.removeChannel(disputeChannel);
+      supabase.removeChannel(leaveChannel);
     };
-  }, []);
+  }, [currentUserId]);
 
   const initializeDashboard = async () => {
     setInitLoading(true);
@@ -299,6 +314,7 @@ export default function EmployeeDashboard() {
       setInitLoading(false);
       return;
     }
+    setCurrentUserId(user.id);
 
     // Use the Manila calendar date, not the browser's local/UTC date --
     // otherwise an employee whose device is set to a timezone behind
@@ -491,6 +507,95 @@ export default function EmployeeDashboard() {
     } finally {
       setDownloadingId(null);
     }
+  };
+
+  // --- Leave Requests ---
+  const [myLeaves, setMyLeaves] = useState<any[]>([]);
+  const [leaveCredits, setLeaveCredits] = useState<{ total_credits: number; used_credits: number } | null>(null);
+  const [leaveModalOpen, setLeaveModalOpen] = useState(false);
+  const [leaveForm, setLeaveForm] = useState({ leave_type: 'Sick', start_date: '', end_date: '', reason: '' });
+  const [leaveSaving, setLeaveSaving] = useState(false);
+  const [leaveMsg, setLeaveMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [leaveResultToast, setLeaveResultToast] = useState<{ status: string; leave_type: string } | null>(null);
+  const isRegular = governmentIds?.employment_status === 'Regular';
+  const remainingCredits = leaveCredits ? leaveCredits.total_credits - leaveCredits.used_credits : 15;
+
+  const fetchMyLeaves = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data, error } = await supabase
+      .from('leave_requests')
+      .select('id, leave_type, start_date, end_date, reason, status, hr_notes, created_at, reviewed_at')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+    if (error) { console.error('Error fetching leaves:', error); return; }
+    setMyLeaves(data || []);
+  };
+
+  const fetchLeaveCredits = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const year = new Date().getFullYear();
+    const { data } = await supabase
+      .from('leave_credits')
+      .select('total_credits, used_credits')
+      .eq('user_id', user.id)
+      .eq('year', year)
+      .maybeSingle();
+    setLeaveCredits(data ?? null);
+  };
+
+  const submitLeave = async () => {
+    if (!leaveForm.start_date || !leaveForm.end_date) {
+      setLeaveMsg({ type: 'error', text: 'Please fill in the start and end date.' });
+      return;
+    }
+    if (leaveForm.end_date < leaveForm.start_date) {
+      setLeaveMsg({ type: 'error', text: 'End date cannot be before start date.' });
+      return;
+    }
+    setLeaveSaving(true);
+    setLeaveMsg(null);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('You are not logged in.');
+      const { error } = await supabase.from('leave_requests').insert([{
+        user_id: user.id,
+        leave_type: leaveForm.leave_type,
+        start_date: leaveForm.start_date,
+        end_date: leaveForm.end_date,
+        reason: leaveForm.reason.trim() || null,
+      }]);
+      if (error) throw error;
+      setLeaveMsg({ type: 'success', text: 'Leave request submitted! HR will review it soon.' });
+      await fetchMyLeaves();
+      setTimeout(() => setLeaveModalOpen(false), 1200);
+    } catch (err: any) {
+      console.error('Error submitting leave:', err);
+      setLeaveMsg({ type: 'error', text: err?.message || 'Failed to submit leave request.' });
+    } finally {
+      setLeaveSaving(false);
+    }
+  };
+
+  const cancelLeave = async (leaveId: string) => {
+    if (!confirm('Cancel this leave request?')) return;
+    const { error } = await supabase.from('leave_requests').delete().eq('id', leaveId);
+    if (error) { alert('Failed to cancel: ' + error.message); return; }
+    await fetchMyLeaves();
+  };
+
+  // Count working days between two dates (Mon-Fri only)
+  const countLeaveDays = (start: string, end: string) => {
+    let count = 0;
+    const d = new Date(start);
+    const endDate = new Date(end);
+    while (d <= endDate) {
+      const day = d.getDay();
+      if (day !== 0 && day !== 6) count++;
+      d.setDate(d.getDate() + 1);
+    }
+    return count;
   };
 
   // --- Attendance Disputes ---
@@ -692,366 +797,205 @@ export default function EmployeeDashboard() {
   const strokeDashoffset = circumference - (onTimePercentage / 100) * circumference;
 
   return (
-    <main className="min-h-screen p-4 md:p-8">
-      <div className="max-w-6xl mx-auto space-y-6 md:space-y-8">
+    <main className="min-h-screen p-3 sm:p-4 md:p-6 lg:p-8">
+      <div className="max-w-7xl mx-auto space-y-3 sm:space-y-4 md:space-y-5">
 
         {/* Header */}
-        <header className="branding-box flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <header className="branding-box flex items-center justify-between gap-3 !p-3 sm:!p-4">
           <div>
-            <h1 className="text-xl sm:text-2xl">HAMDAN ENGINEERING</h1>
-            <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">Employee Portal</p>
+            <h1 className="text-base sm:text-lg md:text-2xl leading-tight">HAMDAN ENGINEERING</h1>
+            <p className="text-slate-400 text-[9px] sm:text-[10px] font-bold uppercase tracking-widest mt-0.5">Employee Portal</p>
           </div>
-          <button
-            onClick={() => supabase.auth.signOut().then(() => window.location.href = '/')}
-            className="self-start sm:self-auto text-slate-600 font-medium text-sm hover:text-red-600 transition"
-          >
-            Log Out
-          </button>
+          <div className="flex items-center gap-4">
+            <div className="hidden lg:flex items-center gap-4">
+              <div className="text-center"><p className="stat-number text-xl text-blue-600 leading-none">{summary.present}</p><p className="label-branded mt-0.5 mb-0">Present</p></div>
+              <div className="w-px h-8 bg-slate-200"/>
+              <div className="text-center"><p className="stat-number text-xl text-orange-600 leading-none">{summary.late}</p><p className="label-branded mt-0.5 mb-0">Late</p></div>
+              <div className="w-px h-8 bg-slate-200"/>
+              <div className="text-center"><p className="stat-number text-xl text-green-600 leading-none">{summary.onTime}</p><p className="label-branded mt-0.5 mb-0">On-Time</p></div>
+            </div>
+            <button onClick={() => supabase.auth.signOut().then(() => window.location.href = '/')} className="text-slate-500 font-medium text-xs hover:text-red-600 transition whitespace-nowrap">Log Out</button>
+          </div>
         </header>
 
-        {message && (
-          <div className={`p-4 rounded-xl text-sm font-bold ${message.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>
-            {message}
-          </div>
-        )}
+        {message && <div className={`p-3 rounded-xl text-xs font-bold ${message.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{message}</div>}
 
-        {/* Summary Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 md:gap-4">
-          <div className="card-style !p-4 md:!p-6 text-center">
-            <p className="stat-number text-2xl md:text-3xl text-blue-600">{summary.present}</p>
-            <p className="label-branded mt-1">Days Present</p>
-          </div>
-          <div className="card-style !p-4 md:!p-6 text-center">
-            <p className="stat-number text-2xl md:text-3xl text-orange-600">{summary.late}</p>
-            <p className="label-branded mt-1">Late</p>
-          </div>
-          <div className="card-style !p-4 md:!p-6 text-center col-span-2 sm:col-span-1">
-            <p className="stat-number text-2xl md:text-3xl text-green-600">{summary.onTime}</p>
-            <p className="label-branded mt-1">On-Time</p>
-          </div>
+        {/* Mobile summary cards */}
+        <div className="grid grid-cols-3 gap-2 lg:hidden">
+          <div className="card-style !p-3 text-center"><p className="stat-number text-xl text-blue-600">{summary.present}</p><p className="label-branded mt-0.5">Present</p></div>
+          <div className="card-style !p-3 text-center"><p className="stat-number text-xl text-orange-600">{summary.late}</p><p className="label-branded mt-0.5">Late</p></div>
+          <div className="card-style !p-3 text-center"><p className="stat-number text-xl text-green-600">{summary.onTime}</p><p className="label-branded mt-0.5">On-Time</p></div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
+        {/* Main layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 sm:gap-4 md:gap-5">
           {/* Profile Sidebar */}
-          <div className="md:col-span-1">
-            <div className="card-style md:sticky md:top-8 text-center">
-              <div className="w-24 h-24 mx-auto mb-6 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200">
-                {profile?.avatar_url ? (
-                  <Image src={profile.avatar_url} alt="Profile" width={96} height={96} className="object-cover w-full h-full" />
-                ) : (
-                  <div className="text-slate-400 font-bold">Logo</div>
-                )}
+          <div className="lg:col-span-1">
+            <div className="card-style lg:sticky lg:top-6 !p-4">
+              <div className="flex items-center gap-3 lg:flex-col lg:text-center lg:gap-0">
+                <div className="w-14 h-14 lg:w-20 lg:h-20 lg:mx-auto lg:mb-3 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 flex-shrink-0">
+                  {profile?.avatar_url ? <Image src={profile.avatar_url} alt="Profile" width={80} height={80} className="object-cover w-full h-full"/> : <div className="text-slate-400 font-bold text-xs">Logo</div>}
+                </div>
+                <div className="flex-1 min-w-0 lg:w-full">
+                  <h2 className="text-sm lg:text-base font-semibold text-slate-900 truncate lg:text-center">
+                    {initLoading ? <span className="text-slate-400">Loading...</span> : (profile?.full_name || 'Unknown')}
+                  </h2>
+                  <p className="text-blue-600 font-medium text-xs truncate lg:text-center">{profile?.designation || '---'}</p>
+                  <p className="text-slate-400 text-[10px] lg:hidden">ID: {profile?.employee_id || '---'}</p>
+                </div>
               </div>
-              <h2 className="text-xl font-semibold text-slate-900 flex items-center justify-center gap-2 min-h-[28px]">
-                {initLoading ? (
-                  <>
-                    <Spinner size="sm" className="text-blue-600" />
-                    <span className="text-slate-400 text-base font-medium">Loading...</span>
-                  </>
-                ) : (
-                  profile?.full_name || 'Unknown'
-                )}
-              </h2>
-              <p className="text-blue-600 font-medium text-sm mb-6">{profile?.designation || '---'}</p>
-
-              <div className="text-left border-t border-slate-100 pt-6">
+              <div className="hidden lg:block text-left border-t border-slate-100 pt-3 mt-3">
                 <p className="label-branded">Employee ID</p>
-                <p className="font-medium text-slate-700">{profile?.employee_id || '---'}</p>
+                <p className="font-medium text-slate-700 text-sm">{profile?.employee_id || '---'}</p>
               </div>
-
-              <button
-                type="button"
-                onClick={() => setShowGovIdsSection((s) => !s)}
-                className="mt-4 text-blue-600 text-xs font-bold hover:underline"
-              >
+              <button type="button" onClick={() => setShowGovIdsSection((s) => !s)} className="mt-3 text-blue-600 text-xs font-bold hover:underline w-full text-left lg:text-center">
                 {showGovIdsSection ? 'Hide Details' : 'See More Details'}
               </button>
-
               {showGovIdsSection && (
-                <div className="mt-4 pt-4 border-t border-slate-100 text-left space-y-4">
+                <div className="mt-3 pt-3 border-t border-slate-100 space-y-3">
                   {renderGovIdRow('SSS Number', governmentIds?.sss_number ?? null, 'sss')}
                   {renderGovIdRow('PhilHealth Number', governmentIds?.philhealth_number ?? null, 'philhealth')}
                   {renderGovIdRow('Pag-IBIG Number', governmentIds?.pagibig_number ?? null, 'pagibig')}
                   {renderGovIdRow('TIN Number', governmentIds?.tin_number ?? null, 'tin')}
-                  <div>
-                    <p className="label-branded mb-1">Hired Date</p>
-                    <p className="font-medium text-slate-700">
-                      {governmentIds?.hired_date ? formatHiredDate(governmentIds.hired_date) : 'Not set'}
-                    </p>
-                  </div>
+                  <div><p className="label-branded mb-1">Hired Date</p><p className="font-medium text-slate-700 text-sm">{governmentIds?.hired_date ? formatHiredDate(governmentIds.hired_date) : 'Not set'}</p></div>
                   <div>
                     <p className="label-branded mb-1">Employment Status</p>
                     {governmentIds?.employment_status ? (
-                      <span className={
-                        governmentIds.employment_status === 'Regular' ? 'tag-present'
-                        : governmentIds.employment_status === 'Probationary' ? 'tag-late'
-                        : 'tag-excused'
-                      }>
-                        {governmentIds.employment_status}
-                      </span>
-                    ) : (
-                      <p className="font-medium text-slate-700">Not set</p>
-                    )}
+                      <span className={governmentIds.employment_status === 'Regular' ? 'tag-present' : governmentIds.employment_status === 'Probationary' ? 'tag-late' : 'tag-excused'}>{governmentIds.employment_status}</span>
+                    ) : <p className="font-medium text-slate-700 text-sm">Not set</p>}
                   </div>
                 </div>
               )}
             </div>
           </div>
 
-          {/* Main Dashboard Area */}
-          <div className="md:col-span-2 space-y-6 md:space-y-8">
-            <div className="card-style p-6 md:p-10 text-center">
-              <h1 className="stat-number text-blue-600 text-3xl sm:text-4xl md:text-5xl tracking-tight normal-case">{time || '--:--:--'}</h1>
-              <p className="mt-2 text-slate-400 font-medium uppercase text-[10px] tracking-widest">{date}</p>
-              <p className="mt-3 text-[11px] text-slate-400 font-medium">
-                Late cutoff: 9:15 AM (Philippine Time)
-              </p>
-            </div>
+          {/* Main Content */}
+          <div className="lg:col-span-3 space-y-3 sm:space-y-4 md:space-y-5">
 
-            {!todayLog ? (
-              // State 1: hasn't timed in yet today
-              <button
-                onClick={handleTimeIn}
-                disabled={loading || initLoading || checkingNetwork || officeNetworkAllowed === false}
-                className="btn-primary"
-              >
-                {loading ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <Spinner size="sm" />
-                    Processing...
-                  </span>
-                ) : checkingNetwork ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <Spinner size="sm" />
-                    Checking network...
-                  </span>
-                ) : officeNetworkAllowed === false ? 'Not on Office Network'
-                  : 'Time In'}
-              </button>
-            ) : !todayLog.time_out ? (
-              // State 2: timed in, hasn't timed out yet
-              <button
-                onClick={handleTimeOutClick}
-                disabled={timeOutLoading || checkingNetwork || officeNetworkAllowed === false}
-                className="btn-danger"
-              >
-                {timeOutLoading ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <Spinner size="sm" />
-                    Processing...
-                  </span>
-                ) : checkingNetwork ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <Spinner size="sm" />
-                    Checking network...
-                  </span>
-                ) : officeNetworkAllowed === false ? 'Not on Office Network'
-                  : 'Time Out'}
-              </button>
-            ) : (
-              // State 3: fully done for today
-              <button disabled className="btn-primary opacity-50 cursor-not-allowed">
-                Completed for Today
-              </button>
-            )}
-
-            {todayLog?.time_in && (
-              <p className="text-center text-slate-400 text-xs font-medium -mt-4">
-                Timed in at{' '}
-                {new Date(todayLog.time_in).toLocaleTimeString('en-US', {
-                  timeZone: 'Asia/Manila',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                  second: '2-digit',
-                })}
-                {todayLog.time_out && (
-                  <>
-                    {' '}· Timed out at{' '}
-                    {new Date(todayLog.time_out).toLocaleTimeString('en-US', {
-                      timeZone: 'Asia/Manila',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                      second: '2-digit',
-                    })}
-                  </>
-                )}
-              </p>
-            )}
-
-            {!checkingNetwork && officeNetworkAllowed === false && !(todayLog?.time_out) && (
-              <div className="flex items-center justify-between gap-3 -mt-4 px-1">
-                <p className="text-orange-600 text-xs font-medium">
-                  ⚠️ You must be connected to the office network to {todayLog ? 'time out' : 'time in'}.
-                </p>
-                <button
-                  onClick={checkOfficeNetwork}
-                  className="text-blue-600 text-xs font-bold whitespace-nowrap hover:underline"
-                >
-                  Check again
-                </button>
+            {/* Clock + Time buttons */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="card-style !p-4 text-center">
+                <h1 className="stat-number text-blue-600 text-3xl md:text-4xl lg:text-5xl tracking-tight normal-case">{time || '--:--:--'}</h1>
+                <p className="mt-1 text-slate-400 font-medium uppercase text-[9px] tracking-widest">{date}</p>
+                <p className="mt-1 text-[10px] text-slate-400">Late cutoff: 9:15 AM (PH Time)</p>
               </div>
-            )}
-
-            {/* Attendance Rate Ring */}
-            <div className="card-style flex flex-col items-center justify-center py-8">
-              <p className="label-branded">On-Time Rate ({formatMonthLabel(summaryCutoffKey)})</p>
-              <div className="relative w-32 h-32 my-4">
-                <svg
-                  className="w-full h-full transform -rotate-90"
-                  viewBox="0 0 120 120"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  {/* Background ring */}
-                  <circle
-                    cx="60"
-                    cy="60"
-                    r="45"
-                    fill="none"
-                    stroke="#e6f1e6"
-                    strokeWidth="8"
-                  />
-                  {/* Progress ring */}
-                  <circle
-                    cx="60"
-                    cy="60"
-                    r="45"
-                    fill="none"
-                    stroke="#2fbd6c"
-                    strokeWidth="8"
-                    strokeDasharray={circumference}
-                    strokeDashoffset={strokeDashoffset}
-                    strokeLinecap="round"
-                    className="transition-all duration-500"
-                  />
-                </svg>
-                {/* Center text */}
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <p className="stat-number text-3xl text-green-600">{onTimePercentage}%</p>
-                  <p className="text-slate-400 text-xs font-medium">On-Time</p>
+              <div className="flex flex-col gap-2 justify-center">
+                {!todayLog ? (
+                  <button onClick={handleTimeIn} disabled={loading || initLoading || checkingNetwork || officeNetworkAllowed === false} className="btn-primary !py-3">
+                    {loading ? <span className="flex items-center justify-center gap-2"><Spinner size="sm"/>Processing...</span> : checkingNetwork ? <span className="flex items-center justify-center gap-2"><Spinner size="sm"/>Checking...</span> : officeNetworkAllowed === false ? 'Not on Office Network' : 'Time In'}
+                  </button>
+                ) : !todayLog.time_out ? (
+                  <button onClick={handleTimeOutClick} disabled={timeOutLoading || checkingNetwork || officeNetworkAllowed === false} className="btn-danger !py-3">
+                    {timeOutLoading ? <span className="flex items-center justify-center gap-2"><Spinner size="sm"/>Processing...</span> : checkingNetwork ? <span className="flex items-center justify-center gap-2"><Spinner size="sm"/>Checking...</span> : officeNetworkAllowed === false ? 'Not on Office Network' : 'Time Out'}
+                  </button>
+                ) : (
+                  <button disabled className="btn-primary !py-3 opacity-50 cursor-not-allowed">Completed for Today</button>
+                )}
+                {todayLog?.time_in && (
+                  <p className="text-center text-slate-400 text-xs">
+                    In: {new Date(todayLog.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    {todayLog.time_out && <> · Out: {new Date(todayLog.time_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</>}
+                  </p>
+                )}
+                {!checkingNetwork && officeNetworkAllowed === false && !(todayLog?.time_out) && (
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-orange-600 text-xs font-medium">⚠️ Not on office network.</p>
+                    <button onClick={checkOfficeNetwork} className="text-blue-600 text-xs font-bold hover:underline">Retry</button>
+                  </div>
+                )}
+                {/* On-Time Ring inline */}
+                <div className="flex items-center gap-3 card-style !p-3">
+                  <div className="relative w-10 h-10 flex-shrink-0">
+                    <svg className="w-full h-full transform -rotate-90" viewBox="0 0 120 120">
+                      <circle cx="60" cy="60" r="45" fill="none" stroke="#e6f1e6" strokeWidth="14"/>
+                      <circle cx="60" cy="60" r="45" fill="none" stroke="#2fbd6c" strokeWidth="14" strokeDasharray={circumference} strokeDashoffset={strokeDashoffset} strokeLinecap="round" className="transition-all duration-500"/>
+                    </svg>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <p className="stat-number text-[10px] text-green-600">{onTimePercentage}%</p>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-900 text-xs">On-Time Rate</p>
+                    <p className="text-slate-400 text-[10px]">{formatMonthLabel(summaryCutoffKey)}</p>
+                  </div>
                 </div>
               </div>
             </div>
-
             {/* Announcements */}
             {announcementLoading ? (
-              <div className="card-style">
-                <LoadingRow label="Loading announcement..." />
-              </div>
+              <div className="card-style !p-4"><LoadingRow label="Loading announcement..." /></div>
             ) : announcementError ? (
-              <div className="card-style border border-red-100">
-                <p className="text-red-500 text-sm">{announcementError}</p>
-              </div>
+              <div className="card-style !p-4 border border-red-100"><p className="text-red-500 text-sm">{announcementError}</p></div>
             ) : announcement ? (
-              <div className="card-dark">
-                <div className="flex items-start gap-4">
-                  <div className="flex-shrink-0 w-11 h-11 rounded-2xl bg-green-500 flex items-center justify-center text-xl">
-                    📣
-                  </div>
+              <div className="card-dark !p-4">
+                <div className="flex items-start gap-3">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-xl bg-green-500 flex items-center justify-center text-sm">📣</div>
                   <div className="flex-1 min-w-0">
-                    <span className="inline-block bg-green-500 text-slate-900 text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full mb-3">
-                      Announcement
-                    </span>
-                    <p className="text-white text-base md:text-lg font-medium whitespace-pre-wrap leading-relaxed">
-                      {announcement}
-                    </p>
-                    {announcementUpdatedAt && (
-                      <p className="text-green-100/70 text-[11px] font-medium uppercase tracking-widest mt-4">
-                        Updated: {announcementUpdatedAt}
-                      </p>
-                    )}
+                    <span className="inline-block bg-green-500 text-slate-900 text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full mb-2">Announcement</span>
+                    <p className="text-white text-sm font-medium whitespace-pre-wrap leading-relaxed">{announcement}</p>
+                    {announcementUpdatedAt && <p className="text-green-100/70 text-[10px] font-medium uppercase tracking-widest mt-2">Updated: {announcementUpdatedAt}</p>}
                   </div>
                 </div>
               </div>
             ) : (
-              <div className="card-style border-2 border-dashed border-slate-200 text-center">
-                <p className="text-slate-400 text-sm">No new announcements right now.</p>
+              <div className="card-style !p-3 border-2 border-dashed border-slate-200 text-center">
+                <p className="text-slate-400 text-xs">No announcements right now.</p>
               </div>
             )}
 
-            <div className="card-style">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-                <h3 className="mb-0">Attendance History</h3>
-                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                  <button
-                    onClick={() => openDisputeModal(null, '')}
-                    className="text-blue-600 text-xs font-bold hover:underline whitespace-nowrap"
-                  >
-                    Forgot to time in? File a dispute
-                  </button>
-                  <select
-                    className="input-field w-full sm:w-auto"
-                    value={monthFilter}
-                    onChange={(e) => setMonthFilter(e.target.value)}
-                  >
+            {/* Quick Actions */}
+            <div className="grid grid-cols-2 gap-3">
+              <button type="button" onClick={() => { setLeaveModalOpen(true); setLeaveMsg(null); setLeaveForm({ leave_type: 'Sick', start_date: '', end_date: '', reason: '' }); }} className="card-style !p-3 flex items-center gap-2 hover:bg-slate-50 transition text-left">
+                <div className="w-8 h-8 rounded-xl bg-green-50 flex items-center justify-center flex-shrink-0">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-green-600"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                </div>
+                <div className="min-w-0">
+                  <p className="font-semibold text-slate-900 text-xs">Leave Request</p>
+                  <p className="text-slate-400 text-[10px] truncate">{isRegular ? `${remainingCredits} credits left` : 'File a leave'}</p>
+                </div>
+              </button>
+              <button type="button" onClick={() => { setPayslipsModalOpen(true); fetchPayslips(); }} className="card-style !p-3 flex items-center gap-2 hover:bg-slate-50 transition text-left">
+                <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-600"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                </div>
+                <div className="min-w-0">
+                  <p className="font-semibold text-slate-900 text-xs">My Payslips</p>
+                  <p className="text-slate-400 text-[10px] truncate">{payslips.length > 0 ? `${payslips.length} available` : 'No payslips yet'}</p>
+                </div>
+              </button>
+            </div>
+
+            {/* Attendance History */}
+            <div className="card-style !p-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+                <h3 className="mb-0 text-sm">Attendance History</h3>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button onClick={() => openDisputeModal(null, '')} className="text-blue-600 text-xs font-bold hover:underline whitespace-nowrap">+ Missed time-in</button>
+                  <select className="input-field !py-1.5 !text-xs !min-h-0 w-auto" value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)}>
                     <option value="">All cutoffs</option>
-                    {availableCutoffs.map((c) => (
-                      <option key={c} value={c}>{formatMonthLabel(c)}</option>
-                    ))}
+                    {availableCutoffs.map((c) => <option key={c} value={c}>{formatMonthLabel(c)}</option>)}
                   </select>
-                  {monthFilter && (
-                    <button
-                      onClick={() => setMonthFilter('')}
-                      className="text-slate-400 text-xs font-bold hover:text-slate-600 transition whitespace-nowrap"
-                    >
-                      Clear
-                    </button>
-                  )}
+                  {monthFilter && <button onClick={() => setMonthFilter('')} className="text-slate-400 text-xs font-bold hover:text-slate-600">Clear</button>}
                 </div>
               </div>
-              <div className="space-y-3">
-                {initLoading && <LoadingRow label="Loading attendance history..." />}
-                {!initLoading && filteredHistory.length === 0 && (
-                  <p className="text-slate-400 text-sm">No attendance records{monthFilter ? ' for this cutoff' : ''}.</p>
-                )}
+              <div className="space-y-2">
+                {initLoading && <LoadingRow label="Loading..." />}
+                {!initLoading && filteredHistory.length === 0 && <p className="text-slate-400 text-xs">No records{monthFilter ? ' for this cutoff' : ''}.</p>}
                 {filteredHistory.map((log, index) => (
-                  <div key={index} className="flex flex-wrap justify-between items-center gap-2 p-4 bg-slate-50 rounded-xl border border-slate-100">
-                    <div>
-                      <div className="font-medium text-slate-900">{new Date(log.log_date).toLocaleDateString('en-US', { weekday: 'long' })}</div>
-                      <div className="label-branded mb-0">{log.log_date}</div>
+                  <div key={index} className="flex items-center justify-between gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                    <div className="min-w-0">
+                      <div className="font-medium text-slate-900 text-xs">{new Date(log.log_date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</div>
+                      <div className="text-slate-400 text-[10px]">{log.log_date}</div>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2 flex-shrink-0">
                       <span className={statusTagClass(log.status)}>{log.status}</span>
                       <div className="text-right">
-                        <div className="font-semibold text-slate-700">
-                          {log.time_in
-                            ? new Date(log.time_in).toLocaleTimeString('en-US', {
-                                timeZone: 'Asia/Manila',
-                                hour: '2-digit',
-                                minute: '2-digit',
-                                second: '2-digit',
-                              })
-                            : '--:--'}
-                          {log.time_out && (
-                            <>
-                              {' '}–{' '}
-                              {new Date(log.time_out).toLocaleTimeString('en-US', {
-                                timeZone: 'Asia/Manila',
-                                hour: '2-digit',
-                                minute: '2-digit',
-                                second: '2-digit',
-                              })}
-                            </>
-                          )}
+                        <div className="font-semibold text-slate-700 text-xs">
+                          {log.time_in ? new Date(log.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }) : '--:--'}
+                          {log.time_out && <> – {new Date(log.time_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}</>}
                         </div>
-                        {!log.time_out && (
-                          <div className="text-slate-400 text-[10px] font-medium uppercase tracking-wide">
-                            No time out
-                          </div>
-                        )}
-                        {log.status === 'Late' && (
-                          hasPendingDispute(log.log_date) ? (
-                            <div className="text-orange-600 text-[10px] font-bold uppercase tracking-wide mt-1">
-                              Dispute Pending
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => openDisputeModal(log.id, log.log_date)}
-                              className="text-blue-600 text-[10px] font-bold uppercase tracking-wide hover:underline mt-1"
-                            >
-                              Dispute
-                            </button>
-                          )
-                        )}
+                        {!log.time_out && <div className="text-slate-400 text-[9px] uppercase tracking-wide">No time out</div>}
+                        {log.status === 'Late' && (hasPendingDispute(log.log_date) ? <div className="text-orange-600 text-[9px] font-bold uppercase">Dispute Pending</div> : <button onClick={() => openDisputeModal(log.id, log.log_date)} className="text-blue-600 text-[9px] font-bold uppercase hover:underline">Dispute</button>)}
                       </div>
                     </div>
                   </div>
@@ -1059,96 +1003,49 @@ export default function EmployeeDashboard() {
               </div>
             </div>
 
-            {/* My Payslips — single button, opens modal */}
-            <button
-              type="button"
-              onClick={() => { setPayslipsModalOpen(true); fetchPayslips(); }}
-              className="w-full flex items-center justify-between gap-3 card-style hover:bg-slate-50 transition text-left"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-blue-50 flex items-center justify-center flex-shrink-0">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-600">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                    <polyline points="14 2 14 8 20 8"/>
-                    <line x1="16" y1="13" x2="8" y2="13"/>
-                    <line x1="16" y1="17" x2="8" y2="17"/>
-                    <polyline points="10 9 9 9 8 9"/>
-                  </svg>
-                </div>
-                <div>
-                  <p className="font-semibold text-slate-900 text-sm">My Payslips</p>
-                  <p className="text-slate-400 text-xs">{payslips.length > 0 ? `${payslips.length} payslip${payslips.length > 1 ? 's' : ''} available` : 'No payslips yet'}</p>
-                </div>
-              </div>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-slate-400 flex-shrink-0">
-                <polyline points="9 18 15 12 9 6"/>
-              </svg>
-            </button>
-
-            {/* My Disputes -- persistent log, not just a toast, so the
-                employee can always look back and see what happened and
-                when, even after the notification toast has dismissed. */}
-            {myDisputes.length > 0 && (
-              <div className="card-style">
-                <h3 className="mb-6">My Disputes</h3>
-                <div className="space-y-3">
-                  {myDisputes.map((d) => (
-                    <div key={d.id} className="flex flex-wrap items-center justify-between gap-2 p-4 bg-slate-50 rounded-xl border border-slate-100">
-                      <div>
-                        <div className="font-medium text-slate-900">
-                          {d.attendance_log_id ? 'Late tag dispute' : 'Missed time-in report'} — {d.dispute_date}
+            {/* My Leave Requests */}
+            {myLeaves.length > 0 && (
+              <div className="card-style !p-4">
+                <h3 className="mb-3 text-sm">My Leave Requests</h3>
+                <div className="space-y-2">
+                  {myLeaves.map((l) => (
+                    <div key={l.id} className="flex items-center justify-between gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold text-slate-900 text-xs">{l.leave_type} Leave</span>
+                          <span className={l.status === 'Approved' ? 'tag-present' : l.status === 'Rejected' ? 'tag-late' : 'tag-excused'}>{l.status}</span>
                         </div>
-                        <div className="label-branded mb-0 mt-1">
-                          {d.original_time_in && (
-                            <>
-                              Before:{' '}
-                              {new Date(d.original_time_in).toLocaleTimeString('en-US', {
-                                timeZone: 'Asia/Manila',
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
-                              {' · '}
-                            </>
-                          )}
-                          Claimed:{' '}
-                          {new Date(d.claimed_time_in).toLocaleTimeString('en-US', {
-                            timeZone: 'Asia/Manila',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </div>
+                        <div className="text-slate-400 text-[10px] mt-0.5">{l.start_date === l.end_date ? l.start_date : `${l.start_date} → ${l.end_date}`} · {countLeaveDays(l.start_date, l.end_date)}d</div>
+                        {l.hr_notes && <div className="text-blue-600 text-[10px] mt-0.5">HR: {l.hr_notes}</div>}
                       </div>
-                      <div className="text-right">
-                        <span className={
-                          d.status === 'Approved' ? 'tag-present'
-                          : d.status === 'Rejected' ? 'tag-late'
-                          : 'tag-excused'
-                        }>
-                          {d.status}
-                        </span>
-                        {d.reviewed_at && (
-                          <div className="text-slate-400 text-[10px] font-medium uppercase tracking-wide mt-1">
-                            {d.status === 'Approved' ? 'Approved' : 'Declined'} on{' '}
-                            {new Date(d.reviewed_at).toLocaleDateString('en-US', {
-                              timeZone: 'Asia/Manila',
-                              month: 'short',
-                              day: 'numeric',
-                              year: 'numeric',
-                            })}
-                            {' '}at{' '}
-                            {new Date(d.reviewed_at).toLocaleTimeString('en-US', {
-                              timeZone: 'Asia/Manila',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}
-                          </div>
-                        )}
-                      </div>
+                      {l.status === 'Pending' && <button onClick={() => cancelLeave(l.id)} className="text-rose-500 hover:text-rose-700 text-xs font-bold flex-shrink-0">Cancel</button>}
                     </div>
                   ))}
                 </div>
               </div>
             )}
+
+            {/* My Disputes */}
+            {myDisputes.length > 0 && (
+              <div className="card-style !p-4">
+                <h3 className="mb-3 text-sm">My Disputes</h3>
+                <div className="space-y-2">
+                  {myDisputes.map((d) => (
+                    <div key={d.id} className="flex items-center justify-between gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                      <div className="min-w-0">
+                        <div className="font-medium text-slate-900 text-xs truncate">{d.attendance_log_id ? 'Late dispute' : 'Missed time-in'} — {d.dispute_date}</div>
+                        <div className="text-slate-400 text-[10px] mt-0.5">
+                          {d.original_time_in && <>{new Date(d.original_time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })} → </>}
+                          {new Date(d.claimed_time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      </div>
+                      <span className={d.status === 'Approved' ? 'tag-present' : d.status === 'Rejected' ? 'tag-late' : 'tag-excused'}>{d.status}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
           </div>
         </div>
       </div>
@@ -1380,6 +1277,121 @@ export default function EmployeeDashboard() {
             >
               Close
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Leave Request Modal */}
+      {leaveModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm card-style shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="mb-0">File a Leave Request</h3>
+              <button type="button" onClick={() => setLeaveModalOpen(false)} className="text-slate-400 hover:text-slate-600 transition" aria-label="Close">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+
+            {/* Credits badge for Regular employees */}
+            {isRegular && (
+              <div className={`flex items-center justify-between p-3 rounded-xl mb-4 ${remainingCredits <= 3 ? 'bg-orange-50 border border-orange-100' : 'bg-green-50 border border-green-100'}`}>
+                <p className={`text-xs font-bold ${remainingCredits <= 3 ? 'text-orange-700' : 'text-green-700'}`}>
+                  Leave Credits ({new Date().getFullYear()})
+                </p>
+                <p className={`text-sm font-extrabold ${remainingCredits <= 3 ? 'text-orange-700' : 'text-green-700'}`}>
+                  {remainingCredits} / {leaveCredits?.total_credits ?? 15} remaining
+                </p>
+              </div>
+            )}
+
+            {!isRegular && (
+              <div className="flex items-start gap-2 p-3 rounded-xl mb-4 bg-sky-50 border border-sky-100">
+                <p className="text-xs text-sky-700 font-medium">ℹ️ Leave credits apply to Regular employees only. Your request will still be reviewed by HR.</p>
+              </div>
+            )}
+
+            {leaveMsg && (
+              <div className={`p-3 rounded-xl text-sm font-bold mb-4 ${leaveMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                {leaveMsg.text}
+              </div>
+            )}
+
+            <label className="label-branded">Leave Type</label>
+            <div className="grid grid-cols-3 gap-2 mb-4">
+              {(['Sick', 'Vacation', 'Emergency'] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setLeaveForm({ ...leaveForm, leave_type: t })}
+                  className={`py-2.5 rounded-full text-xs font-bold transition ${leaveForm.leave_type === t ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+
+            <label className="label-branded">Start Date</label>
+            <input
+              type="date"
+              className="input-field mb-3"
+              value={leaveForm.start_date}
+              onChange={(e) => setLeaveForm({ ...leaveForm, start_date: e.target.value, end_date: e.target.value })}
+              min={new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())}
+            />
+
+            <label className="label-branded">End Date</label>
+            <input
+              type="date"
+              className="input-field mb-3"
+              value={leaveForm.end_date}
+              onChange={(e) => setLeaveForm({ ...leaveForm, end_date: e.target.value })}
+              min={leaveForm.start_date || new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())}
+            />
+
+            {leaveForm.start_date && leaveForm.end_date && (
+              <p className="text-slate-400 text-xs mb-3 ml-1">
+                📅 {countLeaveDays(leaveForm.start_date, leaveForm.end_date)} working day{countLeaveDays(leaveForm.start_date, leaveForm.end_date) > 1 ? 's' : ''}
+                {isRegular && remainingCredits < countLeaveDays(leaveForm.start_date, leaveForm.end_date) && (
+                  <span className="text-orange-600 font-bold"> · ⚠️ Exceeds remaining credits</span>
+                )}
+              </p>
+            )}
+
+            <label className="label-branded">Reason (optional)</label>
+            <textarea
+              className="input-field mb-6 min-h-[72px] resize-y"
+              value={leaveForm.reason}
+              onChange={(e) => setLeaveForm({ ...leaveForm, reason: e.target.value })}
+              placeholder="e.g. Medical appointment, family emergency..."
+            />
+
+            <div className="flex gap-3">
+              <button type="button" className="flex-1 p-3 bg-slate-100 rounded-full font-medium text-sm" onClick={() => setLeaveModalOpen(false)}>Cancel</button>
+              <button
+                type="button"
+                className="flex-1 btn-primary disabled:opacity-50"
+                onClick={submitLeave}
+                disabled={leaveSaving || !leaveForm.start_date || !leaveForm.end_date}
+              >
+                {leaveSaving ? <span className="flex items-center justify-center gap-2"><Spinner size="sm" />Submitting...</span> : 'Submit Request'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Leave Result Toast */}
+      {leaveResultToast && (
+        <div className="fixed top-4 left-4 right-4 sm:left-auto sm:right-6 sm:top-36 sm:max-w-sm z-50">
+          <div className={`rounded-2xl text-white p-4 shadow-2xl flex items-start gap-3 ${leaveResultToast.status === 'Approved' ? 'bg-green-600' : 'bg-rose-600'}`}>
+            <div className="flex-shrink-0 w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center text-lg">
+              {leaveResultToast.status === 'Approved' ? '✅' : '❌'}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-white font-semibold text-sm">Leave {leaveResultToast.status === 'Approved' ? 'Approved' : 'Declined'}</p>
+              <p className="text-white/80 text-xs mt-1">Your {leaveResultToast.leave_type} leave request was {leaveResultToast.status === 'Approved' ? 'approved' : 'declined'} by HR.</p>
+            </div>
+            <button onClick={() => setLeaveResultToast(null)} className="text-white/60 hover:text-white flex-shrink-0" type="button">✕</button>
           </div>
         </div>
       )}

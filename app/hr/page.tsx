@@ -70,10 +70,18 @@ export default function HRDashboard() {
   const [disputeActionLoadingId, setDisputeActionLoadingId] = useState<string | null>(null);
   const [disputeMsg, setDisputeMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  // Leave Requests
+  const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
+  const [leaveRequestsLoading, setLeaveRequestsLoading] = useState(true);
+  const [leaveActionLoadingId, setLeaveActionLoadingId] = useState<string | null>(null);
+  const [leaveMsg, setLeaveMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [leaveHrNotes, setLeaveHrNotes] = useState<{ [id: string]: string }>({});
+
   useEffect(() => {
     refreshAllData();
     fetchAnnouncement();
     fetchDisputes();
+    fetchLeaveRequests();
   }, []);
 
   const refreshAllData = async () => {
@@ -278,6 +286,111 @@ export default function HRDashboard() {
       setDisputeMsg({ type: 'error', text: err?.message ?? 'Failed to reject dispute.' });
     } finally {
       setDisputeActionLoadingId(null);
+    }
+  };
+
+  // --- Leave Requests ---
+  const fetchLeaveRequests = async () => {
+    setLeaveRequestsLoading(true);
+    const { data, error } = await supabase
+      .from('leave_requests')
+      .select(`id, leave_type, start_date, end_date, reason, status, hr_notes, created_at, reviewed_at,
+        employee:profiles!leave_requests_user_id_fkey(full_name, id)`)
+      .order('created_at', { ascending: false });
+    if (error) { console.error('Error fetching leave requests:', error); }
+    setLeaveRequests(data || []);
+    setLeaveRequestsLoading(false);
+  };
+
+  const countLeaveDays = (start: string, end: string) => {
+    let count = 0;
+    const d = new Date(start);
+    const endDate = new Date(end);
+    while (d <= endDate) {
+      const day = d.getDay();
+      if (day !== 0 && day !== 6) count++;
+      d.setDate(d.getDate() + 1);
+    }
+    return count;
+  };
+
+  const approveLeave = async (leave: any) => {
+    setLeaveActionLoadingId(leave.id);
+    setLeaveMsg(null);
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      const days = countLeaveDays(leave.start_date, leave.end_date);
+      const notes = leaveHrNotes[leave.id]?.trim() || null;
+
+      const { error } = await supabase
+        .from('leave_requests')
+        .update({ status: 'Approved', hr_notes: notes, reviewed_by: currentUser?.id, reviewed_at: new Date().toISOString() })
+        .eq('id', leave.id);
+      if (error) throw error;
+
+      // Deduct credits if employee is Regular
+      const employeeId = leave.employee?.id;
+      if (employeeId) {
+        const { data: govId } = await supabase
+          .from('employee_government_ids')
+          .select('employment_status')
+          .eq('user_id', employeeId)
+          .maybeSingle();
+
+        if (govId?.employment_status === 'Regular') {
+          const year = new Date(leave.start_date).getFullYear();
+          const { data: credits } = await supabase
+            .from('leave_credits')
+            .select('id, used_credits, total_credits')
+            .eq('user_id', employeeId)
+            .eq('year', year)
+            .maybeSingle();
+
+          if (credits) {
+            await supabase
+              .from('leave_credits')
+              .update({ used_credits: Math.min(credits.used_credits + days, credits.total_credits) })
+              .eq('id', credits.id);
+          } else {
+            // First leave of the year — create the credits row
+            await supabase.from('leave_credits').insert([{
+              user_id: employeeId,
+              year,
+              total_credits: 15,
+              used_credits: Math.min(days, 15),
+            }]);
+          }
+        }
+      }
+
+      setLeaveMsg({ type: 'success', text: 'Leave request approved.' });
+      await fetchLeaveRequests();
+    } catch (err: any) {
+      console.error('Error approving leave:', err);
+      setLeaveMsg({ type: 'error', text: err?.message ?? 'Failed to approve leave.' });
+    } finally {
+      setLeaveActionLoadingId(null);
+    }
+  };
+
+  const rejectLeave = async (leave: any) => {
+    setLeaveActionLoadingId(leave.id);
+    setLeaveMsg(null);
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      const notes = leaveHrNotes[leave.id]?.trim() || null;
+      const { error } = await supabase
+        .from('leave_requests')
+        .update({ status: 'Rejected', hr_notes: notes, reviewed_by: currentUser?.id, reviewed_at: new Date().toISOString() })
+        .eq('id', leave.id);
+      if (error) throw error;
+      setLeaveMsg({ type: 'success', text: 'Leave request rejected.' });
+      await fetchLeaveRequests();
+    } catch (err: any) {
+      console.error('Error rejecting leave:', err);
+      setLeaveMsg({ type: 'error', text: err?.message ?? 'Failed to reject leave.' });
+    } finally {
+      setLeaveActionLoadingId(null);
     }
   };
 
@@ -596,231 +709,169 @@ export default function HRDashboard() {
       .toUpperCase();
 
   return (
-    <main className="min-h-screen p-4 md:p-8">
-      <div className="max-w-6xl mx-auto space-y-8">
+    <main className="min-h-screen p-3 sm:p-4 md:p-6 lg:p-8">
+      <div className="max-w-7xl mx-auto space-y-3 sm:space-y-4 md:space-y-5">
         {/* Header */}
-        <header className="branding-box flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <header className="branding-box flex items-center justify-between gap-3 !p-3 sm:!p-4">
           <div>
-            <h1>HAMDAN ENGINEERING</h1>
-            <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">HR Portal | Attendance</p>
+            <h1 className="text-base sm:text-lg md:text-2xl leading-tight">HAMDAN ENGINEERING</h1>
+            <p className="text-slate-400 text-[9px] sm:text-[10px] font-bold uppercase tracking-widest mt-0.5">HR Portal</p>
           </div>
-          <button onClick={() => supabase.auth.signOut().then(() => router.push('/'))} className="text-slate-600 font-medium text-sm hover:text-red-600 transition">
-            Sign out
-          </button>
+          <div className="flex items-center gap-4">
+            <div className="hidden lg:flex items-center gap-4">
+              <div className="text-center"><p className="stat-number text-xl text-white leading-none">{profiles.length}</p><p className="text-white/60 text-[9px] font-bold uppercase tracking-widest mt-0.5">Employees</p></div>
+              <div className="w-px h-8 bg-white/20"/>
+              <div className="text-center"><p className="stat-number text-xl text-green-600 leading-none">{presentTodayCount}</p><p className="label-branded mt-0.5 mb-0">Present</p></div>
+              <div className="w-px h-8 bg-white/20"/>
+              <div className="text-center"><p className="stat-number text-xl text-orange-600 leading-none">{lateTodayCount}</p><p className="label-branded mt-0.5 mb-0">Late</p></div>
+            </div>
+            <button onClick={() => supabase.auth.signOut().then(() => router.push('/'))} className="text-slate-500 font-medium text-xs hover:text-red-600 transition whitespace-nowrap">Sign out</button>
+          </div>
         </header>
 
-        {errorMsg && (
-          <div className="p-4 rounded-xl text-sm font-bold bg-red-50 text-red-700">
-            {errorMsg}
-          </div>
-        )}
+        {errorMsg && <div className="p-3 rounded-xl text-xs font-bold bg-red-50 text-red-700">{errorMsg}</div>}
 
-        {/* Quick Stats */}
-        <div className="grid grid-cols-3 gap-3 md:gap-4">
-          <div className="card-dark flex flex-col items-center justify-center !p-4 md:!p-6 text-center">
-            <p className="stat-number text-2xl md:text-3xl text-white">{profiles.length}</p>
-            <p className="text-white/60 text-[10px] font-bold uppercase tracking-widest mt-1">Total Employees</p>
-          </div>
-          <div className="card-style flex flex-col items-center justify-center !p-4 md:!p-6 text-center">
-            <p className="stat-number text-2xl md:text-3xl text-green-600">{presentTodayCount}</p>
-            <p className="label-branded mt-1">Present Today</p>
-          </div>
-          <div className="card-style flex flex-col items-center justify-center !p-4 md:!p-6 text-center">
-            <p className="stat-number text-2xl md:text-3xl text-orange-600">{lateTodayCount}</p>
-            <p className="label-branded mt-1">Late Today</p>
-          </div>
+        {/* Mobile stats */}
+        <div className="grid grid-cols-3 gap-2 lg:hidden">
+          <div className="card-dark flex flex-col items-center justify-center !p-3 text-center"><p className="stat-number text-xl text-white">{profiles.length}</p><p className="text-white/60 text-[9px] font-bold uppercase tracking-widest mt-0.5">Employees</p></div>
+          <div className="card-style flex flex-col items-center justify-center !p-3 text-center"><p className="stat-number text-xl text-green-600">{presentTodayCount}</p><p className="label-branded mt-0.5">Present</p></div>
+          <div className="card-style flex flex-col items-center justify-center !p-3 text-center"><p className="stat-number text-xl text-orange-600">{lateTodayCount}</p><p className="label-branded mt-0.5">Late</p></div>
         </div>
 
         {/* Announcements */}
-        <section className="card-style">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-            <h3 className="mb-0">Announcements</h3>
+        <section className="card-style !p-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+            <h3 className="mb-0 text-sm">Announcements</h3>
             {announcementUpdatedAt && (
-              <p className="text-slate-400 text-[11px] font-medium uppercase tracking-widest">
-                Last published: {new Date(announcementUpdatedAt).toLocaleString('en-US', {
-                  timeZone: 'Asia/Manila',
-                  month: 'short',
-                  day: 'numeric',
-                  year: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
+              <p className="text-slate-400 text-[10px] font-medium uppercase tracking-widest">
+                Last: {new Date(announcementUpdatedAt).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
               </p>
             )}
           </div>
-
-          {announcementMsg && (
-            <div className={`p-3 rounded-xl text-sm font-bold mb-4 ${announcementMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-              {announcementMsg.text}
-            </div>
-          )}
-
-          {announcementLoading ? (
-            <LoadingRow label="Loading current announcement..." />
-          ) : (
+          {announcementMsg && <div className={`p-2.5 rounded-xl text-xs font-bold mb-3 ${announcementMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>{announcementMsg.text}</div>}
+          {announcementLoading ? <LoadingRow label="Loading..." /> : (
             <>
-              <textarea
-                className="input-field w-full min-h-[100px] resize-y"
-                placeholder="Type the announcement that all employees will see..."
-                value={announcementContent}
-                onChange={(e) => setAnnouncementContent(e.target.value)}
-              />
-              <button
-                onClick={publishAnnouncement}
-                disabled={announcementSaving || !announcementContent.trim()}
-                className="btn-primary mt-4 disabled:opacity-50"
-              >
-                {announcementSaving ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <Spinner size="sm" />
-                    Publishing...
-                  </span>
-                ) : announcementId ? 'Update Announcement' : 'Publish Announcement'}
+              <textarea className="input-field w-full min-h-[80px] resize-y text-sm" placeholder="Type the announcement that all employees will see..." value={announcementContent} onChange={(e) => setAnnouncementContent(e.target.value)} />
+              <button onClick={publishAnnouncement} disabled={announcementSaving || !announcementContent.trim()} className="btn-primary mt-3 !py-2.5 !text-xs disabled:opacity-50">
+                {announcementSaving ? <span className="flex items-center justify-center gap-2"><Spinner size="sm"/>Publishing...</span> : announcementId ? 'Update Announcement' : 'Publish Announcement'}
               </button>
             </>
           )}
         </section>
 
+        {/* Disputes + Leave — side by side on desktop */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 md:gap-5">
+
         {/* Attendance Disputes */}
-        <section className="card-style">
-          <h3 className="mb-4">Attendance Disputes</h3>
-
-          {disputeMsg && (
-            <div className={`p-3 rounded-xl text-sm font-bold mb-4 ${disputeMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-              {disputeMsg.text}
-            </div>
-          )}
-
-          {disputesLoading ? (
-            <LoadingRow label="Loading disputes..." />
-          ) : (
+        <section className="card-style !p-4">
+          <h3 className="mb-3 text-sm">Attendance Disputes</h3>
+          {disputeMsg && <div className={`p-2.5 rounded-xl text-xs font-bold mb-3 ${disputeMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>{disputeMsg.text}</div>}
+          {disputesLoading ? <LoadingRow label="Loading disputes..." /> : (
             <>
-              {/* Pending */}
-              <div className="mb-6">
-                <p className="label-branded mb-3">Pending Review</p>
-                {disputes.filter((d) => d.status === 'Pending').length === 0 ? (
-                  <p className="text-slate-400 text-sm">No pending disputes.</p>
-                ) : (
-                  <div className="space-y-3">
+              <p className="label-branded mb-2">Pending</p>
+              {disputes.filter((d) => d.status === 'Pending').length === 0
+                ? <p className="text-slate-400 text-xs mb-4">No pending disputes.</p>
+                : <div className="space-y-2 mb-4">
                     {disputes.filter((d) => d.status === 'Pending').map((d) => (
-                      <div key={d.id} className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-                        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-                          <div>
-                            <p className="font-bold text-slate-900">{d.employee?.full_name ?? 'Unknown'}</p>
-                            <p className="text-slate-500 text-sm mt-1">
-                              {d.attendance_log_id ? 'Disputing Late tag' : 'Reporting missed time-in'} for{' '}
-                              <span className="font-medium">{d.dispute_date}</span>
-                            </p>
-                            {d.original_time_in && (
-                              <p className="text-slate-500 text-sm">
-                                Originally recorded:{' '}
-                                <span className="font-bold text-slate-700">
-                                  {new Date(d.original_time_in).toLocaleTimeString('en-US', {
-                                    timeZone: 'Asia/Manila',
-                                    hour: '2-digit',
-                                    minute: '2-digit',
-                                  })}
-                                </span>
-                              </p>
-                            )}
-                            <p className="text-slate-500 text-sm">
-                              Claimed time in:{' '}
-                              <span className="font-bold text-slate-700">
-                                {new Date(d.claimed_time_in).toLocaleTimeString('en-US', {
-                                  timeZone: 'Asia/Manila',
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                })}
-                              </span>
-                            </p>
-                            {d.reason && (
-                              <p className="text-slate-400 text-xs mt-2 italic">"{d.reason}"</p>
-                            )}
+                      <div key={d.id} className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="font-bold text-slate-900 text-xs">{d.employee?.full_name ?? 'Unknown'}</p>
+                            <p className="text-slate-500 text-xs mt-0.5">{d.attendance_log_id ? 'Late tag dispute' : 'Missed time-in'} · <span className="font-medium">{d.dispute_date}</span></p>
+                            {d.original_time_in && <p className="text-slate-400 text-xs">Was: <span className="font-bold text-slate-600">{new Date(d.original_time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}</span></p>}
+                            <p className="text-slate-400 text-xs">Claimed: <span className="font-bold text-slate-600">{new Date(d.claimed_time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}</span></p>
+                            {d.reason && <p className="text-slate-400 text-[10px] italic mt-0.5">"{d.reason}"</p>}
                           </div>
-                          <div className="flex gap-2 flex-shrink-0">
-                            <button
-                              onClick={() => approveDispute(d)}
-                              disabled={disputeActionLoadingId === d.id}
-                              className="text-xs font-bold bg-green-600 text-white px-4 py-2 rounded-full hover:bg-green-700 transition disabled:opacity-50"
-                            >
-                              {disputeActionLoadingId === d.id ? 'Working...' : 'Approve'}
-                            </button>
-                            <button
-                              onClick={() => rejectDispute(d)}
-                              disabled={disputeActionLoadingId === d.id}
-                              className="text-xs font-bold bg-slate-200 text-slate-700 px-4 py-2 rounded-full hover:bg-slate-300 transition disabled:opacity-50"
-                            >
-                              Reject
-                            </button>
+                          <div className="flex gap-1.5 flex-shrink-0">
+                            <button onClick={() => approveDispute(d)} disabled={disputeActionLoadingId === d.id} className="text-xs font-bold bg-green-600 text-white px-3 py-1.5 rounded-full hover:bg-green-700 transition disabled:opacity-50">{disputeActionLoadingId === d.id ? '...' : 'Approve'}</button>
+                            <button onClick={() => rejectDispute(d)} disabled={disputeActionLoadingId === d.id} className="text-xs font-bold bg-slate-200 text-slate-700 px-3 py-1.5 rounded-full hover:bg-slate-300 transition disabled:opacity-50">Reject</button>
                           </div>
                         </div>
                       </div>
                     ))}
                   </div>
-                )}
-              </div>
-
-              {/* Resolved (logs) */}
-              <div>
-                <p className="label-branded mb-3">Resolution History</p>
-                {disputes.filter((d) => d.status !== 'Pending').length === 0 ? (
-                  <p className="text-slate-400 text-sm">No resolved disputes yet.</p>
-                ) : (
-                  <div className="space-y-2">
+              }
+              <p className="label-branded mb-2">Resolved</p>
+              {disputes.filter((d) => d.status !== 'Pending').length === 0
+                ? <p className="text-slate-400 text-xs">No resolved disputes yet.</p>
+                : <div className="space-y-1.5">
                     {disputes.filter((d) => d.status !== 'Pending').map((d) => (
-                      <div key={d.id} className="flex flex-wrap items-center justify-between gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100 text-sm">
-                        <div>
-                          <span className="font-bold text-slate-900">{d.employee?.full_name ?? 'Unknown'}</span>
-                          <span className="text-slate-400"> · {d.dispute_date}</span>
-                          {d.status === 'Approved' && (
-                            <div className="text-slate-400 text-xs mt-0.5">
-                              {d.original_time_in && (
-                                <>
-                                  {new Date(d.original_time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}
-                                  {' → '}
-                                </>
-                              )}
-                              {new Date(d.claimed_time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}
-                            </div>
-                          )}
+                      <div key={d.id} className="flex items-center justify-between gap-2 p-2.5 bg-slate-50 rounded-xl border border-slate-100">
+                        <div className="min-w-0">
+                          <span className="font-bold text-slate-900 text-xs">{d.employee?.full_name ?? 'Unknown'}</span>
+                          <span className="text-slate-400 text-xs"> · {d.dispute_date}</span>
                         </div>
-                        <div className="flex items-center gap-2 text-slate-400 text-xs">
-                          <span className={d.status === 'Approved' ? 'tag-present' : 'tag-late'}>{d.status}</span>
-                          {d.reviewer?.full_name && (
-                            <span>
-                              by {d.reviewer.full_name}
-                              {d.reviewed_at && (
-                                ` on ${new Date(d.reviewed_at).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' })}`
-                              )}
-                            </span>
-                          )}
-                        </div>
+                        <span className={d.status === 'Approved' ? 'tag-present' : 'tag-late'}>{d.status}</span>
                       </div>
                     ))}
                   </div>
-                )}
-              </div>
+              }
             </>
           )}
         </section>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Employee Sidebar */}
-          <section className="card-style">
-            <h3 className="mb-6">Employees</h3>
-            <div className="space-y-3">
-              {loadingData && profiles.length === 0 && <LoadingRow label="Loading employees..." />}
-              {!loadingData && profiles.length === 0 && (
-                <p className="text-slate-400 text-sm">No employees found.</p>
-              )}
-              {profiles.map((p) => (
-                <button key={p.id} onClick={() => openProfileChoice(p)} className="w-full flex items-center gap-3 text-left p-4 rounded-2xl hover:bg-slate-50 border border-slate-100 transition">
-                  <div className="flex-shrink-0 w-10 h-10 rounded-full bg-blue-50 text-blue-600 font-bold text-xs flex items-center justify-center">
-                    {initials(p.full_name)}
+        {/* Leave Requests */}
+        <section className="card-style !p-4">
+          <h3 className="mb-3 text-sm">Leave Requests</h3>
+          {leaveMsg && <div className={`p-2.5 rounded-xl text-xs font-bold mb-3 ${leaveMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>{leaveMsg.text}</div>}
+          {leaveRequestsLoading ? <LoadingRow label="Loading leave requests..." /> : (
+            <>
+              <p className="label-branded mb-2">Pending</p>
+              {leaveRequests.filter((l) => l.status === 'Pending').length === 0
+                ? <p className="text-slate-400 text-xs mb-4">No pending leave requests.</p>
+                : <div className="space-y-2 mb-4">
+                    {leaveRequests.filter((l) => l.status === 'Pending').map((l) => (
+                      <div key={l.id} className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="font-bold text-slate-900 text-xs">{l.employee?.full_name ?? 'Unknown'}</p>
+                            <p className="text-slate-500 text-xs mt-0.5"><span className="font-semibold">{l.leave_type}</span> · {l.start_date === l.end_date ? l.start_date : `${l.start_date} → ${l.end_date}`} · {countLeaveDays(l.start_date, l.end_date)}d</p>
+                            {l.reason && <p className="text-slate-400 text-[10px] italic mt-0.5">"{l.reason}"</p>}
+                            <input type="text" className="input-field !py-1.5 !text-xs !min-h-0 mt-1.5" placeholder="HR notes (optional)..." value={leaveHrNotes[l.id] ?? ''} onChange={(e) => setLeaveHrNotes((prev) => ({ ...prev, [l.id]: e.target.value }))} />
+                          </div>
+                          <div className="flex gap-1.5 flex-shrink-0">
+                            <button onClick={() => approveLeave(l)} disabled={leaveActionLoadingId === l.id} className="text-xs font-bold bg-green-600 text-white px-3 py-1.5 rounded-full hover:bg-green-700 transition disabled:opacity-50">{leaveActionLoadingId === l.id ? '...' : 'Approve'}</button>
+                            <button onClick={() => rejectLeave(l)} disabled={leaveActionLoadingId === l.id} className="text-xs font-bold bg-slate-200 text-slate-700 px-3 py-1.5 rounded-full hover:bg-slate-300 transition disabled:opacity-50">Reject</button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
+              }
+              <p className="label-branded mb-2">Resolved</p>
+              {leaveRequests.filter((l) => l.status !== 'Pending').length === 0
+                ? <p className="text-slate-400 text-xs">No resolved leave requests yet.</p>
+                : <div className="space-y-1.5">
+                    {leaveRequests.filter((l) => l.status !== 'Pending').map((l) => (
+                      <div key={l.id} className="flex items-center justify-between gap-2 p-2.5 bg-slate-50 rounded-xl border border-slate-100">
+                        <div className="min-w-0">
+                          <span className="font-bold text-slate-900 text-xs">{l.employee?.full_name ?? 'Unknown'}</span>
+                          <span className="text-slate-400 text-xs"> · {l.leave_type} · {l.start_date === l.end_date ? l.start_date : `${l.start_date}→${l.end_date}`} · {countLeaveDays(l.start_date, l.end_date)}d</span>
+                        </div>
+                        <span className={l.status === 'Approved' ? 'tag-present' : 'tag-late'}>{l.status}</span>
+                      </div>
+                    ))}
+                  </div>
+              }
+            </>
+          )}
+        </section>
+
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 sm:gap-4 md:gap-5">
+          {/* Employee Sidebar */}
+          <section className="card-style !p-4 lg:col-span-1">
+            <h3 className="mb-3 text-sm">Employees</h3>
+            <div className="space-y-2">
+              {loadingData && profiles.length === 0 && <LoadingRow label="Loading employees..." />}
+              {!loadingData && profiles.length === 0 && <p className="text-slate-400 text-xs">No employees found.</p>}
+              {profiles.map((p) => (
+                <button key={p.id} onClick={() => openProfileChoice(p)} className="w-full flex items-center gap-2.5 text-left p-3 rounded-2xl hover:bg-slate-50 border border-slate-100 transition">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-50 text-blue-600 font-bold text-[10px] flex items-center justify-center">{initials(p.full_name)}</div>
                   <div className="min-w-0">
-                    <div className="font-medium text-slate-900 truncate">{p.full_name}</div>
-                    <div className="label-branded mb-0 mt-1 text-blue-600 truncate">{p.designation}</div>
+                    <div className="font-medium text-slate-900 text-xs truncate">{p.full_name}</div>
+                    <div className="text-blue-600 text-[10px] truncate">{p.designation || '---'}</div>
                   </div>
                 </button>
               ))}
@@ -828,139 +879,50 @@ export default function HRDashboard() {
           </section>
 
           {/* Attendance History */}
-          <section className="card-style lg:col-span-2 overflow-hidden !p-0">
-            <div className="p-8 border-b border-slate-100 flex flex-col md:flex-row gap-4 justify-between items-center">
-              <h3>
+          <section className="card-style lg:col-span-3 overflow-hidden !p-0">
+            <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row gap-3 justify-between items-start md:items-center">
+              <h3 className="text-sm">
                 Attendance History
-                {cutoffFilter ? (
-                  <span className="block text-[11px] font-medium text-slate-400 normal-case tracking-normal mt-1">
-                    Showing {formatCutoffLabel(cutoffFilter)}
-                  </span>
-                ) : selectedDate && (
-                  <span className="block text-[11px] font-medium text-slate-400 normal-case tracking-normal mt-1">
-                    {selectedDate === todayManila ? "Showing today's records" : `Showing records for ${selectedDate}`}
-                  </span>
-                )}
+                {cutoffFilter ? <span className="block text-[10px] font-medium text-slate-400 normal-case tracking-normal mt-0.5">Showing {formatCutoffLabel(cutoffFilter)}</span>
+                  : selectedDate && <span className="block text-[10px] font-medium text-slate-400 normal-case tracking-normal mt-0.5">{selectedDate === todayManila ? "Today's records" : `Records for ${selectedDate}`}</span>}
               </h3>
               <div className="flex flex-wrap gap-2 w-full md:w-auto">
-                <input
-                  className="input-field"
-                  placeholder="Search name..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-                <select
-                  className="input-field"
-                  value={cutoffFilter}
-                  onChange={(e) => {
-                    setCutoffFilter(e.target.value);
-                    if (e.target.value) setSelectedDate(''); // cutoff takes over from single-date
-                  }}
-                >
+                <input className="input-field !py-1.5 !text-xs !min-h-0 md:w-40" placeholder="Search name..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                <select className="input-field !py-1.5 !text-xs !min-h-0 w-auto" value={cutoffFilter} onChange={(e) => { setCutoffFilter(e.target.value); if (e.target.value) setSelectedDate(''); }}>
                   <option value="">By cutoff...</option>
-                  {availableCutoffs.map((c) => (
-                    <option key={c} value={c}>{formatCutoffLabel(c)}</option>
-                  ))}
+                  {availableCutoffs.map((c) => <option key={c} value={c}>{formatCutoffLabel(c)}</option>)}
                 </select>
-                <input
-                  type="date"
-                  className="input-field"
-                  value={selectedDate}
-                  onChange={(e) => {
-                    setSelectedDate(e.target.value);
-                    if (e.target.value) setCutoffFilter(''); // single-date takes over from cutoff
-                  }}
-                />
-                {selectedDate !== todayManila && (
-                  <button
-                    onClick={() => {
-                      setSelectedDate(todayManila);
-                      setCutoffFilter('');
-                    }}
-                    className="text-blue-600 font-bold text-xs whitespace-nowrap"
-                  >
-                    Today
-                  </button>
-                )}
-                {(selectedDate || cutoffFilter) && (
-                  <button
-                    onClick={() => {
-                      setSelectedDate('');
-                      setCutoffFilter('');
-                    }}
-                    className="text-slate-400 font-bold text-xs whitespace-nowrap"
-                  >
-                    View All
-                  </button>
-                )}
+                <input type="date" className="input-field !py-1.5 !text-xs !min-h-0 w-auto" value={selectedDate} onChange={(e) => { setSelectedDate(e.target.value); if (e.target.value) setCutoffFilter(''); }} />
+                {selectedDate !== todayManila && <button onClick={() => { setSelectedDate(todayManila); setCutoffFilter(''); }} className="text-blue-600 font-bold text-xs whitespace-nowrap">Today</button>}
+                {(selectedDate || cutoffFilter) && <button onClick={() => { setSelectedDate(''); setCutoffFilter(''); }} className="text-slate-400 font-bold text-xs whitespace-nowrap">All</button>}
               </div>
             </div>
-
-            <table className="w-full text-left">
-              <thead className="bg-slate-50 text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-                <tr>
-                  <th className="px-8 py-4">Employee</th>
-                  <th className="px-8 py-4">Date</th>
-                  <th className="px-8 py-4">Time In</th>
-                  <th className="px-8 py-4">Time Out</th>
-                  <th className="px-8 py-4">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {loadingData && attendance.length === 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead className="bg-slate-50 text-[10px] text-slate-400 font-bold uppercase tracking-widest">
                   <tr>
-                    <td colSpan={5} className="px-8 py-8">
-                      <LoadingRow label="Loading attendance history..." />
-                    </td>
+                    <th className="px-4 py-3">Employee</th>
+                    <th className="px-4 py-3">Date</th>
+                    <th className="px-4 py-3">Time In</th>
+                    <th className="px-4 py-3">Time Out</th>
+                    <th className="px-4 py-3">Status</th>
                   </tr>
-                )}
-                {filteredAttendance.map((log) => (
-                  <tr key={log.id} className="hover:bg-slate-50 transition">
-                    <td className="px-8 py-4 font-medium text-slate-900">{log.profiles?.full_name}</td>
-                    <td className="px-8 py-4 text-slate-600">
-                      {log.time_in
-                        ? new Date(log.time_in).toLocaleDateString('en-US', {
-                            timeZone: 'Asia/Manila',
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric',
-                          })
-                        : 'N/A'}
-                    </td>
-                    <td className="px-8 py-4 text-slate-600">
-                      {log.time_in
-                        ? new Date(log.time_in).toLocaleTimeString('en-US', {
-                            timeZone: 'Asia/Manila',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            second: '2-digit',
-                          })
-                        : 'N/A'}
-                    </td>
-                    <td className="px-8 py-4 text-slate-600">
-                      {log.time_out
-                        ? new Date(log.time_out).toLocaleTimeString('en-US', {
-                            timeZone: 'Asia/Manila',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            second: '2-digit',
-                          })
-                        : '—'}
-                    </td>
-                    <td className="px-8 py-4">
-                      <span className={statusTagClass(log.status)}>{log.status}</span>
-                    </td>
-                  </tr>
-                ))}
-                {!loadingData && filteredAttendance.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="px-8 py-8 text-center text-slate-400 text-sm">
-                      No attendance records found.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {loadingData && attendance.length === 0 && <tr><td colSpan={5} className="px-4 py-6"><LoadingRow label="Loading..." /></td></tr>}
+                  {filteredAttendance.map((log) => (
+                    <tr key={log.id} className="hover:bg-slate-50 transition">
+                      <td className="px-4 py-3 font-medium text-slate-900 text-xs">{log.profiles?.full_name}</td>
+                      <td className="px-4 py-3 text-slate-600 text-xs">{log.time_in ? new Date(log.time_in).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}</td>
+                      <td className="px-4 py-3 text-slate-600 text-xs">{log.time_in ? new Date(log.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }) : 'N/A'}</td>
+                      <td className="px-4 py-3 text-slate-600 text-xs">{log.time_out ? new Date(log.time_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                      <td className="px-4 py-3"><span className={statusTagClass(log.status)}>{log.status}</span></td>
+                    </tr>
+                  ))}
+                  {!loadingData && filteredAttendance.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-400 text-xs">No attendance records found.</td></tr>}
+                </tbody>
+              </table>
+            </div>
           </section>
         </div>
       </div>
