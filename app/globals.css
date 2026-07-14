@@ -106,7 +106,7 @@
     background: var(--color-slate-900);
   }
 
-  /* Signature button: dark pill, soft lift on hover -- calm, not loud. */
+  /* Signature button: dark pill, soft lift on hover -- calm, not loud. */ 
   .btn-primary {
     @apply w-full text-white py-4 rounded-full font-semibold text-sm transition-all duration-200 min-h-[48px];
     background: var(--color-slate-900);

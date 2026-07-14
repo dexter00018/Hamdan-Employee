@@ -167,6 +167,7 @@ export default function EmployeeDashboard() {
   const [announcementError, setAnnouncementError] = useState<string | null>(null);
   const [announcementUpdatedAt, setAnnouncementUpdatedAt] = useState<string | null>(null);
   const [showAnnouncementToast, setShowAnnouncementToast] = useState(false);
+  const [disputeResultToast, setDisputeResultToast] = useState<{ status: string; date: string } | null>(null);
 
   // Office network check -- Time In is only enabled when the request is
   // coming from the office's known public IP. See
@@ -221,6 +222,7 @@ export default function EmployeeDashboard() {
     initializeDashboard();
     fetchAnnouncement();
     checkOfficeNetwork();
+    fetchMyDisputes();
     return () => clearInterval(timer);
   }, []);
 
@@ -263,6 +265,42 @@ export default function EmployeeDashboard() {
 
     return () => {
       supabase.removeChannel(channel);
+    };
+  }, []);
+
+  // Live dispute status updates -- listens for the current employee's
+  // OWN attendance_disputes rows changing (Pending -> Approved/Rejected)
+  // via Supabase Realtime, so they get notified the moment HR decides,
+  // without refreshing. Requires Realtime enabled for this table (see
+  // enable_disputes_realtime.sql).
+  useEffect(() => {
+    let channel: any = null;
+
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      channel = supabase
+        .channel('employee-dispute-updates')
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'attendance_disputes', filter: `user_id=eq.${user.id}` },
+          (payload) => {
+            const newRow = payload.new as { status?: string; dispute_date?: string };
+            if (newRow.status === 'Approved' || newRow.status === 'Rejected') {
+              setDisputeResultToast({ status: newRow.status, date: newRow.dispute_date || '' });
+              playNotificationSound();
+              fetchMyDisputes();
+              initializeDashboard(); // an approval may have changed attendance data
+              setTimeout(() => setDisputeResultToast(null), 8000);
+            }
+          }
+        )
+        .subscribe();
+    })();
+
+    return () => {
+      if (channel) supabase.removeChannel(channel);
     };
   }, []);
 
@@ -408,6 +446,96 @@ export default function EmployeeDashboard() {
 
   const statusTagClass = (s: string | null) => (s === 'Late' ? 'tag-late' : 'tag-present');
 
+  // --- Attendance Disputes ---
+  // Employees can dispute a day tagged "Late" (claiming they actually
+  // arrived earlier) or a day with no time-in at all (they forgot to
+  // time in). Both go through the same request; HR approves/rejects.
+  const [myDisputes, setMyDisputes] = useState<any[]>([]);
+  const [disputeModalOpen, setDisputeModalOpen] = useState(false);
+  const [disputeForm, setDisputeForm] = useState<{ attendanceLogId: string | null; date: string; timeLocal: string; reason: string }>({
+    attendanceLogId: null,
+    date: '',
+    timeLocal: '',
+    reason: '',
+  });
+  const [disputeSaving, setDisputeSaving] = useState(false);
+  const [disputeMsg, setDisputeMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const fetchMyDisputes = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data, error } = await supabase
+      .from('attendance_disputes')
+      .select('id, attendance_log_id, dispute_date, claimed_time_in, original_time_in, reason, status, hr_notes, created_at, reviewed_at')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.error('Error fetching disputes:', error);
+      return;
+    }
+    setMyDisputes(data || []);
+  };
+
+  // Opens the dispute modal. If a log already exists for that day
+  // (disputing a wrong "Late" tag), pass it in; otherwise leave it
+  // null (the "I forgot to time in" case) and just prefill the date.
+  const openDisputeModal = (attendanceLogId: string | null, date: string) => {
+    setDisputeForm({ attendanceLogId, date, timeLocal: '', reason: '' });
+    setDisputeMsg(null);
+    setDisputeModalOpen(true);
+  };
+
+  const hasPendingDispute = (dateStr: string) =>
+    myDisputes.some((d) => d.dispute_date === dateStr && d.status === 'Pending');
+
+  const submitDispute = async () => {
+    if (!disputeForm.date || !disputeForm.timeLocal) {
+      setDisputeMsg({ type: 'error', text: 'Please fill in the date and the time you actually arrived.' });
+      return;
+    }
+    setDisputeSaving(true);
+    setDisputeMsg(null);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('You are not logged in.');
+
+      // disputeForm.timeLocal is a PH wall-clock time like "08:05";
+      // combine with the date and convert to a real UTC timestamp,
+      // same +08:00 fixed-offset approach used elsewhere in the app.
+      const claimedTimeInISO = new Date(`${disputeForm.date}T${disputeForm.timeLocal}:00+08:00`).toISOString();
+
+      // Snapshot what time_in currently is (if a log already exists for
+      // this day), so we can show a clear "before -> after" comparison
+      // even after HR approves and the real record gets overwritten.
+      const existingLog = disputeForm.attendanceLogId
+        ? history.find((h) => h.id === disputeForm.attendanceLogId)
+        : null;
+
+      const { error } = await supabase.from('attendance_disputes').insert([{
+        attendance_log_id: disputeForm.attendanceLogId,
+        user_id: user.id,
+        dispute_date: disputeForm.date,
+        claimed_time_in: claimedTimeInISO,
+        original_time_in: existingLog?.time_in ?? null,
+        reason: disputeForm.reason.trim() || null,
+      }]);
+
+      if (error) throw error;
+
+      setDisputeMsg({ type: 'success', text: 'Dispute submitted! HR will review it soon.' });
+      await fetchMyDisputes();
+      setTimeout(() => setDisputeModalOpen(false), 1200);
+    } catch (err: any) {
+      console.error('Error submitting dispute:', err);
+      const msg = err?.message?.includes('one_pending_dispute_per_user_date')
+        ? 'You already have a pending dispute for this date.'
+        : (err?.message || 'Failed to submit dispute.');
+      setDisputeMsg({ type: 'error', text: msg });
+    } finally {
+      setDisputeSaving(false);
+    }
+  };
+
   // Masks a value except for its first 2 characters, e.g. "34" + dots
   // for the rest -- shows just enough to help the employee recognize
   // "yes, this is my number" without exposing the whole thing.
@@ -449,41 +577,63 @@ export default function EmployeeDashboard() {
   // log_date is a plain "YYYY-MM-DD" string, so we parse it manually
   // instead of `new Date(log_date)` to avoid the browser's local
   // timezone shifting it into the wrong day/month.
-  const currentMonthKey = useMemo(() => {
+  //
+  // Cutoff key format: "YYYY-MM:H1" (days 1-15) or "YYYY-MM:H2" (days
+  // 16 to end of month) -- the standard PH semi-monthly payroll split.
+  const matchesCutoff = (logDate: string | undefined, cutoffKey: string) => {
+    if (!logDate || !cutoffKey) return false;
+    const [ym, half] = cutoffKey.split(':');
+    if (!logDate.startsWith(ym)) return false;
+    const day = parseInt(logDate.split('-')[2], 10);
+    return half === 'H1' ? day <= 15 : day >= 16;
+  };
+
+  const currentCutoffKey = useMemo(() => {
     const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const half = now.getDate() <= 15 ? 'H1' : 'H2';
+    return `${ym}:${half}`;
   }, []);
 
-  // If the employee has filtered Attendance History to a specific month,
-  // the summary cards follow that same month. Otherwise, default to the
-  // current calendar month.
-  const summaryMonthKey = monthFilter || currentMonthKey;
+  // If the employee has filtered Attendance History to a specific
+  // cutoff, the summary cards follow that same cutoff. Otherwise,
+  // default to the current cutoff period.
+  const summaryCutoffKey = monthFilter || currentCutoffKey;
 
   const summary = useMemo(() => {
-    const monthLogs = history.filter(log => log.log_date?.startsWith(summaryMonthKey));
-    const present = monthLogs.length;
-    const late = monthLogs.filter(l => l.status === 'Late').length;
+    const cutoffLogs = history.filter(log => matchesCutoff(log.log_date, summaryCutoffKey));
+    const present = cutoffLogs.length;
+    const late = cutoffLogs.filter(l => l.status === 'Late').length;
     const onTime = present - late;
     return { present, late, onTime };
-  }, [history, summaryMonthKey]);
+  }, [history, summaryCutoffKey]);
 
   // --- History filtering ---
-  const availableMonths = useMemo(() => {
-    const set = new Set<string>();
+  const availableCutoffs = useMemo(() => {
+    const months = new Set<string>();
     history.forEach(log => {
-      if (log.log_date) set.add(log.log_date.slice(0, 7));
+      if (log.log_date) months.add(log.log_date.slice(0, 7));
     });
-    return Array.from(set).sort().reverse();
+    const opts: string[] = [];
+    months.forEach(ym => {
+      opts.push(`${ym}:H1`);
+      opts.push(`${ym}:H2`);
+    });
+    // String sort works here since "YYYY-MM:H1" < "YYYY-MM:H2"
+    // alphabetically, and the zero-padded YYYY-MM sorts correctly too.
+    return opts.sort().reverse();
   }, [history]);
 
   const filteredHistory = useMemo(() => {
     if (!monthFilter) return history;
-    return history.filter(log => log.log_date?.startsWith(monthFilter));
+    return history.filter(log => matchesCutoff(log.log_date, monthFilter));
   }, [history, monthFilter]);
 
   const formatMonthLabel = (key: string) => {
-    const [y, m] = key.split('-').map(Number);
-    return new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    const [ym, half] = key.split(':');
+    const [y, m] = ym.split('-').map(Number);
+    const monthName = new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long' });
+    return half === 'H1' ? `${monthName} 1-15, ${y}` : `${monthName} 16-31, ${y}`;
   };
 
   // Circular progress ring: on-time percentage (0-100)
@@ -697,7 +847,7 @@ export default function EmployeeDashboard() {
 
             {/* Attendance Rate Ring */}
             <div className="card-style flex flex-col items-center justify-center py-8">
-              <p className="label-branded">On-Time Rate ({formatMonthLabel(summaryMonthKey)})</p>
+              <p className="label-branded">On-Time Rate ({formatMonthLabel(summaryCutoffKey)})</p>
               <div className="relative w-32 h-32 my-4">
                 <svg
                   className="w-full h-full transform -rotate-90"
@@ -774,15 +924,21 @@ export default function EmployeeDashboard() {
             <div className="card-style">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
                 <h3 className="mb-0">Attendance History</h3>
-                <div className="flex items-center gap-2 w-full sm:w-auto">
+                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                  <button
+                    onClick={() => openDisputeModal(null, '')}
+                    className="text-blue-600 text-xs font-bold hover:underline whitespace-nowrap"
+                  >
+                    Forgot to time in? File a dispute
+                  </button>
                   <select
                     className="input-field w-full sm:w-auto"
                     value={monthFilter}
                     onChange={(e) => setMonthFilter(e.target.value)}
                   >
-                    <option value="">All months</option>
-                    {availableMonths.map((m) => (
-                      <option key={m} value={m}>{formatMonthLabel(m)}</option>
+                    <option value="">All cutoffs</option>
+                    {availableCutoffs.map((c) => (
+                      <option key={c} value={c}>{formatMonthLabel(c)}</option>
                     ))}
                   </select>
                   {monthFilter && (
@@ -798,7 +954,7 @@ export default function EmployeeDashboard() {
               <div className="space-y-3">
                 {initLoading && <LoadingRow label="Loading attendance history..." />}
                 {!initLoading && filteredHistory.length === 0 && (
-                  <p className="text-slate-400 text-sm">No attendance records{monthFilter ? ' for this month' : ''}.</p>
+                  <p className="text-slate-400 text-sm">No attendance records{monthFilter ? ' for this cutoff' : ''}.</p>
                 )}
                 {filteredHistory.map((log, index) => (
                   <div key={index} className="flex flex-wrap justify-between items-center gap-2 p-4 bg-slate-50 rounded-xl border border-slate-100">
@@ -835,12 +991,91 @@ export default function EmployeeDashboard() {
                             No time out
                           </div>
                         )}
+                        {log.status === 'Late' && (
+                          hasPendingDispute(log.log_date) ? (
+                            <div className="text-orange-600 text-[10px] font-bold uppercase tracking-wide mt-1">
+                              Dispute Pending
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => openDisputeModal(log.id, log.log_date)}
+                              className="text-blue-600 text-[10px] font-bold uppercase tracking-wide hover:underline mt-1"
+                            >
+                              Dispute
+                            </button>
+                          )
+                        )}
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
+
+            {/* My Disputes -- persistent log, not just a toast, so the
+                employee can always look back and see what happened and
+                when, even after the notification toast has dismissed. */}
+            {myDisputes.length > 0 && (
+              <div className="card-style">
+                <h3 className="mb-6">My Disputes</h3>
+                <div className="space-y-3">
+                  {myDisputes.map((d) => (
+                    <div key={d.id} className="flex flex-wrap items-center justify-between gap-2 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                      <div>
+                        <div className="font-medium text-slate-900">
+                          {d.attendance_log_id ? 'Late tag dispute' : 'Missed time-in report'} — {d.dispute_date}
+                        </div>
+                        <div className="label-branded mb-0 mt-1">
+                          {d.original_time_in && (
+                            <>
+                              Before:{' '}
+                              {new Date(d.original_time_in).toLocaleTimeString('en-US', {
+                                timeZone: 'Asia/Manila',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                              {' · '}
+                            </>
+                          )}
+                          Claimed:{' '}
+                          {new Date(d.claimed_time_in).toLocaleTimeString('en-US', {
+                            timeZone: 'Asia/Manila',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className={
+                          d.status === 'Approved' ? 'tag-present'
+                          : d.status === 'Rejected' ? 'tag-late'
+                          : 'tag-excused'
+                        }>
+                          {d.status}
+                        </span>
+                        {d.reviewed_at && (
+                          <div className="text-slate-400 text-[10px] font-medium uppercase tracking-wide mt-1">
+                            {d.status === 'Approved' ? 'Approved' : 'Declined'} on{' '}
+                            {new Date(d.reviewed_at).toLocaleDateString('en-US', {
+                              timeZone: 'Asia/Manila',
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric',
+                            })}
+                            {' '}at{' '}
+                            {new Date(d.reviewed_at).toLocaleTimeString('en-US', {
+                              timeZone: 'Asia/Manila',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -859,6 +1094,104 @@ export default function EmployeeDashboard() {
             <button
               onClick={() => setShowAnnouncementToast(false)}
               className="text-white/40 hover:text-white flex-shrink-0"
+              aria-label="Close notification"
+              type="button"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* File a Dispute Modal */}
+      {disputeModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm card-style shadow-2xl">
+            <h3 className="mb-2">
+              {disputeForm.attendanceLogId ? 'Dispute Late Tag' : 'Report Missed Time-In'}
+            </h3>
+            <p className="text-sm text-slate-400 mb-6">
+              {disputeForm.attendanceLogId
+                ? "Tell us what time you actually arrived, and HR will review it."
+                : "Forgot to time in on a previous day? Let us know when you actually arrived."}
+            </p>
+
+            {disputeMsg && (
+              <div className={`p-3 rounded-xl text-sm font-bold mb-4 ${disputeMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                {disputeMsg.text}
+              </div>
+            )}
+
+            <label className="label-branded">Date</label>
+            <input
+              type="date"
+              className="input-field mb-4"
+              value={disputeForm.date}
+              onChange={(e) => setDisputeForm({ ...disputeForm, date: e.target.value })}
+              disabled={!!disputeForm.attendanceLogId}
+              max={new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())}
+            />
+
+            <label className="label-branded">Time You Actually Arrived (Philippine Time)</label>
+            <input
+              type="time"
+              className="input-field mb-4"
+              value={disputeForm.timeLocal}
+              onChange={(e) => setDisputeForm({ ...disputeForm, timeLocal: e.target.value })}
+            />
+
+            <label className="label-branded">Reason (optional)</label>
+            <textarea
+              className="input-field mb-6 min-h-[80px] resize-y"
+              value={disputeForm.reason}
+              onChange={(e) => setDisputeForm({ ...disputeForm, reason: e.target.value })}
+              placeholder="e.g. I forgot to time in when I arrived."
+            />
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                className="flex-1 p-3 bg-slate-100 rounded-full font-medium text-sm"
+                onClick={() => setDisputeModalOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="flex-1 btn-primary disabled:opacity-50"
+                onClick={submitDispute}
+                disabled={disputeSaving || !disputeForm.date || !disputeForm.timeLocal}
+              >
+                {disputeSaving ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <Spinner size="sm" />
+                    Submitting...
+                  </span>
+                ) : 'Submit Dispute'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dispute Result Toast (auto-dismisses after 8s) */}
+      {disputeResultToast && (
+        <div className="fixed top-4 left-4 right-4 sm:left-auto sm:right-6 sm:top-24 sm:max-w-sm z-50">
+          <div className={`rounded-2xl text-white p-4 shadow-2xl flex items-start gap-3 ${disputeResultToast.status === 'Approved' ? 'bg-green-600' : 'bg-rose-600'}`}>
+            <div className="flex-shrink-0 w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center text-lg">
+              {disputeResultToast.status === 'Approved' ? '✅' : '❌'}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-white font-semibold text-sm">
+                Dispute {disputeResultToast.status === 'Approved' ? 'Approved' : 'Declined'}
+              </p>
+              <p className="text-white/80 text-xs mt-1">
+                Your time-in dispute for {disputeResultToast.date} was {disputeResultToast.status === 'Approved' ? 'approved' : 'declined'} by HR.
+              </p>
+            </div>
+            <button
+              onClick={() => setDisputeResultToast(null)}
+              className="text-white/60 hover:text-white flex-shrink-0"
               aria-label="Close notification"
               type="button"
             >

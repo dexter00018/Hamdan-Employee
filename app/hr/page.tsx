@@ -20,6 +20,10 @@ type Profile = {
   designation: string | null;
 };
 
+// Must match app/employee/page.tsx and app/api/time-in/route.ts.
+const LATE_CUTOFF_HOUR = 9;
+const LATE_CUTOFF_MINUTE = 15;
+
 export default function HRDashboard() {
   const router = useRouter();
   const [attendance, setAttendance] = useState<AttendanceLog[]>([]);
@@ -33,6 +37,9 @@ export default function HRDashboard() {
   const [selectedDate, setSelectedDate] = useState(() =>
     new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())
   );
+  // Cutoff period filter (1-15 / 16-31) -- when set, this takes over
+  // from selectedDate for payroll-period review instead of a single day.
+  const [cutoffFilter, setCutoffFilter] = useState('');
 
   // Modal States
   const [editOpen, setEditOpen] = useState(false);
@@ -47,9 +54,16 @@ export default function HRDashboard() {
   const [announcementSaving, setAnnouncementSaving] = useState(false);
   const [announcementMsg, setAnnouncementMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  // Attendance Disputes
+  const [disputes, setDisputes] = useState<any[]>([]);
+  const [disputesLoading, setDisputesLoading] = useState(true);
+  const [disputeActionLoadingId, setDisputeActionLoadingId] = useState<string | null>(null);
+  const [disputeMsg, setDisputeMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
   useEffect(() => {
     refreshAllData();
     fetchAnnouncement();
+    fetchDisputes();
   }, []);
 
   const refreshAllData = async () => {
@@ -150,6 +164,113 @@ export default function HRDashboard() {
     }
   };
 
+  // --- Attendance Disputes ---
+  const fetchDisputes = async () => {
+    setDisputesLoading(true);
+    const { data, error } = await supabase
+      .from('attendance_disputes')
+      .select(`
+        id, attendance_log_id, dispute_date, claimed_time_in, original_time_in, reason, status, created_at, reviewed_at,
+        employee:profiles!attendance_disputes_user_id_fkey(full_name),
+        reviewer:profiles!attendance_disputes_reviewed_by_fkey(full_name)
+      `)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching disputes:', error);
+      setDisputesLoading(false);
+      return;
+    }
+    setDisputes(data || []);
+    setDisputesLoading(false);
+  };
+
+  // Computes Present/Late the same way as everywhere else in the app,
+  // based on the claimed time-in in Philippine time.
+  const computeStatusForTime = (isoString: string) => {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Manila',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(new Date(isoString)).reduce((acc: any, p) => {
+      acc[p.type] = p.value;
+      return acc;
+    }, {});
+    const hour = parseInt(parts.hour, 10);
+    const minute = parseInt(parts.minute, 10);
+    const isLate = hour > LATE_CUTOFF_HOUR || (hour === LATE_CUTOFF_HOUR && minute > LATE_CUTOFF_MINUTE);
+    return isLate ? 'Late' : 'Present';
+  };
+
+  const approveDispute = async (dispute: any) => {
+    setDisputeActionLoadingId(dispute.id);
+    setDisputeMsg(null);
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      const newStatus = computeStatusForTime(dispute.claimed_time_in);
+
+      if (dispute.attendance_log_id) {
+        // Existing (wrongly-tagged) log -- correct its time_in/status.
+        const { error } = await supabase
+          .from('attendance_logs')
+          .update({ time_in: dispute.claimed_time_in, status: newStatus })
+          .eq('id', dispute.attendance_log_id);
+        if (error) throw error;
+      } else {
+        // No log existed for that day (forgot to time in) -- create it.
+        const { data: disputeRow } = await supabase
+          .from('attendance_disputes')
+          .select('user_id')
+          .eq('id', dispute.id)
+          .single();
+
+        const { error } = await supabase.from('attendance_logs').insert([{
+          user_id: disputeRow?.user_id,
+          log_date: dispute.dispute_date,
+          time_in: dispute.claimed_time_in,
+          status: newStatus,
+        }]);
+        if (error) throw error;
+      }
+
+      const { error: updateError } = await supabase
+        .from('attendance_disputes')
+        .update({ status: 'Approved', reviewed_at: new Date().toISOString(), reviewed_by: currentUser?.id ?? null })
+        .eq('id', dispute.id);
+      if (updateError) throw updateError;
+
+      setDisputeMsg({ type: 'success', text: 'Dispute approved and attendance record updated.' });
+      await Promise.all([fetchDisputes(), refreshAllData()]);
+    } catch (err: any) {
+      console.error('Error approving dispute:', err);
+      setDisputeMsg({ type: 'error', text: err?.message ?? 'Failed to approve dispute.' });
+    } finally {
+      setDisputeActionLoadingId(null);
+    }
+  };
+
+  const rejectDispute = async (dispute: any) => {
+    setDisputeActionLoadingId(dispute.id);
+    setDisputeMsg(null);
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      const { error } = await supabase
+        .from('attendance_disputes')
+        .update({ status: 'Rejected', reviewed_at: new Date().toISOString(), reviewed_by: currentUser?.id ?? null })
+        .eq('id', dispute.id);
+      if (error) throw error;
+
+      setDisputeMsg({ type: 'success', text: 'Dispute rejected.' });
+      await fetchDisputes();
+    } catch (err: any) {
+      console.error('Error rejecting dispute:', err);
+      setDisputeMsg({ type: 'error', text: err?.message ?? 'Failed to reject dispute.' });
+    } finally {
+      setDisputeActionLoadingId(null);
+    }
+  };
+
   // Converts a UTC ISO timestamp to its Philippine calendar date
   // ("YYYY-MM-DD"). Comparing this instead of the raw UTC prefix avoids
   // misfiling records near midnight (PH is UTC+8, so a log_time_in of
@@ -157,18 +278,56 @@ export default function HRDashboard() {
   const toManilaDateString = (iso: string) =>
     new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date(iso));
 
-  // Filter Logic
+  // Cutoff key format: "YYYY-MM:H1" (days 1-15) or "YYYY-MM:H2" (days
+  // 16 to end of month) -- the standard PH semi-monthly payroll split.
+  const matchesCutoff = (manilaDate: string, cutoffKey: string) => {
+    const [ym, half] = cutoffKey.split(':');
+    if (!manilaDate.startsWith(ym)) return false;
+    const day = parseInt(manilaDate.split('-')[2], 10);
+    return half === 'H1' ? day <= 15 : day >= 16;
+  };
+
+  // Filter Logic -- a chosen cutoff period takes priority over the
+  // single-date filter, so HR can switch to payroll-period review
+  // without the two filters fighting each other.
   const filteredAttendance = useMemo(() => {
     return attendance.filter((log) => {
       const matchesSearch = log.profiles?.full_name
         ?.toLowerCase()
         .includes(searchTerm.toLowerCase());
-      const matchesDate = selectedDate
-        ? log.time_in && toManilaDateString(log.time_in) === selectedDate
-        : true;
-      return matchesSearch && matchesDate;
+
+      let matchesFilter = true;
+      if (cutoffFilter) {
+        matchesFilter = !!log.time_in && matchesCutoff(toManilaDateString(log.time_in), cutoffFilter);
+      } else if (selectedDate) {
+        matchesFilter = !!log.time_in && toManilaDateString(log.time_in) === selectedDate;
+      }
+
+      return matchesSearch && matchesFilter;
     });
-  }, [attendance, searchTerm, selectedDate]);
+  }, [attendance, searchTerm, selectedDate, cutoffFilter]);
+
+  // Cutoff options generated from whatever months actually appear in
+  // the attendance data, newest first.
+  const availableCutoffs = useMemo(() => {
+    const months = new Set<string>();
+    attendance.forEach((log) => {
+      if (log.time_in) months.add(toManilaDateString(log.time_in).slice(0, 7));
+    });
+    const opts: string[] = [];
+    months.forEach((ym) => {
+      opts.push(`${ym}:H1`);
+      opts.push(`${ym}:H2`);
+    });
+    return opts.sort().reverse();
+  }, [attendance]);
+
+  const formatCutoffLabel = (key: string) => {
+    const [ym, half] = key.split(':');
+    const [y, m] = ym.split('-').map(Number);
+    const monthName = new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long' });
+    return half === 'H1' ? `${monthName} 1-15, ${y}` : `${monthName} 16-31, ${y}`;
+  };
 
   const openEdit = async (p: Profile) => {
     setEditing({
@@ -404,6 +563,129 @@ export default function HRDashboard() {
           )}
         </section>
 
+        {/* Attendance Disputes */}
+        <section className="card-style">
+          <h3 className="mb-4">Attendance Disputes</h3>
+
+          {disputeMsg && (
+            <div className={`p-3 rounded-xl text-sm font-bold mb-4 ${disputeMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+              {disputeMsg.text}
+            </div>
+          )}
+
+          {disputesLoading ? (
+            <LoadingRow label="Loading disputes..." />
+          ) : (
+            <>
+              {/* Pending */}
+              <div className="mb-6">
+                <p className="label-branded mb-3">Pending Review</p>
+                {disputes.filter((d) => d.status === 'Pending').length === 0 ? (
+                  <p className="text-slate-400 text-sm">No pending disputes.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {disputes.filter((d) => d.status === 'Pending').map((d) => (
+                      <div key={d.id} className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                          <div>
+                            <p className="font-bold text-slate-900">{d.employee?.full_name ?? 'Unknown'}</p>
+                            <p className="text-slate-500 text-sm mt-1">
+                              {d.attendance_log_id ? 'Disputing Late tag' : 'Reporting missed time-in'} for{' '}
+                              <span className="font-medium">{d.dispute_date}</span>
+                            </p>
+                            {d.original_time_in && (
+                              <p className="text-slate-500 text-sm">
+                                Originally recorded:{' '}
+                                <span className="font-bold text-slate-700">
+                                  {new Date(d.original_time_in).toLocaleTimeString('en-US', {
+                                    timeZone: 'Asia/Manila',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })}
+                                </span>
+                              </p>
+                            )}
+                            <p className="text-slate-500 text-sm">
+                              Claimed time in:{' '}
+                              <span className="font-bold text-slate-700">
+                                {new Date(d.claimed_time_in).toLocaleTimeString('en-US', {
+                                  timeZone: 'Asia/Manila',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </span>
+                            </p>
+                            {d.reason && (
+                              <p className="text-slate-400 text-xs mt-2 italic">"{d.reason}"</p>
+                            )}
+                          </div>
+                          <div className="flex gap-2 flex-shrink-0">
+                            <button
+                              onClick={() => approveDispute(d)}
+                              disabled={disputeActionLoadingId === d.id}
+                              className="text-xs font-bold bg-green-600 text-white px-4 py-2 rounded-full hover:bg-green-700 transition disabled:opacity-50"
+                            >
+                              {disputeActionLoadingId === d.id ? 'Working...' : 'Approve'}
+                            </button>
+                            <button
+                              onClick={() => rejectDispute(d)}
+                              disabled={disputeActionLoadingId === d.id}
+                              className="text-xs font-bold bg-slate-200 text-slate-700 px-4 py-2 rounded-full hover:bg-slate-300 transition disabled:opacity-50"
+                            >
+                              Reject
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Resolved (logs) */}
+              <div>
+                <p className="label-branded mb-3">Resolution History</p>
+                {disputes.filter((d) => d.status !== 'Pending').length === 0 ? (
+                  <p className="text-slate-400 text-sm">No resolved disputes yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {disputes.filter((d) => d.status !== 'Pending').map((d) => (
+                      <div key={d.id} className="flex flex-wrap items-center justify-between gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100 text-sm">
+                        <div>
+                          <span className="font-bold text-slate-900">{d.employee?.full_name ?? 'Unknown'}</span>
+                          <span className="text-slate-400"> · {d.dispute_date}</span>
+                          {d.status === 'Approved' && (
+                            <div className="text-slate-400 text-xs mt-0.5">
+                              {d.original_time_in && (
+                                <>
+                                  {new Date(d.original_time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}
+                                  {' → '}
+                                </>
+                              )}
+                              {new Date(d.claimed_time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 text-slate-400 text-xs">
+                          <span className={d.status === 'Approved' ? 'tag-present' : 'tag-late'}>{d.status}</span>
+                          {d.reviewer?.full_name && (
+                            <span>
+                              by {d.reviewer.full_name}
+                              {d.reviewed_at && (
+                                ` on ${new Date(d.reviewed_at).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' })}`
+                              )}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </section>
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Employee Sidebar */}
           <section className="card-style">
@@ -432,7 +714,11 @@ export default function HRDashboard() {
             <div className="p-8 border-b border-slate-100 flex flex-col md:flex-row gap-4 justify-between items-center">
               <h3>
                 Attendance History
-                {selectedDate && (
+                {cutoffFilter ? (
+                  <span className="block text-[11px] font-medium text-slate-400 normal-case tracking-normal mt-1">
+                    Showing {formatCutoffLabel(cutoffFilter)}
+                  </span>
+                ) : selectedDate && (
                   <span className="block text-[11px] font-medium text-slate-400 normal-case tracking-normal mt-1">
                     {selectedDate === todayManila ? "Showing today's records" : `Showing records for ${selectedDate}`}
                   </span>
@@ -445,23 +731,45 @@ export default function HRDashboard() {
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
+                <select
+                  className="input-field"
+                  value={cutoffFilter}
+                  onChange={(e) => {
+                    setCutoffFilter(e.target.value);
+                    if (e.target.value) setSelectedDate(''); // cutoff takes over from single-date
+                  }}
+                >
+                  <option value="">By cutoff...</option>
+                  {availableCutoffs.map((c) => (
+                    <option key={c} value={c}>{formatCutoffLabel(c)}</option>
+                  ))}
+                </select>
                 <input
                   type="date"
                   className="input-field"
                   value={selectedDate}
-                  onChange={(e) => setSelectedDate(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedDate(e.target.value);
+                    if (e.target.value) setCutoffFilter(''); // single-date takes over from cutoff
+                  }}
                 />
                 {selectedDate !== todayManila && (
                   <button
-                    onClick={() => setSelectedDate(todayManila)}
+                    onClick={() => {
+                      setSelectedDate(todayManila);
+                      setCutoffFilter('');
+                    }}
                     className="text-blue-600 font-bold text-xs whitespace-nowrap"
                   >
                     Today
                   </button>
                 )}
-                {selectedDate && (
+                {(selectedDate || cutoffFilter) && (
                   <button
-                    onClick={() => setSelectedDate('')}
+                    onClick={() => {
+                      setSelectedDate('');
+                      setCutoffFilter('');
+                    }}
                     className="text-slate-400 font-bold text-xs whitespace-nowrap"
                   >
                     View All
