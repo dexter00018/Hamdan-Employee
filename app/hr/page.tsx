@@ -776,8 +776,8 @@ export default function HRDashboard() {
                           <div className="min-w-0">
                             <p className="font-bold text-slate-900 text-xs">{d.employee?.full_name ?? 'Unknown'}</p>
                             <p className="text-slate-500 text-xs mt-0.5">{d.attendance_log_id ? 'Late tag dispute' : 'Missed time-in'} · <span className="font-medium">{d.dispute_date}</span></p>
-                            {d.original_time_in && <p className="text-slate-400 text-xs">Was: <span className="font-bold text-slate-600">{new Date(d.original_time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}</span></p>}
-                            <p className="text-slate-400 text-xs">Claimed: <span className="font-bold text-slate-600">{new Date(d.claimed_time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}</span></p>
+                            {d.original_time_in && <p className="text-slate-400 text-xs">Was: <span className="font-bold text-slate-600">{new Date(d.original_time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span></p>}
+                            <p className="text-slate-400 text-xs">Claimed: <span className="font-bold text-slate-600">{new Date(d.claimed_time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span></p>
                             {d.reason && <p className="text-slate-400 text-[10px] italic mt-0.5">"{d.reason}"</p>}
                           </div>
                           <div className="flex gap-1.5 flex-shrink-0">
@@ -900,8 +900,8 @@ export default function HRDashboard() {
                     <tr key={log.id} className="hover:bg-slate-50 transition">
                       <td className="px-4 py-3 font-medium text-slate-900 text-xs">{log.profiles?.full_name}</td>
                       <td className="px-4 py-3 text-slate-600 text-xs">{log.time_in ? new Date(log.time_in).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}</td>
-                      <td className="px-4 py-3 text-slate-600 text-xs">{log.time_in ? new Date(log.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }) : 'N/A'}</td>
-                      <td className="px-4 py-3 text-slate-600 text-xs">{log.time_out ? new Date(log.time_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                      <td className="px-4 py-3 text-slate-600 text-xs">{log.time_in ? new Date(log.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'N/A'}</td>
+                      <td className="px-4 py-3 text-slate-600 text-xs">{log.time_out ? new Date(log.time_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}</td>
                       <td className="px-4 py-3"><span className={statusTagClass(log.status)}>{log.status}</span></td>
                     </tr>
                   ))}
