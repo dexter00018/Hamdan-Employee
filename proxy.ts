@@ -60,9 +60,27 @@ export async function proxy(request: NextRequest) {
     }
   );
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let user;
+  try {
+    const { data, error: getUserError } = await supabase.auth.getUser();
+    if (getUserError) throw getUserError;
+    user = data.user;
+  } catch {
+    // Covers both a normal "no session" result AND cases where Supabase
+    // throws instead of returning an error -- e.g. "Invalid Refresh Token:
+    // Refresh Token Not Found" when a stale/cleared cookie is presented.
+    // Either way, the safe move is the same: clear the bad cookies and
+    // send them back to login instead of letting this bubble up as an
+    // unhandled 500 in the proxy.
+    const loginUrl = new URL('/', request.url);
+    const redirectResponse = NextResponse.redirect(loginUrl);
+    request.cookies.getAll().forEach(({ name }) => {
+      if (name.startsWith('sb-')) {
+        redirectResponse.cookies.delete(name);
+      }
+    });
+    return redirectResponse;
+  }
 
   // Not logged in at all -> straight back to login
   if (!user) {
