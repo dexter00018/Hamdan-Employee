@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { supabase, supabaseAuthActions } from '@/lib/supabase';
-import Image from 'next/image';
 import Spinner, { LoadingRow } from '@/components/Spinner';
 
 export default function SuperAdminDashboard() {
@@ -100,7 +99,12 @@ export default function SuperAdminDashboard() {
     const { data, error } = await supabase
       .from('attendance_logs')
       .select('id, time_in, time_out, log_date, status, profiles(full_name)')
-      .order('time_in', { ascending: false })
+      // log_date is always populated (unlike time_in, which is null for
+      // 'Absent' rows) -- ordering by it keeps the most recent days first
+      // regardless of status. nullsFirst: false on time_in keeps each
+      // day's real time-ins ahead of any Absent placeholder for that day.
+      .order('log_date', { ascending: false })
+      .order('time_in', { ascending: false, nullsFirst: false })
       .limit(200);
 
     if (error) {
@@ -151,8 +155,11 @@ export default function SuperAdminDashboard() {
     const matchesSearch = log.profiles?.full_name
       ?.toLowerCase()
       .includes(attendanceSearch.toLowerCase());
+    // Use log_date directly -- it's always populated, unlike time_in, which
+    // is null for 'Absent' rows (no time-in happened that day) and would
+    // otherwise make those rows unmatchable by any date filter.
     const matchesDate = attendanceDateFilter
-      ? log.time_in && toManilaDateString(log.time_in) === attendanceDateFilter
+      ? log.log_date === attendanceDateFilter
       : true;
     return matchesSearch && matchesDate;
   });
@@ -405,6 +412,7 @@ export default function SuperAdminDashboard() {
   const statusTagClass = (s: string) => {
     if (s === 'Late') return 'tag-late';
     if (s === 'Excused') return 'tag-excused';
+    if (s === 'Absent') return 'tag-absent';
     return 'tag-present';
   };
 
@@ -421,23 +429,13 @@ export default function SuperAdminDashboard() {
   const totalEmployeesCount = employees.filter((e) => e.role === 'employee').length;
 
   return (
-    <main className="min-h-screen relative p-4 md:p-8">
-      <div className="fixed inset-0 z-0">
-        <Image
-          src="/images/hamdan-logo.png"
-          alt="Background"
-          fill
-          className="object-cover opacity-[0.05] blur-sm"
-          priority
-        />
-      </div>
-
-      <div className="relative z-10 max-w-6xl mx-auto space-y-6">
+    <main className="min-h-screen p-3 sm:p-4 md:p-6 lg:p-8">
+      <div className="max-w-7xl mx-auto space-y-3 sm:space-y-4 md:space-y-5">
         {/* BRANDING HEADER */}
-        <header className="branding-box flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <header className="branding-box flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 !p-3 sm:!p-4">
           <div>
-            <h1>HAMDAN ENGINEERING</h1>
-            <p className="text-[13px] font-bold text-slate-600 uppercase tracking-widest mt-1">
+            <h1 className="text-base sm:text-lg md:text-2xl leading-tight">HAMDAN ENGINEERING</h1>
+            <p className="text-slate-400 text-[9px] sm:text-[10px] font-bold uppercase tracking-widest mt-0.5">
               Super Admin Portal
             </p>
           </div>
@@ -446,7 +444,7 @@ export default function SuperAdminDashboard() {
             onClick={() =>
               supabase.auth.signOut().then(() => (window.location.href = '/'))
             }
-            className="bg-white/70 text-slate-700 px-6 py-2.5 rounded-full font-bold text-sm hover:bg-white transition"
+            className="text-slate-500 font-medium text-xs hover:text-red-600 transition whitespace-nowrap"
             type="button"
           >
             Log Out
@@ -481,7 +479,7 @@ export default function SuperAdminDashboard() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4 md:gap-5">
           {/* FORM CARD */}
           <section className="card-style h-fit">
             <h3 className="mb-6">
@@ -784,8 +782,8 @@ export default function SuperAdminDashboard() {
                         {log.profiles?.full_name ?? '-'}
                       </td>
                       <td className="py-4 text-slate-600 text-sm">
-                        {log.time_in
-                          ? new Date(log.time_in).toLocaleDateString('en-US', {
+                        {log.log_date
+                          ? new Date(log.log_date).toLocaleDateString('en-US', {
                               timeZone: 'Asia/Manila',
                               month: 'short',
                               day: 'numeric',
@@ -889,6 +887,7 @@ export default function SuperAdminDashboard() {
               <option value="Present">Present</option>
               <option value="Late">Late</option>
               <option value="Excused">Excused</option>
+              <option value="Absent">Absent</option>
             </select>
 
             <div className="flex gap-3">
