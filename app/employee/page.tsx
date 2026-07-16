@@ -778,10 +778,13 @@ export default function EmployeeDashboard() {
 
   const summary = useMemo(() => {
     const cutoffLogs = history.filter(log => matchesCutoff(log.log_date, summaryCutoffKey));
-    const present = cutoffLogs.length;
+    // "Present" here means the employee actually showed up (on-time or late) --
+    // it must exclude 'Absent' rows, which now also live in attendance_logs.
+    const present = cutoffLogs.filter(l => l.status !== 'Absent').length;
     const late = cutoffLogs.filter(l => l.status === 'Late').length;
+    const absent = cutoffLogs.filter(l => l.status === 'Absent').length;
     const onTime = present - late;
-    return { present, late, onTime };
+    return { present, late, absent, onTime };
   }, [history, summaryCutoffKey]);
 
   // --- History filtering ---
@@ -840,7 +843,7 @@ export default function EmployeeDashboard() {
               <div className="w-px h-8 bg-slate-200"/>
               <div className="text-center"><p className="stat-number text-xl text-orange-600 leading-none">{summary.late}</p><p className="label-branded mt-0.5 mb-0">Late</p></div>
               <div className="w-px h-8 bg-slate-200"/>
-              <div className="text-center"><p className="stat-number text-xl text-green-600 leading-none">{summary.onTime}</p><p className="label-branded mt-0.5 mb-0">On-Time</p></div>
+              <div className="text-center"><p className="stat-number text-xl text-red-600 leading-none">{summary.absent}</p><p className="label-branded mt-0.5 mb-0">Absent</p></div>
             </div>
             <button onClick={() => supabase.auth.signOut().then(() => window.location.href = '/')} className="text-slate-500 font-medium text-xs hover:text-red-600 transition whitespace-nowrap">Log Out</button>
           </div>
@@ -852,7 +855,7 @@ export default function EmployeeDashboard() {
         <div className="grid grid-cols-3 gap-2 lg:hidden">
           <div className="card-style !p-3 text-center"><p className="stat-number text-xl text-blue-600">{summary.present}</p><p className="label-branded mt-0.5">Present</p></div>
           <div className="card-style !p-3 text-center"><p className="stat-number text-xl text-orange-600">{summary.late}</p><p className="label-branded mt-0.5">Late</p></div>
-          <div className="card-style !p-3 text-center"><p className="stat-number text-xl text-green-600">{summary.onTime}</p><p className="label-branded mt-0.5">On-Time</p></div>
+          <div className="card-style !p-3 text-center"><p className="stat-number text-xl text-red-600">{summary.absent}</p><p className="label-branded mt-0.5">Absent</p></div>
         </div>
 
         {/* Main layout */}
