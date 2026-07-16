@@ -69,6 +69,7 @@ export default function HRDashboard() {
   const [disputesLoading, setDisputesLoading] = useState(true);
   const [disputeActionLoadingId, setDisputeActionLoadingId] = useState<string | null>(null);
   const [disputeMsg, setDisputeMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [disputesHistoryModalOpen, setDisputesHistoryModalOpen] = useState(false);
 
   // Leave Requests
   const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
@@ -76,12 +77,19 @@ export default function HRDashboard() {
   const [leaveActionLoadingId, setLeaveActionLoadingId] = useState<string | null>(null);
   const [leaveMsg, setLeaveMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [leaveHrNotes, setLeaveHrNotes] = useState<{ [id: string]: string }>({});
+  const [leaveHistoryModalOpen, setLeaveHistoryModalOpen] = useState(false);
 
   useEffect(() => {
+    // Catch-up: resolve any approved leave days whose date has already
+    // passed (deduct the credit if the employee never timed in that day,
+    // or void it if they did) before loading the leave requests list.
+    supabase.rpc('settle_overdue_leave_days').then(({ error }) => {
+      if (error) console.error('Error settling overdue leave days:', error);
+      fetchLeaveRequests();
+    });
     refreshAllData();
     fetchAnnouncement();
     fetchDisputes();
-    fetchLeaveRequests();
   }, []);
 
   const refreshAllData = async () => {
@@ -319,7 +327,6 @@ export default function HRDashboard() {
     setLeaveMsg(null);
     try {
       const { data: { user: currentUser } } = await supabase.auth.getUser();
-      const days = countLeaveDays(leave.start_date, leave.end_date);
       const notes = leaveHrNotes[leave.id]?.trim() || null;
 
       const { error } = await supabase
@@ -328,40 +335,17 @@ export default function HRDashboard() {
         .eq('id', leave.id);
       if (error) throw error;
 
-      // Deduct credits if employee is Regular
-      const employeeId = leave.employee?.id;
-      if (employeeId) {
-        const { data: govId } = await supabase
-          .from('employee_government_ids')
-          .select('employment_status')
-          .eq('user_id', employeeId)
-          .maybeSingle();
-
-        if (govId?.employment_status === 'Regular') {
-          const year = new Date(leave.start_date).getFullYear();
-          const { data: credits } = await supabase
-            .from('leave_credits')
-            .select('id, used_credits, total_credits')
-            .eq('user_id', employeeId)
-            .eq('year', year)
-            .maybeSingle();
-
-          if (credits) {
-            await supabase
-              .from('leave_credits')
-              .update({ used_credits: Math.min(credits.used_credits + days, credits.total_credits) })
-              .eq('id', credits.id);
-          } else {
-            // First leave of the year — create the credits row
-            await supabase.from('leave_credits').insert([{
-              user_id: employeeId,
-              year,
-              total_credits: 15,
-              used_credits: Math.min(days, 15),
-            }]);
-          }
-        }
-      }
+      // NOTE: leave credits are NOT deducted here anymore. Approving just
+      // creates one 'Pending' leave_request_days row per weekday in range.
+      // Each day only turns into an actual credit deduction later, once we
+      // can confirm the employee didn't time in that day (see
+      // settle_leave_day / settle_overdue_leave_days in Supabase, called
+      // from the HR and Employee dashboards on load, plus a DB trigger that
+      // fires the moment an employee times in).
+      const { error: genError } = await supabase.rpc('generate_leave_request_days', {
+        p_leave_request_id: leave.id,
+      });
+      if (genError) throw genError;
 
       setLeaveMsg({ type: 'success', text: 'Leave request approved.' });
       await fetchLeaveRequests();
@@ -792,20 +776,14 @@ export default function HRDashboard() {
                   </div>
               }
               <p className="label-branded mb-2">Resolved</p>
-              {disputes.filter((d) => d.status !== 'Pending').length === 0
-                ? <p className="text-slate-400 text-xs">No resolved disputes yet.</p>
-                : <div className="space-y-1.5">
-                    {disputes.filter((d) => d.status !== 'Pending').map((d) => (
-                      <div key={d.id} className="flex items-center justify-between gap-2 p-2.5 bg-slate-50 rounded-xl border border-slate-100">
-                        <div className="min-w-0">
-                          <span className="font-bold text-slate-900 text-xs">{d.employee?.full_name ?? 'Unknown'}</span>
-                          <span className="text-slate-400 text-xs"> · {d.dispute_date}</span>
-                        </div>
-                        <span className={d.status === 'Approved' ? 'tag-present' : 'tag-late'}>{d.status}</span>
-                      </div>
-                    ))}
-                  </div>
-              }
+              <button
+                type="button"
+                onClick={() => setDisputesHistoryModalOpen(true)}
+                className="w-full flex items-center justify-between gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100 hover:bg-slate-100 transition text-left"
+              >
+                <span className="text-slate-600 text-xs font-bold">View dispute history</span>
+                <span className="text-slate-400 text-xs">{disputes.filter((d) => d.status !== 'Pending').length} resolved</span>
+              </button>
             </>
           )}
         </section>
@@ -839,20 +817,14 @@ export default function HRDashboard() {
                   </div>
               }
               <p className="label-branded mb-2">Resolved</p>
-              {leaveRequests.filter((l) => l.status !== 'Pending').length === 0
-                ? <p className="text-slate-400 text-xs">No resolved leave requests yet.</p>
-                : <div className="space-y-1.5">
-                    {leaveRequests.filter((l) => l.status !== 'Pending').map((l) => (
-                      <div key={l.id} className="flex items-center justify-between gap-2 p-2.5 bg-slate-50 rounded-xl border border-slate-100">
-                        <div className="min-w-0">
-                          <span className="font-bold text-slate-900 text-xs">{l.employee?.full_name ?? 'Unknown'}</span>
-                          <span className="text-slate-400 text-xs"> · {l.leave_type} · {l.start_date === l.end_date ? l.start_date : `${l.start_date}→${l.end_date}`} · {countLeaveDays(l.start_date, l.end_date)}d</span>
-                        </div>
-                        <span className={l.status === 'Approved' ? 'tag-present' : 'tag-late'}>{l.status}</span>
-                      </div>
-                    ))}
-                  </div>
-              }
+              <button
+                type="button"
+                onClick={() => setLeaveHistoryModalOpen(true)}
+                className="w-full flex items-center justify-between gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100 hover:bg-slate-100 transition text-left"
+              >
+                <span className="text-slate-600 text-xs font-bold">View leave history</span>
+                <span className="text-slate-400 text-xs">{leaveRequests.filter((l) => l.status !== 'Pending').length} resolved</span>
+              </button>
             </>
           )}
         </section>
@@ -1112,6 +1084,104 @@ export default function HRDashboard() {
                 Close
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dispute History Modal */}
+      {disputesHistoryModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm card-style shadow-2xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between mb-6 flex-shrink-0">
+              <h3 className="mb-0">Dispute History</h3>
+              <button
+                type="button"
+                onClick={() => setDisputesHistoryModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 transition"
+                aria-label="Close"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1">
+              {disputes.filter((d) => d.status !== 'Pending').length === 0 ? (
+                <div className="text-center py-10 border-2 border-dashed border-slate-200 rounded-2xl">
+                  <p className="text-slate-400 text-sm font-medium">No resolved disputes yet.</p>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {disputes.filter((d) => d.status !== 'Pending').map((d) => (
+                    <div key={d.id} className="flex items-center justify-between gap-2 p-2.5 bg-slate-50 rounded-xl border border-slate-100">
+                      <div className="min-w-0">
+                        <span className="font-bold text-slate-900 text-xs">{d.employee?.full_name ?? 'Unknown'}</span>
+                        <span className="text-slate-400 text-xs"> · {d.dispute_date}</span>
+                      </div>
+                      <span className={d.status === 'Approved' ? 'tag-present' : 'tag-late'}>{d.status}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setDisputesHistoryModalOpen(false)}
+              className="mt-6 w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 transition flex-shrink-0"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Leave History Modal */}
+      {leaveHistoryModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm card-style shadow-2xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between mb-6 flex-shrink-0">
+              <h3 className="mb-0">Leave History</h3>
+              <button
+                type="button"
+                onClick={() => setLeaveHistoryModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 transition"
+                aria-label="Close"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1">
+              {leaveRequests.filter((l) => l.status !== 'Pending').length === 0 ? (
+                <div className="text-center py-10 border-2 border-dashed border-slate-200 rounded-2xl">
+                  <p className="text-slate-400 text-sm font-medium">No resolved leave requests yet.</p>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {leaveRequests.filter((l) => l.status !== 'Pending').map((l) => (
+                    <div key={l.id} className="flex items-center justify-between gap-2 p-2.5 bg-slate-50 rounded-xl border border-slate-100">
+                      <div className="min-w-0">
+                        <span className="font-bold text-slate-900 text-xs">{l.employee?.full_name ?? 'Unknown'}</span>
+                        <span className="text-slate-400 text-xs"> · {l.leave_type} · {l.start_date === l.end_date ? l.start_date : `${l.start_date}→${l.end_date}`} · {countLeaveDays(l.start_date, l.end_date)}d</span>
+                      </div>
+                      <span className={l.status === 'Approved' ? 'tag-present' : 'tag-late'}>{l.status}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setLeaveHistoryModalOpen(false)}
+              className="mt-6 w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 transition flex-shrink-0"
+            >
+              Close
+            </button>
           </div>
         </div>
       )}

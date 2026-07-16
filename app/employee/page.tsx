@@ -213,7 +213,13 @@ export default function EmployeeDashboard() {
     fetchMyDisputes();
     fetchPayslips();
     fetchMyLeaves();
-    fetchLeaveCredits();
+    // Catch-up: resolve any of this employee's approved leave days whose
+    // date has already passed, then load the (possibly just-updated)
+    // credit balance.
+    supabase.rpc('settle_overdue_leave_days').then(({ error }) => {
+      if (error) console.error('Error settling overdue leave days:', error);
+      fetchLeaveCredits();
+    });
     return () => clearInterval(timer);
   }, []);
 
@@ -511,6 +517,7 @@ export default function EmployeeDashboard() {
 
   // --- Leave Requests ---
   const [myLeaves, setMyLeaves] = useState<any[]>([]);
+  const [myLeavesModalOpen, setMyLeavesModalOpen] = useState(false);
   const [leaveCredits, setLeaveCredits] = useState<{ total_credits: number; used_credits: number } | null>(null);
   const [leaveModalOpen, setLeaveModalOpen] = useState(false);
   const [leaveForm, setLeaveForm] = useState({ leave_type: 'Sick', start_date: '', end_date: '', reason: '' });
@@ -603,6 +610,7 @@ export default function EmployeeDashboard() {
   // arrived earlier) or a day with no time-in at all (they forgot to
   // time in). Both go through the same request; HR approves/rejects.
   const [myDisputes, setMyDisputes] = useState<any[]>([]);
+  const [myDisputesModalOpen, setMyDisputesModalOpen] = useState(false);
   const [disputeModalOpen, setDisputeModalOpen] = useState(false);
   const [disputeForm, setDisputeForm] = useState<{ attendanceLogId: string | null; date: string; timeLocal: string; reason: string }>({
     attendanceLogId: null,
@@ -963,6 +971,24 @@ export default function EmployeeDashboard() {
                   <p className="text-slate-400 text-[10px] truncate">{payslips.length > 0 ? `${payslips.length} available` : 'No payslips yet'}</p>
                 </div>
               </button>
+              <button type="button" onClick={() => { setMyLeavesModalOpen(true); fetchMyLeaves(); }} className="card-style !p-3 flex items-center gap-2 hover:bg-slate-50 transition text-left">
+                <div className="w-8 h-8 rounded-xl bg-amber-50 flex items-center justify-center flex-shrink-0">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-600"><path d="M8 2v4M16 2v4M3 10h18"/><rect x="3" y="4" width="18" height="18" rx="2"/></svg>
+                </div>
+                <div className="min-w-0">
+                  <p className="font-semibold text-slate-900 text-xs">My Leave Requests</p>
+                  <p className="text-slate-400 text-[10px] truncate">{myLeaves.length > 0 ? `${myLeaves.length} request${myLeaves.length === 1 ? '' : 's'}` : 'No leave requests yet'}</p>
+                </div>
+              </button>
+              <button type="button" onClick={() => { setMyDisputesModalOpen(true); fetchMyDisputes(); }} className="card-style !p-3 flex items-center gap-2 hover:bg-slate-50 transition text-left">
+                <div className="w-8 h-8 rounded-xl bg-rose-50 flex items-center justify-center flex-shrink-0">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-rose-600"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                </div>
+                <div className="min-w-0">
+                  <p className="font-semibold text-slate-900 text-xs">My Disputes</p>
+                  <p className="text-slate-400 text-[10px] truncate">{myDisputes.length > 0 ? `${myDisputes.length} dispute${myDisputes.length === 1 ? '' : 's'}` : 'No disputes yet'}</p>
+                </div>
+              </button>
             </div>
 
             {/* Attendance History */}
@@ -1002,49 +1028,6 @@ export default function EmployeeDashboard() {
                 ))}
               </div>
             </div>
-
-            {/* My Leave Requests */}
-            {myLeaves.length > 0 && (
-              <div className="card-style !p-4">
-                <h3 className="mb-3 text-sm">My Leave Requests</h3>
-                <div className="space-y-2">
-                  {myLeaves.map((l) => (
-                    <div key={l.id} className="flex items-center justify-between gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-semibold text-slate-900 text-xs">{l.leave_type} Leave</span>
-                          <span className={l.status === 'Approved' ? 'tag-present' : l.status === 'Rejected' ? 'tag-late' : 'tag-excused'}>{l.status}</span>
-                        </div>
-                        <div className="text-slate-400 text-[10px] mt-0.5">{l.start_date === l.end_date ? l.start_date : `${l.start_date} → ${l.end_date}`} · {countLeaveDays(l.start_date, l.end_date)}d</div>
-                        {l.hr_notes && <div className="text-blue-600 text-[10px] mt-0.5">HR: {l.hr_notes}</div>}
-                      </div>
-                      {l.status === 'Pending' && <button onClick={() => cancelLeave(l.id)} className="text-rose-500 hover:text-rose-700 text-xs font-bold flex-shrink-0">Cancel</button>}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* My Disputes */}
-            {myDisputes.length > 0 && (
-              <div className="card-style !p-4">
-                <h3 className="mb-3 text-sm">My Disputes</h3>
-                <div className="space-y-2">
-                  {myDisputes.map((d) => (
-                    <div key={d.id} className="flex items-center justify-between gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <div className="min-w-0">
-                        <div className="font-medium text-slate-900 text-xs truncate">{d.attendance_log_id ? 'Late dispute' : 'Missed time-in'} — {d.dispute_date}</div>
-                        <div className="text-slate-400 text-[10px] mt-0.5">
-                          {d.original_time_in && <>{new Date(d.original_time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })} → </>}
-                          {new Date(d.claimed_time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}
-                        </div>
-                      </div>
-                      <span className={d.status === 'Approved' ? 'tag-present' : d.status === 'Rejected' ? 'tag-late' : 'tag-excused'}>{d.status}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
 
           </div>
         </div>
@@ -1273,6 +1256,113 @@ export default function EmployeeDashboard() {
             <button
               type="button"
               onClick={() => setPayslipsModalOpen(false)}
+              className="mt-6 w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 transition flex-shrink-0"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* My Leave Requests Modal */}
+      {myLeavesModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm card-style shadow-2xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between mb-6 flex-shrink-0">
+              <h3 className="mb-0">My Leave Requests</h3>
+              <button
+                type="button"
+                onClick={() => setMyLeavesModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 transition"
+                aria-label="Close"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1">
+              {myLeaves.length === 0 ? (
+                <div className="text-center py-10 border-2 border-dashed border-slate-200 rounded-2xl">
+                  <p className="text-2xl mb-2">🗓️</p>
+                  <p className="text-slate-400 text-sm font-medium">No leave requests yet</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {myLeaves.map((l) => (
+                    <div key={l.id} className="flex items-center justify-between gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold text-slate-900 text-xs">{l.leave_type} Leave</span>
+                          <span className={l.status === 'Approved' ? 'tag-present' : l.status === 'Rejected' ? 'tag-late' : 'tag-excused'}>{l.status}</span>
+                        </div>
+                        <div className="text-slate-400 text-[10px] mt-0.5">{l.start_date === l.end_date ? l.start_date : `${l.start_date} → ${l.end_date}`} · {countLeaveDays(l.start_date, l.end_date)}d</div>
+                        {l.hr_notes && <div className="text-blue-600 text-[10px] mt-0.5">HR: {l.hr_notes}</div>}
+                      </div>
+                      {l.status === 'Pending' && <button onClick={() => cancelLeave(l.id)} className="text-rose-500 hover:text-rose-700 text-xs font-bold flex-shrink-0">Cancel</button>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setMyLeavesModalOpen(false)}
+              className="mt-6 w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 transition flex-shrink-0"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* My Disputes Modal */}
+      {myDisputesModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm card-style shadow-2xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between mb-6 flex-shrink-0">
+              <h3 className="mb-0">My Disputes</h3>
+              <button
+                type="button"
+                onClick={() => setMyDisputesModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 transition"
+                aria-label="Close"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1">
+              {myDisputes.length === 0 ? (
+                <div className="text-center py-10 border-2 border-dashed border-slate-200 rounded-2xl">
+                  <p className="text-2xl mb-2">⚠️</p>
+                  <p className="text-slate-400 text-sm font-medium">No disputes yet</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {myDisputes.map((d) => (
+                    <div key={d.id} className="flex items-center justify-between gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                      <div className="min-w-0">
+                        <div className="font-medium text-slate-900 text-xs truncate">{d.attendance_log_id ? 'Late dispute' : 'Missed time-in'} — {d.dispute_date}</div>
+                        <div className="text-slate-400 text-[10px] mt-0.5">
+                          {d.original_time_in && <>{new Date(d.original_time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })} → </>}
+                          {new Date(d.claimed_time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      </div>
+                      <span className={d.status === 'Approved' ? 'tag-present' : d.status === 'Rejected' ? 'tag-late' : 'tag-excused'}>{d.status}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setMyDisputesModalOpen(false)}
               className="mt-6 w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 transition flex-shrink-0"
             >
               Close
