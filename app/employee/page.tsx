@@ -146,8 +146,15 @@ export default function EmployeeDashboard() {
     tin: false,
   });
 
-  // History filter (month picker, e.g. "2026-07")
-  const [monthFilter, setMonthFilter] = useState('');
+  // History filter (month picker, e.g. "2026-07:H1") -- defaults to the
+  // current cutoff period so employees land on "this cutoff" instead of
+  // their entire history.
+  const [monthFilter, setMonthFilter] = useState(() => {
+    const now = new Date();
+    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const half = now.getDate() <= 15 ? 'H1' : 'H2';
+    return `${ym}:${half}`;
+  });
 
   // Announcements
   const [announcement, setAnnouncement] = useState<string>('');
@@ -783,6 +790,10 @@ export default function EmployeeDashboard() {
     history.forEach(log => {
       if (log.log_date) months.add(log.log_date.slice(0, 7));
     });
+    // Always include the current cutoff's month, even if there's no
+    // attendance log for it yet, so the dropdown (defaulted to this
+    // cutoff) always has a matching option to display.
+    months.add(currentCutoffKey.split(':')[0]);
     const opts: string[] = [];
     months.forEach(ym => {
       opts.push(`${ym}:H1`);
@@ -791,7 +802,7 @@ export default function EmployeeDashboard() {
     // String sort works here since "YYYY-MM:H1" < "YYYY-MM:H2"
     // alphabetically, and the zero-padded YYYY-MM sorts correctly too.
     return opts.sort().reverse();
-  }, [history]);
+  }, [history, currentCutoffKey]);
 
   const filteredHistory = useMemo(() => {
     if (!monthFilter) return history;
