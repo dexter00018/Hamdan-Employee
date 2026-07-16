@@ -176,6 +176,12 @@
     background: var(--color-sky-50);
     color: var(--color-sky-700);
   }
+
+  .tag-absent {
+    @apply px-3 py-1.5 rounded-full font-bold text-[10px] uppercase tracking-wider;
+    background: var(--color-red-50);
+    color: var(--color-red-700);
+  }
 }
 
 @layer utilities {

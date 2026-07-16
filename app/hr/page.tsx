@@ -80,14 +80,22 @@ export default function HRDashboard() {
   const [leaveHistoryModalOpen, setLeaveHistoryModalOpen] = useState(false);
 
   useEffect(() => {
-    // Catch-up: resolve any approved leave days whose date has already
-    // passed (deduct the credit if the employee never timed in that day,
-    // or void it if they did) before loading the leave requests list.
-    supabase.rpc('settle_overdue_leave_days').then(({ error }) => {
-      if (error) console.error('Error settling overdue leave days:', error);
+    const runStartupSweeps = async () => {
+      // Catch-up sweeps, run once per dashboard load, before pulling any
+      // attendance/leave data -- so anything they generate (a fresh
+      // 'Absent' row, a newly-deducted leave credit) is already reflected
+      // in what gets fetched right after.
+      const [{ error: leaveSweepError }, { error: absenceSweepError }] = await Promise.all([
+        supabase.rpc('settle_overdue_leave_days'),
+        supabase.rpc('settle_overdue_absences'),
+      ]);
+      if (leaveSweepError) console.error('Error settling overdue leave days:', leaveSweepError);
+      if (absenceSweepError) console.error('Error settling overdue absences:', absenceSweepError);
+
+      refreshAllData();
       fetchLeaveRequests();
-    });
-    refreshAllData();
+    };
+    runStartupSweeps();
     fetchAnnouncement();
     fetchDisputes();
   }, []);
@@ -245,18 +253,23 @@ export default function HRDashboard() {
         if (error) throw error;
       } else {
         // No log existed for that day (forgot to time in) -- create it.
+        // Uses upsert (not insert) because the nightly/on-load absence sweep
+        // may have already filled this date with a placeholder 'Absent' row
+        // (see settle_overdue_absences) -- this overwrites that placeholder
+        // with the real, HR-confirmed time_in/status instead of colliding
+        // with the unique (user_id, log_date) constraint.
         const { data: disputeRow } = await supabase
           .from('attendance_disputes')
           .select('user_id')
           .eq('id', dispute.id)
           .single();
 
-        const { error } = await supabase.from('attendance_logs').insert([{
+        const { error } = await supabase.from('attendance_logs').upsert([{
           user_id: disputeRow?.user_id,
           log_date: dispute.dispute_date,
           time_in: dispute.claimed_time_in,
           status: newStatus,
-        }]);
+        }], { onConflict: 'user_id,log_date' });
         if (error) throw error;
       }
 
@@ -580,6 +593,7 @@ export default function HRDashboard() {
   const statusTagClass = (s: string | null) => {
     if (s === 'Late') return 'tag-late';
     if (s === 'Excused') return 'tag-excused';
+    if (s === 'Absent') return 'tag-absent';
     return 'tag-present';
   };
 

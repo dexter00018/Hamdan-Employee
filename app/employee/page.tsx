@@ -207,19 +207,28 @@ export default function EmployeeDashboard() {
       }
     }, 1000);
 
-    initializeDashboard();
+    const runStartupSweeps = async () => {
+      // Catch-up sweeps, run once per login/page load, before pulling
+      // attendance history or the leave credit balance -- so anything they
+      // generate (a fresh 'Absent' row for a day with no time-in, a
+      // newly-deducted leave credit) is already reflected in what loads
+      // right after.
+      const [{ error: leaveSweepError }, { error: absenceSweepError }] = await Promise.all([
+        supabase.rpc('settle_overdue_leave_days'),
+        supabase.rpc('settle_overdue_absences'),
+      ]);
+      if (leaveSweepError) console.error('Error settling overdue leave days:', leaveSweepError);
+      if (absenceSweepError) console.error('Error settling overdue absences:', absenceSweepError);
+
+      initializeDashboard();
+      fetchLeaveCredits();
+    };
+    runStartupSweeps();
     fetchAnnouncement();
     checkOfficeNetwork();
     fetchMyDisputes();
     fetchPayslips();
     fetchMyLeaves();
-    // Catch-up: resolve any of this employee's approved leave days whose
-    // date has already passed, then load the (possibly just-updated)
-    // credit balance.
-    supabase.rpc('settle_overdue_leave_days').then(({ error }) => {
-      if (error) console.error('Error settling overdue leave days:', error);
-      fetchLeaveCredits();
-    });
     return () => clearInterval(timer);
   }, []);
 
@@ -469,7 +478,7 @@ export default function EmployeeDashboard() {
     }
   };
 
-  const statusTagClass = (s: string | null) => (s === 'Late' ? 'tag-late' : 'tag-present');
+  const statusTagClass = (s: string | null) => (s === 'Late' ? 'tag-late' : s === 'Absent' ? 'tag-absent' : 'tag-present');
 
   // --- Early time-out warning (before 7PM) ---
   const [showEarlyTimeOutWarning, setShowEarlyTimeOutWarning] = useState(false);
