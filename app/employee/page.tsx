@@ -1204,8 +1204,8 @@ export default function EmployeeDashboard() {
               🔔
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-white font-semibold text-sm">Don't forget to time out!</p>
-              <p className="text-white/60 text-xs mt-1">It's already past 7:00 PM.</p>
+              <p className="text-white font-semibold text-sm">Don&apos;t forget to time out!</p>
+              <p className="text-white/60 text-xs mt-1">It&apos;s already past 7:00 PM.</p>
               <div className="flex gap-2 mt-3">
                 <button
                   onClick={handleTimeOut}
@@ -1537,7 +1537,7 @@ export default function EmployeeDashboard() {
             </div>
             <h3 className="mb-2">Time Out Early?</h3>
             <p className="text-slate-500 text-sm mb-6">
-              It's not yet 7:00 PM. Are you sure you want to time out now?
+              It&apos;s not yet 7:00 PM. Are you sure you want to time out now?
               <br />
               <span className="text-slate-400 text-xs mt-1 block">
                 Current time: {new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hour12: true })} (PH Time)

@@ -499,7 +499,7 @@ export default function SuperAdminDashboard() {
                 />
                 {fullNameConflict && (
                   <p className="text-orange-600 text-xs font-medium mt-1.5 ml-1">
-                    ⚠️ Another account already uses this name. Make sure you're not accidentally editing the wrong employee.
+                    ⚠️ Another account already uses this name. Make sure you&apos;re not accidentally editing the wrong employee.
                   </p>
                 )}
               </div>
@@ -719,7 +719,7 @@ export default function SuperAdminDashboard() {
                 )}
               </h3>
               <p className="text-sm text-slate-400 mt-1">
-                Edit an employee's time in for disputes or forgotten time-ins.
+                Edit an employee&apos;s time in for disputes or forgotten time-ins.
               </p>
             </div>
             <div className="flex flex-wrap gap-2 items-center w-full md:w-auto">

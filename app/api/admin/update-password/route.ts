@@ -67,7 +67,7 @@ export async function POST(req: Request) {
       .eq('id', callerUser.id)
       .single();
 
-    if (callerProfileError || callerProfile?.role !== 'admin') {
+    if (callerProfileError || !['admin', 'super_admin'].includes(callerProfile?.role ?? '')) {
       return NextResponse.json(
         { error: 'Only admins can reset passwords.' },
         { status: 403 }
@@ -104,4 +104,4 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
-} 
+}

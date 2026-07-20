@@ -818,7 +818,7 @@ export default function HRDashboard() {
                             <p className="text-slate-500 text-xs mt-0.5">{d.attendance_log_id ? 'Late tag dispute' : 'Missed time-in'} · <span className="font-medium">{d.dispute_date}</span></p>
                             {d.original_time_in && <p className="text-slate-400 text-xs">Was: <span className="font-bold text-slate-600">{new Date(d.original_time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span></p>}
                             <p className="text-slate-400 text-xs">Claimed: <span className="font-bold text-slate-600">{new Date(d.claimed_time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span></p>
-                            {d.reason && <p className="text-slate-400 text-[10px] italic mt-0.5">"{d.reason}"</p>}
+                            {d.reason && <p className="text-slate-400 text-[10px] italic mt-0.5">&ldquo;{d.reason}&rdquo;</p>}
                           </div>
                           <div className="flex gap-1.5 flex-shrink-0">
                             <button onClick={() => approveDispute(d)} disabled={disputeActionLoadingId === d.id} className="text-xs font-bold bg-green-600 text-white px-3 py-1.5 rounded-full hover:bg-green-700 transition disabled:opacity-50">{disputeActionLoadingId === d.id ? '...' : 'Approve'}</button>
@@ -858,7 +858,7 @@ export default function HRDashboard() {
                           <div className="min-w-0">
                             <p className="font-bold text-slate-900 text-xs">{l.employee?.full_name ?? 'Unknown'}</p>
                             <p className="text-slate-500 text-xs mt-0.5"><span className="font-semibold">{l.leave_type}</span> · {l.start_date === l.end_date ? l.start_date : `${l.start_date} → ${l.end_date}`} · {countLeaveDays(l.start_date, l.end_date)}d</p>
-                            {l.reason && <p className="text-slate-400 text-[10px] italic mt-0.5">"{l.reason}"</p>}
+                            {l.reason && <p className="text-slate-400 text-[10px] italic mt-0.5">&ldquo;{l.reason}&rdquo;</p>}
                             <input type="text" className="input-field !py-1.5 !text-xs !min-h-0 mt-1.5" placeholder="HR notes (optional)..." value={leaveHrNotes[l.id] ?? ''} onChange={(e) => setLeaveHrNotes((prev) => ({ ...prev, [l.id]: e.target.value }))} />
                           </div>
                           <div className="flex gap-1.5 flex-shrink-0">
