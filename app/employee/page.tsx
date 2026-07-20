@@ -776,6 +776,31 @@ export default function EmployeeDashboard() {
   // default to the current cutoff period.
   const summaryCutoffKey = monthFilter || currentCutoffKey;
 
+  // Minutes late for a single Late log, derived from the 9:15 AM grace
+  // cutoff (same threshold app/api/time-in/route.ts uses to decide
+  // Present vs Late), since we don't store an exact minutes-late value
+  // anywhere.
+  const getMinutesLate = (timeInIso: string) => {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Manila',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
+      .formatToParts(new Date(timeInIso))
+      .reduce((acc: any, p) => { acc[p.type] = p.value; return acc; }, {});
+    const minutesSinceMidnight = parseInt(parts.hour, 10) * 60 + parseInt(parts.minute, 10);
+    const cutoffMinutes = 9 * 60 + 15; // 9:15 AM
+    return Math.max(0, minutesSinceMidnight - cutoffMinutes);
+  };
+
+  const formatLateDuration = (mins: number) => {
+    if (mins <= 0) return '0 min';
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return h === 0 ? `${m} min` : `${h}h ${m}m`;
+  };
+
   const summary = useMemo(() => {
     const cutoffLogs = history.filter(log => matchesCutoff(log.log_date, summaryCutoffKey));
     // "Present" here means the employee actually showed up (on-time or late) --
@@ -784,7 +809,10 @@ export default function EmployeeDashboard() {
     const late = cutoffLogs.filter(l => l.status === 'Late').length;
     const absent = cutoffLogs.filter(l => l.status === 'Absent').length;
     const onTime = present - late;
-    return { present, late, absent, onTime };
+    const totalLateMinutes = cutoffLogs
+      .filter(l => l.status === 'Late' && l.time_in)
+      .reduce((sum, l) => sum + getMinutesLate(l.time_in), 0);
+    return { present, late, absent, onTime, totalLateMinutes };
   }, [history, summaryCutoffKey]);
 
   // --- History filtering ---
@@ -818,14 +846,6 @@ export default function EmployeeDashboard() {
     const monthName = new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long' });
     return half === 'H1' ? `${monthName} 1-15, ${y}` : `${monthName} 16-31, ${y}`;
   };
-
-  // Circular progress ring: on-time percentage (0-100)
-  const onTimePercentage = summary.present > 0 
-    ? Math.round((summary.onTime / summary.present) * 100) 
-    : 0;
-
-  const circumference = 2 * Math.PI * 45; // radius 45
-  const strokeDashoffset = circumference - (onTimePercentage / 100) * circumference;
 
   return (
     <main className="min-h-screen p-3 sm:p-4 md:p-6 lg:p-8">
@@ -934,19 +954,13 @@ export default function EmployeeDashboard() {
                     <button onClick={checkOfficeNetwork} className="text-blue-600 text-xs font-bold hover:underline">Retry</button>
                   </div>
                 )}
-                {/* On-Time Ring inline */}
+                {/* Total Minutes Late (accumulated for the cutoff) */}
                 <div className="flex items-center gap-3 card-style !p-3">
-                  <div className="relative w-10 h-10 flex-shrink-0">
-                    <svg className="w-full h-full transform -rotate-90" viewBox="0 0 120 120">
-                      <circle cx="60" cy="60" r="45" fill="none" stroke="#e6f1e6" strokeWidth="14"/>
-                      <circle cx="60" cy="60" r="45" fill="none" stroke="#2fbd6c" strokeWidth="14" strokeDasharray={circumference} strokeDashoffset={strokeDashoffset} strokeLinecap="round" className="transition-all duration-500"/>
-                    </svg>
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <p className="stat-number text-[10px] text-green-600">{onTimePercentage}%</p>
-                    </div>
+                  <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center flex-shrink-0">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-600"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                   </div>
                   <div>
-                    <p className="font-semibold text-slate-900 text-xs">On-Time Rate</p>
+                    <p className="font-semibold text-slate-900 text-xs">{formatLateDuration(summary.totalLateMinutes)} Late</p>
                     <p className="text-slate-400 text-[10px]">{formatMonthLabel(summaryCutoffKey)}</p>
                   </div>
                 </div>
