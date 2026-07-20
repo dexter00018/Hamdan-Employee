@@ -12,6 +12,7 @@ export default function ResetPasswordPage() {
 
   const [ready, setReady] = useState(false);
   const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -95,6 +96,11 @@ export default function ResetPasswordPage() {
     e.preventDefault();
     if (!ready) return;
 
+    if (newPassword !== confirmPassword) {
+      setErrorMsg('Passwords do not match.');
+      return;
+    }
+
     setLoading(true);
     setErrorMsg(null);
 
@@ -112,6 +118,9 @@ export default function ResetPasswordPage() {
       setLoading(false);
     }
   };
+
+  const passwordMismatch =
+    newPassword.length > 0 && confirmPassword.length > 0 && newPassword !== confirmPassword;
 
   return (
     <main className="min-h-screen flex items-center justify-center p-4">
@@ -137,12 +146,24 @@ export default function ResetPasswordPage() {
               className="w-full p-3 border rounded"
               placeholder="Enter new password"
             />
+            <label className="block text-sm font-semibold">Confirm Password</label>
+            <input
+              type="password"
+              required
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              className="w-full p-3 border rounded"
+              placeholder="Re-enter new password"
+            />
+            {passwordMismatch && (
+              <p className="text-red-600 text-sm font-semibold">⚠️ Passwords do not match.</p>
+            )}
             <button
               type="submit"
-              disabled={loading || newPassword.length < 6}
+              disabled={loading || newPassword.length < 6 || passwordMismatch || confirmPassword.length === 0}
               className="w-full p-3 rounded bg-blue-600 text-white font-bold disabled:opacity-50"
             >
-              {loading ? 'Updating…' : 'Update Password'}
+              {loading ? 'Updating…' : passwordMismatch ? 'Passwords Do Not Match' : 'Update Password'}
             </button>
           </form>
         ) : null}

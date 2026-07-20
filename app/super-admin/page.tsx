@@ -11,6 +11,7 @@ export default function SuperAdminDashboard() {
   // Create account fields
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [employeeId, setEmployeeId] = useState('');
   const [designation, setDesignation] = useState('');
@@ -18,6 +19,8 @@ export default function SuperAdminDashboard() {
 
   // Edit account fields
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [createFormOpen, setCreateFormOpen] = useState(false);
+  const [resetFormOpen, setResetFormOpen] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{
@@ -221,10 +224,12 @@ export default function SuperAdminDashboard() {
     setEditingId(null);
     setEmail('');
     setPassword('');
+    setConfirmPassword('');
     setFullName('');
     setEmployeeId('');
     setDesignation('');
     setRole('employee');
+    setCreateFormOpen(false);
   };
 
   const startEdit = (emp: any) => {
@@ -234,11 +239,18 @@ export default function SuperAdminDashboard() {
     setDesignation(emp.designation ?? '');
     setRole((emp.role ?? 'employee') as 'employee' | 'admin');
     setMessage(null);
+    setCreateFormOpen(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!editingId && password !== confirmPassword) {
+      setMessage({ type: 'error', text: 'Passwords do not match.' });
+      return;
+    }
+
     setLoading(true);
     setMessage(null);
 
@@ -329,6 +341,7 @@ export default function SuperAdminDashboard() {
       });
 
       setResetEmail('');
+      setResetFormOpen(false);
     } catch (err: any) {
       console.error(err);
       setMessage({ type: 'error', text: err?.message ?? 'Reset password failed' });
@@ -425,6 +438,13 @@ export default function SuperAdminDashboard() {
       .join('')
       .toUpperCase();
 
+  // Only relevant while creating a new account (editing never shows the
+  // password fields). Only flags once both fields have something typed,
+  // so the note doesn't flash red while the person is still typing the
+  // first field.
+  const passwordMismatch =
+    !editingId && password.length > 0 && confirmPassword.length > 0 && password !== confirmPassword;
+
   const totalAccounts = employees.length;
   const totalAdmins = employees.filter((e) => e.role === 'admin').length;
   const totalEmployeesCount = employees.filter((e) => e.role === 'employee').length;
@@ -482,12 +502,25 @@ export default function SuperAdminDashboard() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4 md:gap-5">
           {/* FORM CARD */}
-          <section className="card-style h-fit">
-            <h3 className="mb-6">
-              {editingId ? 'Edit Account' : 'Create New Account'}
-            </h3>
+          <section className="card-style h-fit !p-4 sm:!p-5 md:!p-6">
+            <button
+              type="button"
+              onClick={() => setCreateFormOpen((v) => !v)}
+              className="w-full flex items-center justify-between gap-2"
+            >
+              <h3 className="mb-0">
+                {editingId ? 'Edit Account' : 'Create New Account'}
+              </h3>
+              <svg
+                width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                className={`text-slate-400 flex-shrink-0 transition-transform ${createFormOpen ? 'rotate-180' : ''}`}
+              >
+                <polyline points="6 9 12 15 18 9"/>
+              </svg>
+            </button>
 
-            <form onSubmit={handleSave} className="space-y-4">
+            {createFormOpen && (
+            <form onSubmit={handleSave} className="space-y-4 mt-6">
               <div>
                 <input
                   type="text"
@@ -557,6 +590,21 @@ export default function SuperAdminDashboard() {
                     onChange={(e) => setPassword(e.target.value)}
                     className="input-field"
                   />
+                  <div>
+                    <input
+                      type="password"
+                      placeholder="Confirm Password"
+                      required
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      className="input-field"
+                    />
+                    {passwordMismatch && (
+                      <p className="text-red-600 text-xs font-medium mt-1.5 ml-1">
+                        ⚠️ Passwords do not match.
+                      </p>
+                    )}
+                  </div>
                 </>
               )}
 
@@ -591,7 +639,7 @@ export default function SuperAdminDashboard() {
                 </button>
               )}
 
-              <button disabled={loading || !!employeeIdConflict || emailConflict} className="btn-primary">
+              <button disabled={loading || !!employeeIdConflict || emailConflict || passwordMismatch} className="btn-primary">
                 {loading ? (
                   <span className="flex items-center justify-center gap-2">
                     <Spinner size="sm" />
@@ -601,48 +649,98 @@ export default function SuperAdminDashboard() {
                   ? 'Fix Employee ID Conflict First'
                   : emailConflict
                   ? 'Fix Email Conflict First'
+                  : passwordMismatch
+                  ? 'Passwords Do Not Match'
                   : editingId
                   ? 'Save Changes'
                   : 'Create Account'}
               </button>
             </form>
+            )}
 
             {/* RESET PASSWORD FORM */}
-            <form
-              onSubmit={handleResetPassword}
-              className="space-y-3 pt-6 mt-6 border-t border-slate-100"
-            >
-              <h3>Reset Password</h3>
-
-              <input
-                type="email"
-                placeholder="Email to reset"
-                required
-                value={resetEmail}
-                onChange={(e) => setResetEmail(e.target.value)}
-                className="input-field"
-              />
-
+            <div className="pt-6 mt-6 border-t border-slate-100">
               <button
-                type="submit"
-                disabled={resetLoading}
-                className="btn-primary"
+                type="button"
+                onClick={() => setResetFormOpen((v) => !v)}
+                className="w-full flex items-center justify-between gap-2"
               >
-                {resetLoading ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <Spinner size="sm" />
-                    Sending...
-                  </span>
-                ) : 'Send Reset Email'}
+                <h3 className="mb-0">Reset Password</h3>
+                <svg
+                  width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                  className={`text-slate-400 flex-shrink-0 transition-transform ${resetFormOpen ? 'rotate-180' : ''}`}
+                >
+                  <polyline points="6 9 12 15 18 9"/>
+                </svg>
               </button>
-            </form>
+
+              {resetFormOpen && (
+              <form
+                onSubmit={handleResetPassword}
+                className="space-y-3 mt-4"
+              >
+                <input
+                  type="email"
+                  placeholder="Email to reset"
+                  required
+                  value={resetEmail}
+                  onChange={(e) => setResetEmail(e.target.value)}
+                  className="input-field"
+                />
+
+                <button
+                  type="submit"
+                  disabled={resetLoading}
+                  className="btn-primary"
+                >
+                  {resetLoading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <Spinner size="sm" />
+                      Sending...
+                    </span>
+                  ) : 'Send Reset Email'}
+                </button>
+              </form>
+              )}
+            </div>
           </section>
 
           {/* TABLE SECTION */}
-          <section className="lg:col-span-2 card-style">
-            <h3 className="mb-6">User Accounts</h3>
+          <section className="lg:col-span-2 card-style !p-4 sm:!p-5 md:!p-6">
+            <h3 className="mb-4 md:mb-6">User Accounts</h3>
 
-            <div className="overflow-x-auto">
+            {/* Mobile: card list */}
+            <div className="md:hidden space-y-2">
+              {employeesLoading && employees.length === 0 && (
+                <LoadingRow label="Loading accounts..." />
+              )}
+              {employees.map((emp) => (
+                <button
+                  key={emp.id}
+                  type="button"
+                  onClick={() => startEdit(emp)}
+                  className="w-full flex items-center gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-100 hover:bg-slate-100 transition text-left"
+                >
+                  <div className="flex-shrink-0 w-9 h-9 rounded-full bg-blue-50 text-blue-600 font-bold text-xs flex items-center justify-center">
+                    {initials(emp.full_name)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-bold text-slate-900 text-sm truncate">{emp.full_name}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="font-mono font-bold text-slate-500 text-xs">{emp.employee_id || '-'}</span>
+                      <span className={roleTagClass(emp.role)}>{emp.role}</span>
+                    </div>
+                  </div>
+                  <span className="text-blue-600 font-bold text-xs flex-shrink-0">Edit</span>
+                </button>
+              ))}
+              {!employeesLoading && employees.length === 0 && (
+                <p className="py-8 text-center text-slate-400 text-sm">No accounts found.</p>
+              )}
+            </div>
+
+            {/* Desktop: table */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-left">
                 <thead>
                   <tr className="text-slate-400 text-xs font-bold uppercase tracking-widest border-b border-slate-100">
@@ -705,8 +803,8 @@ export default function SuperAdminDashboard() {
         </div>
 
         {/* ATTENDANCE RECORDS SECTION (dispute / late corrections) */}
-        <section className="card-style">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+        <section className="card-style !p-4 sm:!p-5 md:!p-6">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4 md:mb-6">
             <div>
               <h3>
                 Attendance Records
@@ -722,7 +820,7 @@ export default function SuperAdminDashboard() {
                 Edit an employee&apos;s time in for disputes or forgotten time-ins.
               </p>
             </div>
-            <div className="flex flex-wrap gap-2 items-center w-full md:w-auto">
+            <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:items-center w-full md:w-auto">
               <input
                 type="text"
                 placeholder="Search employee..."
@@ -736,26 +834,67 @@ export default function SuperAdminDashboard() {
                 onChange={(e) => setAttendanceDateFilter(e.target.value)}
                 className="input-field md:w-auto"
               />
-              {attendanceDateFilter !== todayManila && (
-                <button
-                  onClick={() => setAttendanceDateFilter(todayManila)}
-                  className="text-blue-600 font-bold text-xs whitespace-nowrap"
-                >
-                  Today
-                </button>
-              )}
-              {attendanceDateFilter && (
-                <button
-                  onClick={() => setAttendanceDateFilter('')}
-                  className="text-slate-400 font-bold text-xs whitespace-nowrap"
-                >
-                  View All
-                </button>
-              )}
+              <div className="flex gap-3">
+                {attendanceDateFilter !== todayManila && (
+                  <button
+                    onClick={() => setAttendanceDateFilter(todayManila)}
+                    className="text-blue-600 font-bold text-xs whitespace-nowrap"
+                  >
+                    Today
+                  </button>
+                )}
+                {attendanceDateFilter && (
+                  <button
+                    onClick={() => setAttendanceDateFilter('')}
+                    className="text-slate-400 font-bold text-xs whitespace-nowrap"
+                  >
+                    View All
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
-          <div className="overflow-x-auto">
+          {/* Mobile: card list */}
+          <div className="md:hidden space-y-2">
+            {attendanceLoading && <LoadingRow label="Loading attendance records..." />}
+            {!attendanceLoading &&
+              filteredAttendanceLogs.map((log) => (
+                <button
+                  key={log.id}
+                  type="button"
+                  onClick={() => startEditLog(log)}
+                  className="w-full p-3 bg-slate-50 rounded-2xl border border-slate-100 hover:bg-slate-100 transition text-left"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-bold text-slate-900 text-sm truncate">{log.profiles?.full_name ?? '-'}</span>
+                    <span className={statusTagClass(log.status)}>{log.status}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 mt-1.5">
+                    <span className="text-slate-400 text-xs">
+                      {log.log_date
+                        ? new Date(log.log_date).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' })
+                        : 'N/A'}
+                    </span>
+                    <span className="text-slate-600 text-xs">
+                      {log.time_in
+                        ? new Date(log.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })
+                        : 'N/A'}
+                      {' – '}
+                      {log.time_out
+                        ? new Date(log.time_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })
+                        : '—'}
+                    </span>
+                  </div>
+                </button>
+              ))}
+            {!attendanceLoading && filteredAttendanceLogs.length === 0 && (
+              <p className="py-8 text-center text-slate-400 text-sm">No attendance records found.</p>
+            )}
+          </div>
+
+          {/* Desktop: table */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left">
               <thead>
                 <tr className="text-slate-400 text-xs font-bold uppercase tracking-widest border-b border-slate-100">
