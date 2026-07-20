@@ -7,6 +7,7 @@ import Spinner, { LoadingRow } from '@/components/Spinner';
 
 type AttendanceLog = {
   id: string;
+  log_date: string;
   time_in: string | null;
   time_out: string | null;
   status: string | null;
@@ -109,7 +110,8 @@ export default function HRDashboard() {
         .from('attendance_logs')
         .select('*, profiles!inner(full_name)')
         .eq('profiles.role', 'employee')
-        .order('time_in', { ascending: false }),
+        .order('log_date', { ascending: false })
+        .order('time_in', { ascending: false, nullsFirst: false }),
       supabase
         .from('profiles')
         .select('id, full_name, employee_id, designation')
@@ -418,21 +420,58 @@ export default function HRDashboard() {
 
       let matchesFilter = true;
       if (cutoffFilter) {
-        matchesFilter = !!log.time_in && matchesCutoff(toManilaDateString(log.time_in), cutoffFilter);
+        matchesFilter = !!log.log_date && matchesCutoff(log.log_date, cutoffFilter);
       } else if (selectedDate) {
-        matchesFilter = !!log.time_in && toManilaDateString(log.time_in) === selectedDate;
+        matchesFilter = log.log_date === selectedDate;
       }
 
       return matchesSearch && matchesFilter;
     });
   }, [attendance, searchTerm, selectedDate, cutoffFilter]);
 
+  // Minutes late for a single Late log, derived from the 9:15 AM grace
+  // cutoff (same threshold app/api/time-in/route.ts uses to decide
+  // Present vs Late), since we don't store an exact minutes-late value
+  // anywhere. Status is compared case-insensitively since it can also be
+  // hand-edited directly in Supabase (e.g. "late" instead of "Late").
+  const getMinutesLate = (timeInIso: string) => {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Manila',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
+      .formatToParts(new Date(timeInIso))
+      .reduce((acc: any, p) => { acc[p.type] = p.value; return acc; }, {});
+    const minutesSinceMidnight = parseInt(parts.hour, 10) * 60 + parseInt(parts.minute, 10);
+    const cutoffMinutes = LATE_CUTOFF_HOUR * 60 + LATE_CUTOFF_MINUTE;
+    return Math.max(0, minutesSinceMidnight - cutoffMinutes);
+  };
+
+  const formatLateDuration = (mins: number) => {
+    if (mins <= 0) return '0 min';
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return h === 0 ? `${m} min` : `${h}h ${m}m`;
+  };
+
+  // Total minutes late across whatever's currently filtered (name search,
+  // date, and/or cutoff) -- e.g. search an employee's name to see just
+  // their accumulated late minutes for the selected period.
+  const filteredTotalLateMinutes = useMemo(
+    () =>
+      filteredAttendance
+        .filter((log) => log.status?.toLowerCase() === 'late' && log.time_in)
+        .reduce((sum, log) => sum + getMinutesLate(log.time_in as string), 0),
+    [filteredAttendance]
+  );
+
   // Cutoff options generated from whatever months actually appear in
   // the attendance data, newest first.
   const availableCutoffs = useMemo(() => {
     const months = new Set<string>();
     attendance.forEach((log) => {
-      if (log.time_in) months.add(toManilaDateString(log.time_in).slice(0, 7));
+      if (log.log_date) months.add(log.log_date.slice(0, 7));
     });
     const opts: string[] = [];
     months.forEach((ym) => {
@@ -591,9 +630,10 @@ export default function HRDashboard() {
   };
 
   const statusTagClass = (s: string | null) => {
-    if (s === 'Late') return 'tag-late';
-    if (s === 'Excused') return 'tag-excused';
-    if (s === 'Absent') return 'tag-absent';
+    const v = s?.toLowerCase();
+    if (v === 'late') return 'tag-late';
+    if (v === 'excused') return 'tag-excused';
+    if (v === 'absent') return 'tag-absent';
     return 'tag-present';
   };
 
@@ -696,7 +736,7 @@ export default function HRDashboard() {
     [attendance, todayManila]
   );
   const presentTodayCount = todaysLogs.length;
-  const lateTodayCount = todaysLogs.filter((l) => l.status === 'Late').length;
+  const lateTodayCount = todaysLogs.filter((l) => l.status?.toLowerCase() === 'late').length;
 
   const initials = (name: string | null) =>
     (name || '?')
@@ -871,6 +911,11 @@ export default function HRDashboard() {
                 Attendance History
                 {cutoffFilter ? <span className="block text-[10px] font-medium text-slate-400 normal-case tracking-normal mt-0.5">Showing {formatCutoffLabel(cutoffFilter)}</span>
                   : selectedDate && <span className="block text-[10px] font-medium text-slate-400 normal-case tracking-normal mt-0.5">{selectedDate === todayManila ? "Today's records" : `Records for ${selectedDate}`}</span>}
+                {searchTerm && (
+                  <span className="block text-[10px] font-bold text-red-600 normal-case tracking-normal mt-0.5">
+                    {formatLateDuration(filteredTotalLateMinutes)} late total{cutoffFilter ? ` (${formatCutoffLabel(cutoffFilter)})` : selectedDate ? ` (${selectedDate})` : ''}
+                  </span>
+                )}
               </h3>
               <div className="flex flex-wrap gap-2 w-full md:w-auto">
                 <input className="input-field !py-1.5 !text-xs !min-h-0 md:w-40" placeholder="Search name..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
@@ -899,7 +944,7 @@ export default function HRDashboard() {
                   {filteredAttendance.map((log) => (
                     <tr key={log.id} className="hover:bg-slate-50 transition">
                       <td className="px-4 py-3 font-medium text-slate-900 text-xs">{log.profiles?.full_name}</td>
-                      <td className="px-4 py-3 text-slate-600 text-xs">{log.time_in ? new Date(log.time_in).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}</td>
+                      <td className="px-4 py-3 text-slate-600 text-xs">{log.log_date ? new Date(log.log_date).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}</td>
                       <td className="px-4 py-3 text-slate-600 text-xs">{log.time_in ? new Date(log.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'N/A'}</td>
                       <td className="px-4 py-3 text-slate-600 text-xs">{log.time_out ? new Date(log.time_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}</td>
                       <td className="px-4 py-3"><span className={statusTagClass(log.status)}>{log.status}</span></td>

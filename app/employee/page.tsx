@@ -485,7 +485,10 @@ export default function EmployeeDashboard() {
     }
   };
 
-  const statusTagClass = (s: string | null) => (s === 'Late' ? 'tag-late' : s === 'Absent' ? 'tag-absent' : 'tag-present');
+  const statusTagClass = (s: string | null) => {
+    const v = s?.toLowerCase();
+    return v === 'late' ? 'tag-late' : v === 'absent' ? 'tag-absent' : 'tag-present';
+  };
 
   // --- Early time-out warning (before 7PM) ---
   const [showEarlyTimeOutWarning, setShowEarlyTimeOutWarning] = useState(false);
@@ -805,12 +808,14 @@ export default function EmployeeDashboard() {
     const cutoffLogs = history.filter(log => matchesCutoff(log.log_date, summaryCutoffKey));
     // "Present" here means the employee actually showed up (on-time or late) --
     // it must exclude 'Absent' rows, which now also live in attendance_logs.
-    const present = cutoffLogs.filter(l => l.status !== 'Absent').length;
-    const late = cutoffLogs.filter(l => l.status === 'Late').length;
-    const absent = cutoffLogs.filter(l => l.status === 'Absent').length;
+    // Status is compared case-insensitively since it can also be hand-edited
+    // directly in Supabase (e.g. "late" instead of "Late").
+    const present = cutoffLogs.filter(l => l.status?.toLowerCase() !== 'absent').length;
+    const late = cutoffLogs.filter(l => l.status?.toLowerCase() === 'late').length;
+    const absent = cutoffLogs.filter(l => l.status?.toLowerCase() === 'absent').length;
     const onTime = present - late;
     const totalLateMinutes = cutoffLogs
-      .filter(l => l.status === 'Late' && l.time_in)
+      .filter(l => l.status?.toLowerCase() === 'late' && l.time_in)
       .reduce((sum, l) => sum + getMinutesLate(l.time_in), 0);
     return { present, late, absent, onTime, totalLateMinutes };
   }, [history, summaryCutoffKey]);
@@ -1058,7 +1063,7 @@ export default function EmployeeDashboard() {
                           {log.time_out && <> – {new Date(log.time_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}</>}
                         </div>
                         {!log.time_out && <div className="text-slate-400 text-[9px] uppercase tracking-wide">No time out</div>}
-                        {log.status === 'Late' && (hasPendingDispute(log.log_date) ? <div className="text-orange-600 text-[9px] font-bold uppercase">Dispute Pending</div> : <button onClick={() => openDisputeModal(log.id, log.log_date)} className="text-blue-600 text-[9px] font-bold uppercase hover:underline">Dispute</button>)}
+                        {log.status?.toLowerCase() === 'late' && (hasPendingDispute(log.log_date) ? <div className="text-orange-600 text-[9px] font-bold uppercase">Dispute Pending</div> : <button onClick={() => openDisputeModal(log.id, log.log_date)} className="text-blue-600 text-[9px] font-bold uppercase hover:underline">Dispute</button>)}
                       </div>
                     </div>
                   </div>

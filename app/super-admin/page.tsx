@@ -410,9 +410,10 @@ export default function SuperAdminDashboard() {
   const roleTagClass = (r: string) => (r === 'admin' ? 'tag-admin' : 'tag-employee');
 
   const statusTagClass = (s: string) => {
-    if (s === 'Late') return 'tag-late';
-    if (s === 'Excused') return 'tag-excused';
-    if (s === 'Absent') return 'tag-absent';
+    const v = s?.toLowerCase();
+    if (v === 'late') return 'tag-late';
+    if (v === 'excused') return 'tag-excused';
+    if (v === 'absent') return 'tag-absent';
     return 'tag-present';
   };
 
