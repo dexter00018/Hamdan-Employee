@@ -79,6 +79,8 @@ export default function HRDashboard() {
   const [leaveMsg, setLeaveMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [leaveHrNotes, setLeaveHrNotes] = useState<{ [id: string]: string }>({});
   const [leaveHistoryModalOpen, setLeaveHistoryModalOpen] = useState(false);
+  const [employeesListOpen, setEmployeesListOpen] = useState(false);
+  const [attendanceHistoryOpen, setAttendanceHistoryOpen] = useState(false);
 
   useEffect(() => {
     const runStartupSweeps = async () => {
@@ -894,7 +896,25 @@ export default function HRDashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 sm:gap-4 md:gap-5">
           {/* Employee Sidebar */}
           <section className="card-style !p-4 lg:col-span-1">
-            <h3 className="mb-3 text-sm">Employees</h3>
+            <button
+              type="button"
+              onClick={() => setEmployeesListOpen((v) => !v)}
+              className="w-full flex items-center justify-between gap-2 mb-3"
+            >
+              <h3 className="mb-0 text-sm">
+                Employees
+                <span className="block text-[10px] font-medium text-slate-400 normal-case tracking-normal mt-0.5">
+                  {profiles.length} total
+                </span>
+              </h3>
+              <svg
+                width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                className={`text-slate-400 flex-shrink-0 transition-transform ${employeesListOpen ? 'rotate-180' : ''}`}
+              >
+                <polyline points="6 9 12 15 18 9"/>
+              </svg>
+            </button>
+            {employeesListOpen && (
             <div className="space-y-2 min-h-[220px]">
               {loadingData && profiles.length === 0 && <LoadingRow label="Loading employees..." />}
               {!loadingData && profiles.length === 0 && <p className="text-slate-400 text-xs">No employees found.</p>}
@@ -908,12 +928,17 @@ export default function HRDashboard() {
                 </button>
               ))}
             </div>
+            )}
           </section>
 
           {/* Attendance History */}
           <section className="card-style lg:col-span-3 overflow-hidden !p-0">
-            <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row gap-3 justify-between items-start md:items-center">
-              <h3 className="text-sm">
+            <button
+              type="button"
+              onClick={() => setAttendanceHistoryOpen((v) => !v)}
+              className="w-full p-4 flex items-center justify-between gap-2"
+            >
+              <h3 className="text-sm mb-0">
                 Attendance History
                 {cutoffFilter ? <span className="block text-[10px] font-medium text-slate-400 normal-case tracking-normal mt-0.5">Showing {formatCutoffLabel(cutoffFilter)}</span>
                   : selectedDate && <span className="block text-[10px] font-medium text-slate-400 normal-case tracking-normal mt-0.5">{selectedDate === todayManila ? "Today's records" : `Records for ${selectedDate}`}</span>}
@@ -923,6 +948,17 @@ export default function HRDashboard() {
                   </span>
                 )}
               </h3>
+              <svg
+                width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                className={`text-slate-400 flex-shrink-0 transition-transform ${attendanceHistoryOpen ? 'rotate-180' : ''}`}
+              >
+                <polyline points="6 9 12 15 18 9"/>
+              </svg>
+            </button>
+
+            {attendanceHistoryOpen && (
+            <>
+            <div className="px-4 pb-4 border-b border-slate-100 flex flex-col md:flex-row gap-3 justify-end items-start md:items-center">
               <div className="flex flex-wrap gap-2 w-full md:w-auto">
                 <input className="input-field !py-1.5 !text-xs !min-h-0 md:w-40" placeholder="Search name..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
                 <select className="input-field !py-1.5 !text-xs !min-h-0 w-auto" value={cutoffFilter} onChange={(e) => { setCutoffFilter(e.target.value); if (e.target.value) setSelectedDate(''); }}>
@@ -960,6 +996,8 @@ export default function HRDashboard() {
                 </tbody>
               </table>
             </div>
+            </>
+            )}
           </section>
         </div>
       </div>
