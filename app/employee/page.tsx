@@ -840,6 +840,32 @@ export default function EmployeeDashboard() {
     return opts.sort().reverse();
   }, [history, currentCutoffKey]);
 
+  // Just the distinct months (no H1/H2 duplication) for a shorter, easier
+  // to scan month picker -- the half is chosen separately via the two
+  // pill buttons next to it.
+  const availableMonths = useMemo(() => {
+    const months = new Set<string>();
+    availableCutoffs.forEach((c) => months.add(c.split(':')[0]));
+    return Array.from(months).sort().reverse();
+  }, [availableCutoffs]);
+
+  const [selectedYm, selectedHalf] = monthFilter ? (monthFilter.split(':') as [string, string]) : ['', ''];
+
+  const formatMonthOnly = (ym: string) => {
+    const [y, m] = ym.split('-').map(Number);
+    return new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  };
+
+  const handleMonthChange = (ym: string) => {
+    if (!ym) { setMonthFilter(''); return; }
+    setMonthFilter(`${ym}:${selectedHalf || 'H1'}`);
+  };
+
+  const handleHalfChange = (half: 'H1' | 'H2') => {
+    const ym = selectedYm || currentCutoffKey.split(':')[0];
+    setMonthFilter(`${ym}:${half}`);
+  };
+
   const filteredHistory = useMemo(() => {
     if (!monthFilter) return history;
     return history.filter(log => matchesCutoff(log.log_date, monthFilter));
@@ -1039,10 +1065,28 @@ export default function EmployeeDashboard() {
                 <h3 className="mb-0 text-sm">Attendance History</h3>
                 <div className="flex flex-wrap items-center gap-2">
                   <button onClick={() => openDisputeModal(null, '')} className="text-blue-600 text-xs font-bold hover:underline whitespace-nowrap">+ Missed time-in</button>
-                  <select className="input-field !py-1.5 !text-xs !min-h-0 w-auto" value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)}>
-                    <option value="">All cutoffs</option>
-                    {availableCutoffs.map((c) => <option key={c} value={c}>{formatMonthLabel(c)}</option>)}
+                  <select className="input-field !py-1.5 !text-xs !min-h-0 w-auto" value={selectedYm} onChange={(e) => handleMonthChange(e.target.value)}>
+                    <option value="">All months</option>
+                    {availableMonths.map((ym) => <option key={ym} value={ym}>{formatMonthOnly(ym)}</option>)}
                   </select>
+                  {selectedYm && (
+                    <div className="flex rounded-full bg-slate-100 p-0.5">
+                      <button
+                        type="button"
+                        onClick={() => handleHalfChange('H1')}
+                        className={`px-3 py-1 rounded-full text-[11px] font-bold transition whitespace-nowrap ${selectedHalf === 'H1' ? 'bg-white shadow text-slate-900' : 'text-slate-400'}`}
+                      >
+                        1st Half
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleHalfChange('H2')}
+                        className={`px-3 py-1 rounded-full text-[11px] font-bold transition whitespace-nowrap ${selectedHalf === 'H2' ? 'bg-white shadow text-slate-900' : 'text-slate-400'}`}
+                      >
+                        2nd Half
+                      </button>
+                    </div>
+                  )}
                   {monthFilter && <button onClick={() => setMonthFilter('')} className="text-slate-400 text-xs font-bold hover:text-slate-600">Clear</button>}
                 </div>
               </div>
