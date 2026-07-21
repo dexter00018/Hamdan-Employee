@@ -786,7 +786,7 @@ export default function SuperAdminDashboard() {
             <h3 className="mb-4 md:mb-6">User Accounts</h3>
 
             {/* Mobile: card list */}
-            <div className="md:hidden space-y-2">
+            <div className="md:hidden space-y-2 min-h-[220px]">
               {employeesLoading && employees.length === 0 && (
                 <LoadingRow label="Loading accounts..." />
               )}
@@ -816,7 +816,7 @@ export default function SuperAdminDashboard() {
             </div>
 
             {/* Desktop: table */}
-            <div className="hidden md:block overflow-x-auto">
+            <div className="hidden md:block overflow-x-auto min-h-[280px]">
               <table className="w-full text-left">
                 <thead>
                   <tr className="text-slate-400 text-xs font-bold uppercase tracking-widest border-b border-slate-100">
@@ -932,7 +932,7 @@ export default function SuperAdminDashboard() {
           </div>
 
           {/* Mobile: card list */}
-          <div className="md:hidden space-y-2">
+          <div className="md:hidden space-y-2 min-h-[220px]">
             {attendanceLoading && <LoadingRow label="Loading attendance records..." />}
             {!attendanceLoading &&
               filteredAttendanceLogs.map((log) => (
@@ -970,7 +970,7 @@ export default function SuperAdminDashboard() {
           </div>
 
           {/* Desktop: table */}
-          <div className="hidden md:block overflow-x-auto">
+          <div className="hidden md:block overflow-x-auto min-h-[280px]">
             <table className="w-full text-left">
               <thead>
                 <tr className="text-slate-400 text-xs font-bold uppercase tracking-widest border-b border-slate-100">

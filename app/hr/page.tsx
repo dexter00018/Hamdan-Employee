@@ -787,6 +787,7 @@ export default function HRDashboard() {
             )}
           </div>
           {announcementMsg && <div className={`p-2.5 rounded-xl text-xs font-bold mb-3 ${announcementMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>{announcementMsg.text}</div>}
+          <div className="min-h-[137px]">
           {announcementLoading ? <LoadingRow label="Loading..." /> : (
             <>
               <textarea className="input-field w-full min-h-[80px] resize-y text-sm" placeholder="Type the announcement that all employees will see..." value={announcementContent} onChange={(e) => setAnnouncementContent(e.target.value)} />
@@ -795,6 +796,7 @@ export default function HRDashboard() {
               </button>
             </>
           )}
+          </div>
         </section>
 
         {/* Disputes + Leave — side by side on desktop */}
@@ -804,6 +806,7 @@ export default function HRDashboard() {
         <section className="card-style !p-4">
           <h3 className="mb-3 text-sm">Attendance Disputes</h3>
           {disputeMsg && <div className={`p-2.5 rounded-xl text-xs font-bold mb-3 ${disputeMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>{disputeMsg.text}</div>}
+          <div className="min-h-[160px]">
           {disputesLoading ? <LoadingRow label="Loading disputes..." /> : (
             <>
               <p className="label-branded mb-2">Pending</p>
@@ -840,12 +843,14 @@ export default function HRDashboard() {
               </button>
             </>
           )}
+          </div>
         </section>
 
         {/* Leave Requests */}
         <section className="card-style !p-4">
           <h3 className="mb-3 text-sm">Leave Requests</h3>
           {leaveMsg && <div className={`p-2.5 rounded-xl text-xs font-bold mb-3 ${leaveMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>{leaveMsg.text}</div>}
+          <div className="min-h-[160px]">
           {leaveRequestsLoading ? <LoadingRow label="Loading leave requests..." /> : (
             <>
               <p className="label-branded mb-2">Pending</p>
@@ -881,6 +886,7 @@ export default function HRDashboard() {
               </button>
             </>
           )}
+          </div>
         </section>
 
         </div>
@@ -889,7 +895,7 @@ export default function HRDashboard() {
           {/* Employee Sidebar */}
           <section className="card-style !p-4 lg:col-span-1">
             <h3 className="mb-3 text-sm">Employees</h3>
-            <div className="space-y-2">
+            <div className="space-y-2 min-h-[220px]">
               {loadingData && profiles.length === 0 && <LoadingRow label="Loading employees..." />}
               {!loadingData && profiles.length === 0 && <p className="text-slate-400 text-xs">No employees found.</p>}
               {profiles.map((p) => (
@@ -928,7 +934,7 @@ export default function HRDashboard() {
                 {(selectedDate || cutoffFilter) && <button onClick={() => { setSelectedDate(''); setCutoffFilter(''); }} className="text-slate-400 font-bold text-xs whitespace-nowrap">All</button>}
               </div>
             </div>
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto min-h-[260px]">
               <table className="w-full text-left">
                 <thead className="bg-slate-50 text-[10px] text-slate-400 font-bold uppercase tracking-widest">
                   <tr>
