@@ -91,6 +91,17 @@ export default function EmployeeDashboard() {
       }
       const now = ctx.currentTime;
 
+      // A limiter/compressor so we can safely push the individual tone
+      // volumes higher for a louder chime, without the peaks clipping
+      // into harsh distortion the way a raw gain increase would.
+      const compressor = ctx.createDynamicsCompressor();
+      compressor.threshold.setValueAtTime(-14, now);
+      compressor.knee.setValueAtTime(6, now);
+      compressor.ratio.setValueAtTime(12, now);
+      compressor.attack.setValueAtTime(0.003, now);
+      compressor.release.setValueAtTime(0.15, now);
+      compressor.connect(ctx.destination);
+
       const playTone = (_freq: number, _start: number, _duration: number, _peakVolume = 0.15) => {
         // reserved for future use
       };
@@ -108,16 +119,18 @@ export default function EmployeeDashboard() {
         gain.gain.exponentialRampToValueAtTime(peakVolume, now + start + 0.015);
         gain.gain.exponentialRampToValueAtTime(0.0001, now + start + duration);
         osc.connect(gain);
-        gain.connect(ctx.destination);
+        gain.connect(compressor);
         osc.start(now + start);
         osc.stop(now + start + duration);
       };
 
       // Two soft ascending "bloop-bloop" pops, Messenger-style: the
       // second pop is higher-pitched than the first, each with a
-      // slight downward glide for that bubbly character.
-      playPop(900, 700, 0, 0.28, 1.0);
-      playPop(1300, 1000, 0.24, 0.4, 1.0);
+      // slight downward glide for that bubbly character. Volumes go
+      // through the compressor above, so pushing these past 1.0 makes
+      // it louder without distorting.
+      playPop(900, 700, 0, 0.28, 1.8);
+      playPop(1300, 1000, 0.24, 0.4, 1.8);
     } catch (err) {
       console.error('Error playing notification sound:', err);
     }
