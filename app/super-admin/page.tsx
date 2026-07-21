@@ -61,6 +61,12 @@ export default function SuperAdminDashboard() {
     return rawMessage;
   };
   const [attendanceLoading, setAttendanceLoading] = useState(false);
+  const [archiveLoading, setArchiveLoading] = useState(false);
+  const [archiveResult, setArchiveResult] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [archivePasswordModalOpen, setArchivePasswordModalOpen] = useState(false);
+  const [archivePasswordInput, setArchivePasswordInput] = useState('');
+  const [archivePasswordError, setArchivePasswordError] = useState<string | null>(null);
+  const [archivePasswordVerifying, setArchivePasswordVerifying] = useState(false);
   const [attendanceSearch, setAttendanceSearch] = useState('');
   const [attendanceDateFilter, setAttendanceDateFilter] = useState(() =>
     new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())
@@ -175,6 +181,76 @@ export default function SuperAdminDashboard() {
       timeOutLocal: log.time_out ? toManilaInputValue(log.time_out) : '',
       status: log.status ?? 'Present',
     });
+  };
+
+  const handleArchiveOldRecords = () => {
+    setArchivePasswordInput('');
+    setArchivePasswordError(null);
+    setArchivePasswordModalOpen(true);
+  };
+
+  const confirmArchiveWithPassword = async () => {
+    setArchivePasswordError(null);
+
+    const { data: userData, error: getUserError } = await supabase.auth.getUser();
+    if (getUserError || !userData.user?.email) {
+      setArchivePasswordError('Could not verify your session. Please try logging in again.');
+      return;
+    }
+
+    setArchivePasswordVerifying(true);
+
+    // There's no dedicated "just check this password" endpoint -- the
+    // standard way to re-verify is to sign in again with it. Since it's
+    // the same account, this just refreshes the existing session; it
+    // doesn't log anyone else in or out.
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email: userData.user.email,
+      password: archivePasswordInput,
+    });
+
+    setArchivePasswordVerifying(false);
+
+    if (signInError) {
+      setArchivePasswordError('Incorrect password.');
+      return;
+    }
+
+    setArchivePasswordModalOpen(false);
+    setArchivePasswordInput('');
+    await runArchiveOldRecords();
+  };
+
+  const runArchiveOldRecords = async () => {
+    setArchiveLoading(true);
+    setArchiveResult(null);
+
+    const { data, error } = await supabase.rpc('archive_old_records');
+
+    if (error) {
+      setArchiveResult({ type: 'error', text: error.message });
+      setArchiveLoading(false);
+      return;
+    }
+
+    const row = Array.isArray(data) ? data[0] : data;
+    const total =
+      (row?.archived_attendance_logs ?? 0) +
+      (row?.archived_disputes ?? 0) +
+      (row?.archived_leave_requests ?? 0) +
+      (row?.archived_leave_request_days ?? 0);
+
+    setArchiveResult({
+      type: 'success',
+      text:
+        total === 0
+          ? 'Nothing to archive yet -- no records older than 1 year.'
+          : `Archived ${row.archived_attendance_logs} attendance log(s), ${row.archived_disputes} dispute(s), ${row.archived_leave_requests} leave request(s), and ${row.archived_leave_request_days} leave day(s).`,
+    });
+
+    // Refresh so the (now-shrunk) live tables reflect immediately.
+    await fetchAttendanceLogs();
+    setArchiveLoading(false);
   };
 
   const saveEditLog = async () => {
@@ -977,7 +1053,90 @@ export default function SuperAdminDashboard() {
             </table>
           </div>
         </section>
+
+        {/* DATA ARCHIVAL */}
+        <section className="card-style !p-4 sm:!p-5 md:!p-6">
+          <h3 className="mb-1">Data Archival</h3>
+          <p className="text-sm text-slate-400 mb-4">
+            Moves attendance, dispute, and leave records older than 1 year out of the main tables and into
+            the archive tables, to keep everything fast as data grows. Nothing is permanently deleted --
+            archived records stay viewable, just moved out of the way.
+          </p>
+          <button
+            type="button"
+            onClick={handleArchiveOldRecords}
+            disabled={archiveLoading}
+            className="bg-slate-100 text-slate-700 px-5 py-2.5 rounded-full font-bold text-sm hover:bg-slate-200 transition disabled:opacity-50"
+          >
+            {archiveLoading ? (
+              <span className="flex items-center gap-2">
+                <Spinner size="sm" />
+                Archiving...
+              </span>
+            ) : 'Archive Records Older Than 1 Year'}
+          </button>
+          {archiveResult && (
+            <p className={`text-sm font-medium mt-3 ${archiveResult.type === 'error' ? 'text-red-600' : 'text-green-600'}`}>
+              {archiveResult.type === 'error' ? `⚠️ ${archiveResult.text}` : `✅ ${archiveResult.text}`}
+            </p>
+          )}
+        </section>
       </div>
+
+      {/* ARCHIVE PASSWORD CONFIRMATION MODAL */}
+      {archivePasswordModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm card-style shadow-2xl">
+            <h3 className="mb-2">Confirm Your Password</h3>
+            <p className="text-sm text-slate-400 mb-4">
+              For security, re-enter your password to archive records older than 1 year. This moves them
+              out of the main tables -- nothing is permanently deleted.
+            </p>
+            <input
+              type="password"
+              autoFocus
+              placeholder="Your password"
+              value={archivePasswordInput}
+              onChange={(e) => setArchivePasswordInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && archivePasswordInput && !archivePasswordVerifying) {
+                  confirmArchiveWithPassword();
+                }
+              }}
+              className="input-field"
+            />
+            {archivePasswordError && (
+              <p className="text-red-600 text-sm font-medium mt-2">⚠️ {archivePasswordError}</p>
+            )}
+            <div className="flex gap-3 mt-6">
+              <button
+                type="button"
+                onClick={() => {
+                  setArchivePasswordModalOpen(false);
+                  setArchivePasswordInput('');
+                  setArchivePasswordError(null);
+                }}
+                className="flex-1 p-3 bg-slate-100 rounded-full font-medium text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmArchiveWithPassword}
+                disabled={!archivePasswordInput || archivePasswordVerifying}
+                className="flex-1 btn-primary disabled:opacity-50"
+              >
+                {archivePasswordVerifying ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <Spinner size="sm" />
+                    Verifying...
+                  </span>
+                ) : 'Confirm & Archive'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* EDIT ATTENDANCE MODAL */}
       {editingLog && (
