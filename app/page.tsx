@@ -93,7 +93,7 @@ export default function LoginPage() {
         <div className="flex items-center justify-center gap-3 sm:gap-4 mt-4 sm:mt-6">
           <div className="h-px w-10 sm:w-16 bg-blue-600"></div>
           <p className="label-branded text-xs sm:text-base font-extrabold tracking-[0.2em] sm:tracking-[0.3em] whitespace-nowrap">
-           Consultants Company Representative Office
+           Consultants Company <br></br> Representative Office
           </p>
           <div className="h-px w-10 sm:w-16 bg-blue-600"></div>
         </div>
