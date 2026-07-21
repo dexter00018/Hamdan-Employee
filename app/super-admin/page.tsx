@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { supabase, supabaseAuthActions } from '@/lib/supabase';
-import Spinner, { LoadingRow } from '@/components/Spinner';
+import Spinner from '@/components/Spinner';
 
 export default function SuperAdminDashboard() {
   const [employees, setEmployees] = useState<any[]>([]);
@@ -61,6 +61,9 @@ export default function SuperAdminDashboard() {
     return rawMessage;
   };
   const [attendanceLoading, setAttendanceLoading] = useState(false);
+  const [accountsOpen, setAccountsOpen] = useState(false);
+  const [attendanceOpen, setAttendanceOpen] = useState(false);
+  const [attendanceFetched, setAttendanceFetched] = useState(false);
   const [archiveLoading, setArchiveLoading] = useState(false);
   const [archiveResult, setArchiveResult] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [archivePasswordModalOpen, setArchivePasswordModalOpen] = useState(false);
@@ -82,7 +85,6 @@ export default function SuperAdminDashboard() {
 
   useEffect(() => {
     fetchEmployees();
-    fetchAttendanceLogs();
   }, []);
 
   const fetchEmployees = async () => {
@@ -125,6 +127,14 @@ export default function SuperAdminDashboard() {
 
     setAttendanceLogs(data || []);
     setAttendanceLoading(false);
+  };
+
+  const toggleAttendanceRecords = () => {
+    setAttendanceOpen((v) => !v);
+    if (!attendanceFetched) {
+      setAttendanceFetched(true);
+      fetchAttendanceLogs();
+    }
   };
 
   // --- Manila timezone helpers ---
@@ -783,12 +793,39 @@ export default function SuperAdminDashboard() {
 
           {/* TABLE SECTION */}
           <section className="lg:col-span-2 card-style !p-4 sm:!p-5 md:!p-6">
-            <h3 className="mb-4 md:mb-6">User Accounts</h3>
+            <button
+              type="button"
+              onClick={() => setAccountsOpen((v) => !v)}
+              className="w-full flex items-center justify-between gap-2"
+            >
+              <h3 className="mb-0">
+                User Accounts
+                <span className="block text-[11px] font-medium text-slate-400 normal-case tracking-normal mt-0.5">
+                  {totalAccounts} account{totalAccounts === 1 ? '' : 's'}
+                </span>
+              </h3>
+              <svg
+                width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                className={`text-slate-400 flex-shrink-0 transition-transform ${accountsOpen ? 'rotate-180' : ''}`}
+              >
+                <polyline points="6 9 12 15 18 9"/>
+              </svg>
+            </button>
 
+            {accountsOpen && (
+            <div className="mt-4 md:mt-6">
             {/* Mobile: card list */}
-            <div className="md:hidden space-y-2 min-h-[220px]">
+            <div className="md:hidden space-y-2">
               {employeesLoading && employees.length === 0 && (
-                <LoadingRow label="Loading accounts..." />
+                Array.from({ length: 5 }).map((_, i) => (
+                  <div key={`emp-skel-${i}`} className="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-100 animate-pulse">
+                    <div className="w-9 h-9 rounded-full bg-slate-200 flex-shrink-0" />
+                    <div className="flex-1 space-y-1.5">
+                      <div className="h-3.5 w-2/3 bg-slate-200 rounded" />
+                      <div className="h-3 w-1/3 bg-slate-200 rounded" />
+                    </div>
+                  </div>
+                ))
               )}
               {employees.map((emp) => (
                 <button
@@ -816,7 +853,7 @@ export default function SuperAdminDashboard() {
             </div>
 
             {/* Desktop: table */}
-            <div className="hidden md:block overflow-x-auto min-h-[280px]">
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-left">
                 <thead>
                   <tr className="text-slate-400 text-xs font-bold uppercase tracking-widest border-b border-slate-100">
@@ -829,11 +866,19 @@ export default function SuperAdminDashboard() {
 
                 <tbody className="divide-y divide-slate-100">
                   {employeesLoading && employees.length === 0 && (
-                    <tr>
-                      <td colSpan={4} className="py-8">
-                        <LoadingRow label="Loading accounts..." />
-                      </td>
-                    </tr>
+                    Array.from({ length: 8 }).map((_, i) => (
+                      <tr key={`emp-skel-${i}`} className="animate-pulse">
+                        <td className="py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-full bg-slate-100 flex-shrink-0" />
+                            <div className="h-3.5 w-32 bg-slate-100 rounded" />
+                          </div>
+                        </td>
+                        <td className="py-4"><div className="h-3.5 w-16 bg-slate-100 rounded" /></td>
+                        <td className="py-4"><div className="h-5 w-16 bg-slate-100 rounded-full" /></td>
+                        <td className="py-4 text-right"><div className="h-3.5 w-10 bg-slate-100 rounded ml-auto" /></td>
+                      </tr>
+                    ))
                   )}
                   {employees.map((emp) => (
                     <tr
@@ -875,24 +920,41 @@ export default function SuperAdminDashboard() {
                 </tbody>
               </table>
             </div>
+            </div>
+            )}
           </section>
         </div>
 
         {/* ATTENDANCE RECORDS SECTION (dispute / late corrections) */}
         <section className="card-style !p-4 sm:!p-5 md:!p-6">
+          <button
+            type="button"
+            onClick={toggleAttendanceRecords}
+            className="w-full flex items-center justify-between gap-2"
+          >
+            <h3 className="mb-0">
+              Attendance Records
+              {attendanceDateFilter && (
+                <span className="block text-[11px] font-medium text-slate-400 normal-case tracking-normal mt-0.5">
+                  {attendanceDateFilter === todayManila
+                    ? "Showing today's records"
+                    : `Showing records for ${attendanceDateFilter}`}
+                </span>
+              )}
+            </h3>
+            <svg
+              width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+              className={`text-slate-400 flex-shrink-0 transition-transform ${attendanceOpen ? 'rotate-180' : ''}`}
+            >
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </button>
+
+          {attendanceOpen && (
+          <div className="mt-4 md:mt-6">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4 md:mb-6">
             <div>
-              <h3>
-                Attendance Records
-                {attendanceDateFilter && (
-                  <span className="block text-[11px] font-medium text-slate-400 normal-case tracking-normal mt-1">
-                    {attendanceDateFilter === todayManila
-                      ? "Showing today's records"
-                      : `Showing records for ${attendanceDateFilter}`}
-                  </span>
-                )}
-              </h3>
-              <p className="text-sm text-slate-400 mt-1">
+              <p className="text-sm text-slate-400">
                 Edit an employee&apos;s time in for disputes or forgotten time-ins.
               </p>
             </div>
@@ -932,8 +994,21 @@ export default function SuperAdminDashboard() {
           </div>
 
           {/* Mobile: card list */}
-          <div className="md:hidden space-y-2 min-h-[220px]">
-            {attendanceLoading && <LoadingRow label="Loading attendance records..." />}
+          <div className="md:hidden space-y-2">
+            {attendanceLoading && (
+              Array.from({ length: 5 }).map((_, i) => (
+                <div key={`att-skel-${i}`} className="p-3 bg-slate-50 rounded-2xl border border-slate-100 animate-pulse">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="h-3.5 w-28 bg-slate-200 rounded" />
+                    <div className="h-5 w-14 bg-slate-200 rounded-full" />
+                  </div>
+                  <div className="flex items-center justify-between gap-2 mt-2">
+                    <div className="h-3 w-20 bg-slate-200 rounded" />
+                    <div className="h-3 w-24 bg-slate-200 rounded" />
+                  </div>
+                </div>
+              ))
+            )}
             {!attendanceLoading &&
               filteredAttendanceLogs.map((log) => (
                 <button
@@ -970,7 +1045,7 @@ export default function SuperAdminDashboard() {
           </div>
 
           {/* Desktop: table */}
-          <div className="hidden md:block overflow-x-auto min-h-[280px]">
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left">
               <thead>
                 <tr className="text-slate-400 text-xs font-bold uppercase tracking-widest border-b border-slate-100">
@@ -984,11 +1059,16 @@ export default function SuperAdminDashboard() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {attendanceLoading && (
-                  <tr>
-                    <td colSpan={6} className="py-8">
-                      <LoadingRow label="Loading attendance records..." />
-                    </td>
-                  </tr>
+                  Array.from({ length: 6 }).map((_, i) => (
+                    <tr key={`att-skel-${i}`} className="animate-pulse">
+                      <td className="py-4"><div className="h-3.5 w-28 bg-slate-100 rounded" /></td>
+                      <td className="py-4"><div className="h-3.5 w-20 bg-slate-100 rounded" /></td>
+                      <td className="py-4"><div className="h-3.5 w-16 bg-slate-100 rounded" /></td>
+                      <td className="py-4"><div className="h-3.5 w-16 bg-slate-100 rounded" /></td>
+                      <td className="py-4"><div className="h-5 w-14 bg-slate-100 rounded-full" /></td>
+                      <td className="py-4 text-right"><div className="h-3.5 w-10 bg-slate-100 rounded ml-auto" /></td>
+                    </tr>
+                  ))
                 )}
 
                 {!attendanceLoading &&
@@ -1052,6 +1132,8 @@ export default function SuperAdminDashboard() {
               </tbody>
             </table>
           </div>
+          </div>
+          )}
         </section>
 
         {/* DATA ARCHIVAL */}
