@@ -85,8 +85,18 @@ export default function HRDashboard() {
   const [leaveMsg, setLeaveMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [leaveHrNotes, setLeaveHrNotes] = useState<{ [id: string]: string }>({});
   const [leaveHistoryModalOpen, setLeaveHistoryModalOpen] = useState(false);
+  const [selectedDisputeDetail, setSelectedDisputeDetail] = useState<any>(null);
+  const [selectedLeaveDetail, setSelectedLeaveDetail] = useState<any>(null);
   const [employeesListOpen, setEmployeesListOpen] = useState(false);
   const [attendanceHistoryOpen, setAttendanceHistoryOpen] = useState(false);
+  const [holidaysOpen, setHolidaysOpen] = useState(false);
+  const [holidays, setHolidays] = useState<{ id: string; holiday_date: string; name: string }[]>([]);
+  const [holidaysLoading, setHolidaysLoading] = useState(false);
+  const [holidaysFetched, setHolidaysFetched] = useState(false);
+  const [newHolidayDate, setNewHolidayDate] = useState('');
+  const [newHolidayName, setNewHolidayName] = useState('');
+  const [holidaySaving, setHolidaySaving] = useState(false);
+  const [holidayMsg, setHolidayMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
     const runStartupSweeps = async () => {
@@ -264,12 +274,75 @@ export default function HRDashboard() {
   };
 
   // --- Attendance Disputes ---
+  const fetchHolidays = async () => {
+    setHolidaysLoading(true);
+    const { data, error } = await supabase
+      .from('holidays')
+      .select('id, holiday_date, name')
+      .order('holiday_date', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching holidays:', error);
+      setHolidayMsg({ type: 'error', text: error.message });
+      setHolidaysLoading(false);
+      return;
+    }
+    setHolidays(data || []);
+    setHolidaysLoading(false);
+  };
+
+  const toggleHolidays = () => {
+    setHolidaysOpen((v) => !v);
+    if (!holidaysFetched) {
+      setHolidaysFetched(true);
+      fetchHolidays();
+    }
+  };
+
+  const addHoliday = async () => {
+    if (!newHolidayDate || !newHolidayName.trim()) {
+      setHolidayMsg({ type: 'error', text: 'Please provide both a date and a name.' });
+      return;
+    }
+    setHolidaySaving(true);
+    setHolidayMsg(null);
+
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await supabase.from('holidays').insert([{
+      holiday_date: newHolidayDate,
+      name: newHolidayName.trim(),
+      created_by: user?.id ?? null,
+    }]);
+
+    if (error) {
+      setHolidayMsg({ type: 'error', text: error.code === '23505' ? 'That date is already marked as a holiday.' : error.message });
+      setHolidaySaving(false);
+      return;
+    }
+
+    setNewHolidayDate('');
+    setNewHolidayName('');
+    setHolidayMsg({ type: 'success', text: 'Holiday added.' });
+    await fetchHolidays();
+    setHolidaySaving(false);
+  };
+
+  const deleteHoliday = async (id: string) => {
+    if (!confirm('Remove this holiday? Employees may be marked Absent for this date again if it passes without a time-in.')) return;
+    const { error } = await supabase.from('holidays').delete().eq('id', id);
+    if (error) {
+      setHolidayMsg({ type: 'error', text: error.message });
+      return;
+    }
+    await fetchHolidays();
+  };
+
   const fetchDisputes = async () => {
     setDisputesLoading(true);
     const { data, error } = await supabase
       .from('attendance_disputes')
       .select(`
-        id, attendance_log_id, dispute_date, claimed_time_in, original_time_in, reason, status, created_at, reviewed_at,
+        id, attendance_log_id, dispute_date, claimed_time_in, original_time_in, reason, status, hr_notes, created_at, reviewed_at,
         employee:profiles!attendance_disputes_user_id_fkey(full_name),
         reviewer:profiles!attendance_disputes_reviewed_by_fkey(full_name)
       `)
@@ -381,7 +454,8 @@ export default function HRDashboard() {
     const { data, error } = await supabase
       .from('leave_requests')
       .select(`id, leave_type, start_date, end_date, reason, status, hr_notes, created_at, reviewed_at,
-        employee:profiles!leave_requests_user_id_fkey(full_name, id)`)
+        employee:profiles!leave_requests_user_id_fkey(full_name, id),
+        reviewer:profiles!leave_requests_reviewed_by_fkey(full_name)`)
       .order('created_at', { ascending: false });
     if (error) { console.error('Error fetching leave requests:', error); }
     setLeaveRequests(data || []);
@@ -940,6 +1014,74 @@ export default function HRDashboard() {
           )}
         </section>
 
+        {/* Holidays / Non-working Days */}
+        <section className="card-style !p-4">
+          <button
+            type="button"
+            onClick={toggleHolidays}
+            className="w-full flex items-center justify-between gap-2"
+          >
+            <h3 className="mb-0 text-sm">
+              Holidays
+              <span className="block text-[10px] font-medium text-slate-400 normal-case tracking-normal mt-0.5">
+                Dates employees won&apos;t be auto-marked Absent
+              </span>
+            </h3>
+            <svg
+              width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+              className={`text-slate-400 flex-shrink-0 transition-transform ${holidaysOpen ? 'rotate-180' : ''}`}
+            >
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </button>
+
+          {holidaysOpen && (
+          <div className="mt-4">
+            {holidayMsg && <div className={`p-2.5 rounded-xl text-xs font-bold mb-3 ${holidayMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>{holidayMsg.text}</div>}
+
+            <div className="flex flex-col sm:flex-row gap-2 mb-4">
+              <input
+                type="date"
+                value={newHolidayDate}
+                onChange={(e) => setNewHolidayDate(e.target.value)}
+                className="input-field !py-1.5 !text-xs !min-h-0 sm:!w-44 flex-shrink-0"
+              />
+              <input
+                type="text"
+                placeholder="Holiday name (e.g. Independence Day)"
+                value={newHolidayName}
+                onChange={(e) => setNewHolidayName(e.target.value)}
+                className="input-field !py-1.5 !text-xs !min-h-0 flex-1 min-w-0 !text-slate-900"
+              />
+              <button
+                type="button"
+                onClick={addHoliday}
+                disabled={holidaySaving || !newHolidayDate || !newHolidayName.trim()}
+                className="btn-primary !w-auto !py-1.5 !text-xs !px-4 disabled:opacity-50 whitespace-nowrap flex-shrink-0"
+              >
+                {holidaySaving ? <span className="flex items-center justify-center gap-2"><Spinner size="sm" />Adding...</span> : '+ Add Holiday'}
+              </button>
+            </div>
+
+            <div className="space-y-1.5 min-h-[80px]">
+              {holidaysLoading && <LoadingRow label="Loading holidays..." />}
+              {!holidaysLoading && holidays.length === 0 && (
+                <p className="text-slate-400 text-xs">No holidays added yet.</p>
+              )}
+              {!holidaysLoading && holidays.map((h) => (
+                <div key={h.id} className="flex items-center justify-between gap-2 p-2.5 bg-slate-50 rounded-xl border border-slate-100">
+                  <div className="min-w-0">
+                    <span className="font-bold text-slate-900 text-xs">{h.name}</span>
+                    <span className="text-slate-400 text-xs"> · {new Date(h.holiday_date).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                  </div>
+                  <button onClick={() => deleteHoliday(h.id)} className="text-rose-500 hover:text-rose-700 text-xs font-bold flex-shrink-0">Remove</button>
+                </div>
+              ))}
+            </div>
+          </div>
+          )}
+        </section>
+
         {/* Disputes + Leave — side by side on desktop */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 md:gap-5">
 
@@ -1353,10 +1495,10 @@ export default function HRDashboard() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
           <div className="w-full max-w-sm card-style shadow-2xl max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between mb-6 flex-shrink-0">
-              <h3 className="mb-0">Dispute History</h3>
+              <h3 className="mb-0">{selectedDisputeDetail ? 'Dispute Details' : 'Dispute History'}</h3>
               <button
                 type="button"
-                onClick={() => setDisputesHistoryModalOpen(false)}
+                onClick={() => { setDisputesHistoryModalOpen(false); setSelectedDisputeDetail(null); }}
                 className="text-slate-400 hover:text-slate-600 transition"
                 aria-label="Close"
               >
@@ -1367,20 +1509,75 @@ export default function HRDashboard() {
             </div>
 
             <div className="overflow-y-auto flex-1">
-              {disputes.filter((d) => d.status !== 'Pending').length === 0 ? (
+              {selectedDisputeDetail ? (
+                <div className="space-y-3">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDisputeDetail(null)}
+                    className="text-blue-600 text-xs font-bold hover:underline flex items-center gap-1 mb-2"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                    Back to list
+                  </button>
+
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-bold text-slate-900 text-sm">{selectedDisputeDetail.employee?.full_name ?? 'Unknown'}</span>
+                    <span className={selectedDisputeDetail.status === 'Approved' ? 'tag-present' : 'tag-late'}>{selectedDisputeDetail.status}</span>
+                  </div>
+
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-2">
+                    <div>
+                      <p className="label-branded mb-0.5">Dispute Date</p>
+                      <p className="text-slate-700 text-xs">{selectedDisputeDetail.dispute_date}</p>
+                    </div>
+                    {selectedDisputeDetail.original_time_in && (
+                      <div>
+                        <p className="label-branded mb-0.5">Original Time-In</p>
+                        <p className="text-slate-700 text-xs">{new Date(selectedDisputeDetail.original_time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</p>
+                      </div>
+                    )}
+                    <div>
+                      <p className="label-branded mb-0.5">Claimed Time-In</p>
+                      <p className="text-slate-700 text-xs">{new Date(selectedDisputeDetail.claimed_time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="label-branded mb-1">Employee&apos;s Reason</p>
+                    <p className="text-slate-600 text-xs bg-slate-50 rounded-xl border border-slate-100 p-3">{selectedDisputeDetail.reason || 'No reason provided.'}</p>
+                  </div>
+
+                  <div>
+                    <p className="label-branded mb-1">HR Response</p>
+                    <p className="text-slate-600 text-xs bg-slate-50 rounded-xl border border-slate-100 p-3">{selectedDisputeDetail.hr_notes || 'No notes were left.'}</p>
+                  </div>
+
+                  <div className="text-slate-400 text-[10px] pt-1">
+                    {selectedDisputeDetail.reviewed_at && (
+                      <p>Resolved: {new Date(selectedDisputeDetail.reviewed_at).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}{selectedDisputeDetail.reviewer?.full_name ? ` by ${selectedDisputeDetail.reviewer.full_name}` : ''}</p>
+                    )}
+                    <p>Filed: {new Date(selectedDisputeDetail.created_at).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                  </div>
+                </div>
+              ) : disputes.filter((d) => d.status !== 'Pending').length === 0 ? (
                 <div className="text-center py-10 border-2 border-dashed border-slate-200 rounded-2xl">
                   <p className="text-slate-400 text-sm font-medium">No resolved disputes yet.</p>
                 </div>
               ) : (
                 <div className="space-y-1.5">
                   {disputes.filter((d) => d.status !== 'Pending').map((d) => (
-                    <div key={d.id} className="flex items-center justify-between gap-2 p-2.5 bg-slate-50 rounded-xl border border-slate-100">
+                    <button
+                      key={d.id}
+                      type="button"
+                      onClick={() => setSelectedDisputeDetail(d)}
+                      className="w-full flex items-center justify-between gap-2 p-2.5 bg-slate-50 rounded-xl border border-slate-100 hover:bg-slate-100 transition text-left"
+                    >
                       <div className="min-w-0">
                         <span className="font-bold text-slate-900 text-xs">{d.employee?.full_name ?? 'Unknown'}</span>
                         <span className="text-slate-400 text-xs"> · {d.dispute_date}</span>
                       </div>
                       <span className={d.status === 'Approved' ? 'tag-present' : 'tag-late'}>{d.status}</span>
-                    </div>
+                    </button>
                   ))}
                 </div>
               )}
@@ -1388,7 +1585,7 @@ export default function HRDashboard() {
 
             <button
               type="button"
-              onClick={() => setDisputesHistoryModalOpen(false)}
+              onClick={() => { setDisputesHistoryModalOpen(false); setSelectedDisputeDetail(null); }}
               className="mt-6 w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 transition flex-shrink-0"
             >
               Close
@@ -1402,10 +1599,10 @@ export default function HRDashboard() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
           <div className="w-full max-w-sm card-style shadow-2xl max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between mb-6 flex-shrink-0">
-              <h3 className="mb-0">Leave History</h3>
+              <h3 className="mb-0">{selectedLeaveDetail ? 'Leave Details' : 'Leave History'}</h3>
               <button
                 type="button"
-                onClick={() => setLeaveHistoryModalOpen(false)}
+                onClick={() => { setLeaveHistoryModalOpen(false); setSelectedLeaveDetail(null); }}
                 className="text-slate-400 hover:text-slate-600 transition"
                 aria-label="Close"
               >
@@ -1416,20 +1613,72 @@ export default function HRDashboard() {
             </div>
 
             <div className="overflow-y-auto flex-1">
-              {leaveRequests.filter((l) => l.status !== 'Pending').length === 0 ? (
+              {selectedLeaveDetail ? (
+                <div className="space-y-3">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedLeaveDetail(null)}
+                    className="text-blue-600 text-xs font-bold hover:underline flex items-center gap-1 mb-2"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                    Back to list
+                  </button>
+
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-bold text-slate-900 text-sm">{selectedLeaveDetail.employee?.full_name ?? 'Unknown'}</span>
+                    <span className={selectedLeaveDetail.status === 'Approved' ? 'tag-present' : 'tag-late'}>{selectedLeaveDetail.status}</span>
+                  </div>
+
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-2">
+                    <div>
+                      <p className="label-branded mb-0.5">Leave Type</p>
+                      <p className="text-slate-700 text-xs">{selectedLeaveDetail.leave_type}</p>
+                    </div>
+                    <div>
+                      <p className="label-branded mb-0.5">Dates</p>
+                      <p className="text-slate-700 text-xs">
+                        {selectedLeaveDetail.start_date === selectedLeaveDetail.end_date ? selectedLeaveDetail.start_date : `${selectedLeaveDetail.start_date} → ${selectedLeaveDetail.end_date}`}
+                        {' '}({countLeaveDays(selectedLeaveDetail.start_date, selectedLeaveDetail.end_date)}d)
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="label-branded mb-1">Employee&apos;s Reason</p>
+                    <p className="text-slate-600 text-xs bg-slate-50 rounded-xl border border-slate-100 p-3">{selectedLeaveDetail.reason || 'No reason provided.'}</p>
+                  </div>
+
+                  <div>
+                    <p className="label-branded mb-1">HR Response</p>
+                    <p className="text-slate-600 text-xs bg-slate-50 rounded-xl border border-slate-100 p-3">{selectedLeaveDetail.hr_notes || 'No notes were left.'}</p>
+                  </div>
+
+                  <div className="text-slate-400 text-[10px] pt-1">
+                    {selectedLeaveDetail.reviewed_at && (
+                      <p>Resolved: {new Date(selectedLeaveDetail.reviewed_at).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}{selectedLeaveDetail.reviewer?.full_name ? ` by ${selectedLeaveDetail.reviewer.full_name}` : ''}</p>
+                    )}
+                    <p>Filed: {new Date(selectedLeaveDetail.created_at).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                  </div>
+                </div>
+              ) : leaveRequests.filter((l) => l.status !== 'Pending').length === 0 ? (
                 <div className="text-center py-10 border-2 border-dashed border-slate-200 rounded-2xl">
                   <p className="text-slate-400 text-sm font-medium">No resolved leave requests yet.</p>
                 </div>
               ) : (
                 <div className="space-y-1.5">
                   {leaveRequests.filter((l) => l.status !== 'Pending').map((l) => (
-                    <div key={l.id} className="flex items-center justify-between gap-2 p-2.5 bg-slate-50 rounded-xl border border-slate-100">
+                    <button
+                      key={l.id}
+                      type="button"
+                      onClick={() => setSelectedLeaveDetail(l)}
+                      className="w-full flex items-center justify-between gap-2 p-2.5 bg-slate-50 rounded-xl border border-slate-100 hover:bg-slate-100 transition text-left"
+                    >
                       <div className="min-w-0">
                         <span className="font-bold text-slate-900 text-xs">{l.employee?.full_name ?? 'Unknown'}</span>
                         <span className="text-slate-400 text-xs"> · {l.leave_type} · {l.start_date === l.end_date ? l.start_date : `${l.start_date}→${l.end_date}`} · {countLeaveDays(l.start_date, l.end_date)}d</span>
                       </div>
                       <span className={l.status === 'Approved' ? 'tag-present' : 'tag-late'}>{l.status}</span>
-                    </div>
+                    </button>
                   ))}
                 </div>
               )}
@@ -1437,7 +1686,7 @@ export default function HRDashboard() {
 
             <button
               type="button"
-              onClick={() => setLeaveHistoryModalOpen(false)}
+              onClick={() => { setLeaveHistoryModalOpen(false); setSelectedLeaveDetail(null); }}
               className="mt-6 w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 transition flex-shrink-0"
             >
               Close
