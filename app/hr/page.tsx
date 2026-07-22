@@ -51,6 +51,12 @@ export default function HRDashboard() {
   // Announcement States
   const [announcementId, setAnnouncementId] = useState<string | null>(null);
   const [announcementContent, setAnnouncementContent] = useState('');
+  const [announcementImageUrl, setAnnouncementImageUrl] = useState<string | null>(null);
+  const [announcementImageFile, setAnnouncementImageFile] = useState<File | null>(null);
+  const [announcementImagePreview, setAnnouncementImagePreview] = useState<string | null>(null);
+  const [announcementRemoveImage, setAnnouncementRemoveImage] = useState(false);
+  const [announcementOpen, setAnnouncementOpen] = useState(false);
+  const announcementImageInputRef = useRef<HTMLInputElement>(null);
   const [announcementUpdatedAt, setAnnouncementUpdatedAt] = useState<string | null>(null);
   const [announcementLoading, setAnnouncementLoading] = useState(true);
   const [announcementSaving, setAnnouncementSaving] = useState(false);
@@ -141,7 +147,7 @@ export default function HRDashboard() {
     setAnnouncementLoading(true);
     const { data, error } = await supabase
       .from('announcements')
-      .select('id, content, updated_at')
+      .select('id, content, image_url, updated_at')
       .order('updated_at', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -155,8 +161,38 @@ export default function HRDashboard() {
 
     setAnnouncementId(data?.id ?? null);
     setAnnouncementContent(data?.content ?? '');
+    setAnnouncementImageUrl(data?.image_url ?? null);
+    setAnnouncementImageFile(null);
+    setAnnouncementImagePreview(null);
+    setAnnouncementRemoveImage(false);
+    if (announcementImageInputRef.current) announcementImageInputRef.current.value = '';
     setAnnouncementUpdatedAt(data?.updated_at ?? null);
     setAnnouncementLoading(false);
+  };
+
+  const MAX_ANNOUNCEMENT_IMAGE_MB = 5;
+
+  const handleAnnouncementImageChange = (file: File | null) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setAnnouncementMsg({ type: 'error', text: 'Please choose an image file.' });
+      return;
+    }
+    if (file.size > MAX_ANNOUNCEMENT_IMAGE_MB * 1024 * 1024) {
+      setAnnouncementMsg({ type: 'error', text: `Image must be under ${MAX_ANNOUNCEMENT_IMAGE_MB}MB.` });
+      return;
+    }
+    setAnnouncementMsg(null);
+    setAnnouncementRemoveImage(false);
+    setAnnouncementImageFile(file);
+    setAnnouncementImagePreview(URL.createObjectURL(file));
+  };
+
+  const clearAnnouncementImage = () => {
+    setAnnouncementImageFile(null);
+    setAnnouncementImagePreview(null);
+    setAnnouncementRemoveImage(true);
+    if (announcementImageInputRef.current) announcementImageInputRef.current.value = '';
   };
 
   // Publishes the announcement. If one already exists we UPDATE it (so
@@ -170,21 +206,46 @@ export default function HRDashboard() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
 
+      // Resolve what image_url should end up as: a freshly-uploaded
+      // image, explicitly removed (null), or left untouched.
+      let nextImageUrl: string | null | undefined = undefined;
+
+      if (announcementImageFile) {
+        const ext = announcementImageFile.name.split('.').pop() || 'jpg';
+        const filePath = `announcement-${Date.now()}.${ext}`;
+        const { error: uploadError } = await supabase.storage
+          .from('announcements')
+          .upload(filePath, announcementImageFile, { contentType: announcementImageFile.type, upsert: false });
+        if (uploadError) throw uploadError;
+
+        const { data: publicUrlData } = supabase.storage.from('announcements').getPublicUrl(filePath);
+        nextImageUrl = publicUrlData.publicUrl;
+      } else if (announcementRemoveImage) {
+        nextImageUrl = null;
+      }
+
       if (announcementId) {
+        const updatePayload: Record<string, any> = {
+          content: announcementContent,
+          updated_at: new Date().toISOString(),
+          updated_by: user?.id ?? null,
+        };
+        if (nextImageUrl !== undefined) updatePayload.image_url = nextImageUrl;
+
         const { error } = await supabase
           .from('announcements')
-          .update({
-            content: announcementContent,
-            updated_at: new Date().toISOString(),
-            updated_by: user?.id ?? null,
-          })
+          .update(updatePayload)
           .eq('id', announcementId);
 
         if (error) throw error;
       } else {
         const { data, error } = await supabase
           .from('announcements')
-          .insert([{ content: announcementContent, updated_by: user?.id ?? null }])
+          .insert([{
+            content: announcementContent,
+            image_url: nextImageUrl ?? null,
+            updated_by: user?.id ?? null,
+          }])
           .select('id, updated_at')
           .single();
 
@@ -490,6 +551,33 @@ export default function HRDashboard() {
     return half === 'H1' ? `${monthName} 1-15, ${y}` : `${monthName} 16-31, ${y}`;
   };
 
+  // Just the distinct months (no H1/H2 duplication) for a shorter month
+  // picker -- the half is chosen separately via two pill buttons.
+  const availableCutoffMonths = useMemo(() => {
+    const months = new Set<string>();
+    availableCutoffs.forEach((c) => months.add(c.split(':')[0]));
+    return Array.from(months).sort().reverse();
+  }, [availableCutoffs]);
+
+  const [selectedCutoffYm, selectedCutoffHalf] = cutoffFilter ? (cutoffFilter.split(':') as [string, string]) : ['', ''];
+
+  const formatCutoffMonthOnly = (ym: string) => {
+    const [y, m] = ym.split('-').map(Number);
+    return new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  };
+
+  const handleCutoffMonthChange = (ym: string) => {
+    if (!ym) { setCutoffFilter(''); return; }
+    setCutoffFilter(`${ym}:${selectedCutoffHalf || 'H1'}`);
+    setSelectedDate('');
+  };
+
+  const handleCutoffHalfChange = (half: 'H1' | 'H2') => {
+    if (!selectedCutoffYm) return;
+    setCutoffFilter(`${selectedCutoffYm}:${half}`);
+    setSelectedDate('');
+  };
+
   // Opens the choice modal — HR picks Edit Profile or Payslips
   const openProfileChoice = (p: Profile) => {
     setSelectedProfile(p);
@@ -780,25 +868,76 @@ export default function HRDashboard() {
 
         {/* Announcements */}
         <section className="card-style !p-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
-            <h3 className="mb-0 text-sm">Announcements</h3>
-            {announcementUpdatedAt && (
-              <p className="text-slate-400 text-[10px] font-medium uppercase tracking-widest">
-                Last: {new Date(announcementUpdatedAt).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-              </p>
-            )}
-          </div>
+          <button
+            type="button"
+            onClick={() => setAnnouncementOpen((v) => !v)}
+            className="w-full flex items-center justify-between gap-2"
+          >
+            <h3 className="mb-0 text-sm">
+              Announcements
+              {announcementUpdatedAt && (
+                <span className="block text-[10px] font-medium text-slate-400 normal-case tracking-normal mt-0.5">
+                  Last: {new Date(announcementUpdatedAt).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+            </h3>
+            <svg
+              width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+              className={`text-slate-400 flex-shrink-0 transition-transform ${announcementOpen ? 'rotate-180' : ''}`}
+            >
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </button>
+
+          {announcementOpen && (
+          <div className="mt-4">
           {announcementMsg && <div className={`p-2.5 rounded-xl text-xs font-bold mb-3 ${announcementMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>{announcementMsg.text}</div>}
           <div className="min-h-[137px]">
           {announcementLoading ? <LoadingRow label="Loading..." /> : (
             <>
               <textarea className="input-field w-full min-h-[80px] resize-y text-sm" placeholder="Type the announcement that all employees will see..." value={announcementContent} onChange={(e) => setAnnouncementContent(e.target.value)} />
+
+              <div className="mt-3">
+                {(announcementImagePreview || (announcementImageUrl && !announcementRemoveImage)) ? (
+                  <div className="relative inline-block">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- external Supabase Storage URL, not a static asset */}
+                    <img
+                      src={announcementImagePreview || announcementImageUrl || ''}
+                      alt="Announcement attachment"
+                      className="max-h-56 max-w-full rounded-xl border border-slate-200 object-contain bg-slate-50"
+                    />
+                    <button
+                      type="button"
+                      onClick={clearAnnouncementImage}
+                      className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-white shadow border border-slate-200 flex items-center justify-center text-slate-500 hover:text-red-600 transition"
+                      aria-label="Remove image"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                  </div>
+                ) : (
+                  <label className="inline-flex items-center gap-1.5 text-blue-600 text-xs font-bold cursor-pointer hover:underline">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>
+                    Add Photo (optional)
+                    <input
+                      ref={announcementImageInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => handleAnnouncementImageChange(e.target.files?.[0] ?? null)}
+                    />
+                  </label>
+                )}
+              </div>
+
               <button onClick={publishAnnouncement} disabled={announcementSaving || !announcementContent.trim()} className="btn-primary mt-3 !py-2.5 !text-xs disabled:opacity-50">
                 {announcementSaving ? <span className="flex items-center justify-center gap-2"><Spinner size="sm"/>Publishing...</span> : announcementId ? 'Update Announcement' : 'Publish Announcement'}
               </button>
             </>
           )}
           </div>
+          </div>
+          )}
         </section>
 
         {/* Disputes + Leave — side by side on desktop */}
@@ -959,12 +1098,30 @@ export default function HRDashboard() {
             {attendanceHistoryOpen && (
             <>
             <div className="px-4 pb-4 border-b border-slate-100 flex flex-col md:flex-row gap-3 justify-end items-start md:items-center">
-              <div className="flex flex-wrap gap-2 w-full md:w-auto">
+              <div className="flex flex-wrap gap-2 items-center w-full md:w-auto">
                 <input className="input-field !py-1.5 !text-xs !min-h-0 md:w-40" placeholder="Search name..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-                <select className="input-field !py-1.5 !text-xs !min-h-0 w-auto" value={cutoffFilter} onChange={(e) => { setCutoffFilter(e.target.value); if (e.target.value) setSelectedDate(''); }}>
-                  <option value="">By cutoff...</option>
-                  {availableCutoffs.map((c) => <option key={c} value={c}>{formatCutoffLabel(c)}</option>)}
+                <select className="input-field !py-1.5 !text-xs !min-h-0 w-auto" value={selectedCutoffYm} onChange={(e) => handleCutoffMonthChange(e.target.value)}>
+                  <option value="">All months</option>
+                  {availableCutoffMonths.map((ym) => <option key={ym} value={ym}>{formatCutoffMonthOnly(ym)}</option>)}
                 </select>
+                {selectedCutoffYm && (
+                  <div className="flex rounded-full bg-slate-100 p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => handleCutoffHalfChange('H1')}
+                      className={`px-3 py-1 rounded-full text-[11px] font-bold transition whitespace-nowrap ${selectedCutoffHalf === 'H1' ? 'bg-white shadow text-slate-900' : 'text-slate-400'}`}
+                    >
+                      1st Half
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleCutoffHalfChange('H2')}
+                      className={`px-3 py-1 rounded-full text-[11px] font-bold transition whitespace-nowrap ${selectedCutoffHalf === 'H2' ? 'bg-white shadow text-slate-900' : 'text-slate-400'}`}
+                    >
+                      2nd Half
+                    </button>
+                  </div>
+                )}
                 <input type="date" className="input-field !py-1.5 !text-xs !min-h-0 w-auto" value={selectedDate} onChange={(e) => { setSelectedDate(e.target.value); if (e.target.value) setCutoffFilter(''); }} />
                 {selectedDate !== todayManila && <button onClick={() => { setSelectedDate(todayManila); setCutoffFilter(''); }} className="text-blue-600 font-bold text-xs whitespace-nowrap">Today</button>}
                 {(selectedDate || cutoffFilter) && <button onClick={() => { setSelectedDate(''); setCutoffFilter(''); }} className="text-slate-400 font-bold text-xs whitespace-nowrap">All</button>}

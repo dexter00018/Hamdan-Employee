@@ -171,6 +171,7 @@ export default function EmployeeDashboard() {
 
   // Announcements
   const [announcement, setAnnouncement] = useState<string>('');
+  const [announcementImageUrl, setAnnouncementImageUrl] = useState<string | null>(null);
   const [announcementLoading, setAnnouncementLoading] = useState(true);
   const [announcementError, setAnnouncementError] = useState<string | null>(null);
   const [announcementUpdatedAt, setAnnouncementUpdatedAt] = useState<string | null>(null);
@@ -266,8 +267,9 @@ export default function EmployeeDashboard() {
         (payload) => {
           if (payload.eventType === 'DELETE') return;
 
-          const newRow = payload.new as { content?: string; updated_at?: string };
+          const newRow = payload.new as { content?: string; image_url?: string; updated_at?: string };
           setAnnouncement(newRow.content || '');
+          setAnnouncementImageUrl(newRow.image_url || null);
           setAnnouncementError(null);
           setAnnouncementUpdatedAt(
             newRow.updated_at
@@ -410,7 +412,7 @@ export default function EmployeeDashboard() {
     try {
       const { data, error } = await supabase
         .from('announcements')
-        .select('content, updated_at')
+        .select('content, image_url, updated_at')
         .order('updated_at', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -418,6 +420,7 @@ export default function EmployeeDashboard() {
       if (error) throw error;
 
       setAnnouncement(data?.content || '');
+      setAnnouncementImageUrl(data?.image_url || null);
       setAnnouncementUpdatedAt(
         data?.updated_at
           ? new Date(data.updated_at).toLocaleString('en-US', {
@@ -1022,6 +1025,14 @@ export default function EmployeeDashboard() {
                   <div className="flex-1 min-w-0">
                     <span className="inline-block bg-green-500 text-slate-900 text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full mb-2">Announcement</span>
                     <p className="text-white text-sm font-medium whitespace-pre-wrap leading-relaxed">{announcement}</p>
+                    {announcementImageUrl && (
+                      // eslint-disable-next-line @next/next/no-img-element -- external Supabase Storage URL, not a static asset
+                      <img
+                        src={announcementImageUrl}
+                        alt="Announcement attachment"
+                        className="mt-3 w-full max-h-[420px] rounded-2xl object-contain bg-black/10 border border-white/10"
+                      />
+                    )}
                     {announcementUpdatedAt && <p className="text-green-100/70 text-[10px] font-medium uppercase tracking-widest mt-2">Updated: {announcementUpdatedAt}</p>}
                   </div>
                 </div>
