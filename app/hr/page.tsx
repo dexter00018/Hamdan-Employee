@@ -7,6 +7,7 @@ import Spinner, { LoadingRow } from '@/components/Spinner';
 
 type AttendanceLog = {
   id: string;
+  user_id: string;
   log_date: string;
   time_in: string | null;
   time_out: string | null;
@@ -90,6 +91,10 @@ export default function HRDashboard() {
   const [employeesListOpen, setEmployeesListOpen] = useState(false);
   const [attendanceHistoryOpen, setAttendanceHistoryOpen] = useState(false);
   const [holidaysOpen, setHolidaysOpen] = useState(false);
+  const [notTimedInOpen, setNotTimedInOpen] = useState(false);
+  const PAGE_SIZE = 10;
+  const [employeesPage, setEmployeesPage] = useState(1);
+  const [attendancePage, setAttendancePage] = useState(1);
   const [holidays, setHolidays] = useState<{ id: string; holiday_date: string; name: string }[]>([]);
   const [holidaysLoading, setHolidaysLoading] = useState(false);
   const [holidaysFetched, setHolidaysFetched] = useState(false);
@@ -566,6 +571,33 @@ export default function HRDashboard() {
     });
   }, [attendance, searchTerm, selectedDate, cutoffFilter]);
 
+  // Reset to page 1 whenever the filtered set changes shape (new search,
+  // date, or cutoff), so we don't land on a now-empty page. Adjusting
+  // state during render (rather than in a useEffect) avoids an extra
+  // render pass -- this is the pattern React recommends for "reset state
+  // when a prop/dependency changes".
+  const [prevAttendanceFilters, setPrevAttendanceFilters] = useState([searchTerm, selectedDate, cutoffFilter]);
+  if (
+    prevAttendanceFilters[0] !== searchTerm ||
+    prevAttendanceFilters[1] !== selectedDate ||
+    prevAttendanceFilters[2] !== cutoffFilter
+  ) {
+    setPrevAttendanceFilters([searchTerm, selectedDate, cutoffFilter]);
+    setAttendancePage(1);
+  }
+
+  const attendanceTotalPages = Math.max(1, Math.ceil(filteredAttendance.length / PAGE_SIZE));
+  const paginatedAttendance = filteredAttendance.slice(
+    (attendancePage - 1) * PAGE_SIZE,
+    attendancePage * PAGE_SIZE
+  );
+
+  const employeesTotalPages = Math.max(1, Math.ceil(profiles.length / PAGE_SIZE));
+  const paginatedProfiles = profiles.slice(
+    (employeesPage - 1) * PAGE_SIZE,
+    employeesPage * PAGE_SIZE
+  );
+
   // Minutes late for a single Late log, derived from the 9:15 AM grace
   // cutoff (same threshold app/api/time-in/route.ts uses to decide
   // Present vs Late), since we don't store an exact minutes-late value
@@ -902,6 +934,26 @@ export default function HRDashboard() {
   const presentTodayCount = todaysLogs.length;
   const lateTodayCount = todaysLogs.filter((l) => l.status?.toLowerCase() === 'late').length;
 
+  // Employees with no time-in yet today. This is intentionally a live,
+  // frontend-only view -- it does NOT create a real 'Absent' attendance_logs
+  // row (that only happens for days that have already fully passed, via
+  // settle_overdue_absences). It just naturally clears an employee off this
+  // list the moment their time-in shows up in `attendance`.
+  const notYetTimedInToday = useMemo(
+    () => profiles.filter((p) => !todaysLogs.some((log) => log.user_id === p.id)),
+    [profiles, todaysLogs]
+  );
+
+  // Light auto-refresh so this list (and the Present/Late header counts)
+  // update on their own through the day as employees time in, without
+  // requiring a manual page reload.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      refreshAllData();
+    }, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
   const initials = (name: string | null) =>
     (name || '?')
       .split(' ')
@@ -939,6 +991,44 @@ export default function HRDashboard() {
           <div className="card-style flex flex-col items-center justify-center !p-3 text-center"><p className="stat-number text-xl text-green-600">{presentTodayCount}</p><p className="label-branded mt-0.5">Present</p></div>
           <div className="card-style flex flex-col items-center justify-center !p-3 text-center"><p className="stat-number text-xl text-orange-600">{lateTodayCount}</p><p className="label-branded mt-0.5">Late</p></div>
         </div>
+
+        {/* Not Yet Timed In Today -- live view, not a permanent Absent tag */}
+        {notYetTimedInToday.length > 0 && (
+        <section className="card-style !p-4">
+          <button
+            type="button"
+            onClick={() => setNotTimedInOpen((v) => !v)}
+            className="w-full flex items-center justify-between gap-2 text-left"
+          >
+            <h3 className="mb-0 text-sm">
+              Not Yet Timed In Today
+              <span className="block text-[10px] font-medium text-red-600 normal-case tracking-normal mt-0.5">
+                {notYetTimedInToday.length} employee{notYetTimedInToday.length === 1 ? '' : 's'} — auto-updates as they time in
+              </span>
+            </h3>
+            <svg
+              width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+              className={`text-slate-400 flex-shrink-0 transition-transform ${notTimedInOpen ? 'rotate-180' : ''}`}
+            >
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </button>
+
+          {notTimedInOpen && (
+            <div className="mt-4 space-y-1.5">
+              {notYetTimedInToday.map((p) => (
+                <div key={p.id} className="flex items-center justify-between gap-2 p-2.5 bg-slate-50 rounded-xl border border-slate-100">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-7 h-7 rounded-full bg-blue-50 text-blue-600 font-bold text-[9px] flex items-center justify-center flex-shrink-0">{initials(p.full_name)}</div>
+                    <span className="font-bold text-slate-900 text-xs truncate">{p.full_name}</span>
+                  </div>
+                  <span className="tag-absent flex-shrink-0">Absent</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+        )}
 
         {/* Announcements */}
         <section className="card-style !p-4">
@@ -1019,7 +1109,7 @@ export default function HRDashboard() {
           <button
             type="button"
             onClick={toggleHolidays}
-            className="w-full flex items-center justify-between gap-2"
+            className="w-full flex items-center justify-between gap-2 text-left"
           >
             <h3 className="mb-0 text-sm">
               Holidays
@@ -1199,7 +1289,7 @@ export default function HRDashboard() {
             <div className="space-y-2 min-h-[220px]">
               {loadingData && profiles.length === 0 && <LoadingRow label="Loading employees..." />}
               {!loadingData && profiles.length === 0 && <p className="text-slate-400 text-xs">No employees found.</p>}
-              {profiles.map((p) => (
+              {paginatedProfiles.map((p) => (
                 <button key={p.id} onClick={() => openProfileChoice(p)} className="w-full flex items-center gap-2.5 text-left p-3 rounded-2xl hover:bg-slate-50 border border-slate-100 transition">
                   <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-50 text-blue-600 font-bold text-[10px] flex items-center justify-center">{initials(p.full_name)}</div>
                   <div className="min-w-0">
@@ -1208,6 +1298,27 @@ export default function HRDashboard() {
                   </div>
                 </button>
               ))}
+              {profiles.length > PAGE_SIZE && (
+                <div className="flex items-center justify-between pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setEmployeesPage((p) => Math.max(1, p - 1))}
+                    disabled={employeesPage === 1}
+                    className="text-xs font-bold text-blue-600 disabled:text-slate-300 disabled:cursor-not-allowed"
+                  >
+                    ← Prev
+                  </button>
+                  <span className="text-slate-400 text-[10px] font-medium">Page {employeesPage} of {employeesTotalPages}</span>
+                  <button
+                    type="button"
+                    onClick={() => setEmployeesPage((p) => Math.min(employeesTotalPages, p + 1))}
+                    disabled={employeesPage === employeesTotalPages}
+                    className="text-xs font-bold text-blue-600 disabled:text-slate-300 disabled:cursor-not-allowed"
+                  >
+                    Next →
+                  </button>
+                </div>
+              )}
             </div>
             )}
           </section>
@@ -1239,32 +1350,32 @@ export default function HRDashboard() {
 
             {attendanceHistoryOpen && (
             <>
-            <div className="px-4 pb-4 border-b border-slate-100 flex flex-col md:flex-row gap-3 justify-end items-start md:items-center">
-              <div className="flex flex-wrap gap-2 items-center w-full md:w-auto">
-                <input className="input-field !py-1.5 !text-xs !min-h-0 md:w-40" placeholder="Search name..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-                <select className="input-field !py-1.5 !text-xs !min-h-0 w-auto" value={selectedCutoffYm} onChange={(e) => handleCutoffMonthChange(e.target.value)}>
-                  <option value="">All months</option>
-                  {availableCutoffMonths.map((ym) => <option key={ym} value={ym}>{formatCutoffMonthOnly(ym)}</option>)}
-                </select>
-                {selectedCutoffYm && (
-                  <div className="flex rounded-full bg-slate-100 p-0.5">
-                    <button
-                      type="button"
-                      onClick={() => handleCutoffHalfChange('H1')}
-                      className={`px-3 py-1 rounded-full text-[11px] font-bold transition whitespace-nowrap ${selectedCutoffHalf === 'H1' ? 'bg-white shadow text-slate-900' : 'text-slate-400'}`}
-                    >
-                      1st Half
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleCutoffHalfChange('H2')}
-                      className={`px-3 py-1 rounded-full text-[11px] font-bold transition whitespace-nowrap ${selectedCutoffHalf === 'H2' ? 'bg-white shadow text-slate-900' : 'text-slate-400'}`}
-                    >
-                      2nd Half
-                    </button>
-                  </div>
-                )}
-                <input type="date" className="input-field !py-1.5 !text-xs !min-h-0 w-auto" value={selectedDate} onChange={(e) => { setSelectedDate(e.target.value); if (e.target.value) setCutoffFilter(''); }} />
+            <div className="px-4 pb-4 border-b border-slate-100 flex flex-wrap gap-2 items-center">
+              <input className="input-field !py-1.5 !text-xs !min-h-0 w-full sm:w-40" placeholder="Search name..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+              <select className="input-field !py-1.5 !text-xs !min-h-0 w-auto" value={selectedCutoffYm} onChange={(e) => handleCutoffMonthChange(e.target.value)}>
+                <option value="">All months</option>
+                {availableCutoffMonths.map((ym) => <option key={ym} value={ym}>{formatCutoffMonthOnly(ym)}</option>)}
+              </select>
+              {selectedCutoffYm && (
+                <div className="flex rounded-full bg-slate-100 p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => handleCutoffHalfChange('H1')}
+                    className={`px-3 py-1 rounded-full text-[11px] font-bold transition whitespace-nowrap ${selectedCutoffHalf === 'H1' ? 'bg-white shadow text-slate-900' : 'text-slate-400'}`}
+                  >
+                    1st Half
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCutoffHalfChange('H2')}
+                    className={`px-3 py-1 rounded-full text-[11px] font-bold transition whitespace-nowrap ${selectedCutoffHalf === 'H2' ? 'bg-white shadow text-slate-900' : 'text-slate-400'}`}
+                  >
+                    2nd Half
+                  </button>
+                </div>
+              )}
+              <input type="date" className="input-field !py-1.5 !text-xs !min-h-0 w-auto" value={selectedDate} onChange={(e) => { setSelectedDate(e.target.value); if (e.target.value) setCutoffFilter(''); }} />
+              <div className="flex gap-3">
                 {selectedDate !== todayManila && <button onClick={() => { setSelectedDate(todayManila); setCutoffFilter(''); }} className="text-blue-600 font-bold text-xs whitespace-nowrap">Today</button>}
                 {(selectedDate || cutoffFilter) && <button onClick={() => { setSelectedDate(''); setCutoffFilter(''); }} className="text-slate-400 font-bold text-xs whitespace-nowrap">All</button>}
               </div>
@@ -1282,7 +1393,7 @@ export default function HRDashboard() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {loadingData && attendance.length === 0 && <tr><td colSpan={5} className="px-4 py-6"><LoadingRow label="Loading..." /></td></tr>}
-                  {filteredAttendance.map((log) => (
+                  {paginatedAttendance.map((log) => (
                     <tr key={log.id} className="hover:bg-slate-50 transition">
                       <td className="px-4 py-3 font-medium text-slate-900 text-xs">{log.profiles?.full_name}</td>
                       <td className="px-4 py-3 text-slate-600 text-xs">{log.log_date ? new Date(log.log_date).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}</td>
@@ -1294,6 +1405,27 @@ export default function HRDashboard() {
                   {!loadingData && filteredAttendance.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-400 text-xs">No attendance records found.</td></tr>}
                 </tbody>
               </table>
+              {filteredAttendance.length > PAGE_SIZE && (
+                <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setAttendancePage((p) => Math.max(1, p - 1))}
+                    disabled={attendancePage === 1}
+                    className="text-xs font-bold text-blue-600 disabled:text-slate-300 disabled:cursor-not-allowed"
+                  >
+                    ← Prev
+                  </button>
+                  <span className="text-slate-400 text-[10px] font-medium">Page {attendancePage} of {attendanceTotalPages} · {filteredAttendance.length} records</span>
+                  <button
+                    type="button"
+                    onClick={() => setAttendancePage((p) => Math.min(attendanceTotalPages, p + 1))}
+                    disabled={attendancePage === attendanceTotalPages}
+                    className="text-xs font-bold text-blue-600 disabled:text-slate-300 disabled:cursor-not-allowed"
+                  >
+                    Next →
+                  </button>
+                </div>
+              )}
             </div>
             </>
             )}
