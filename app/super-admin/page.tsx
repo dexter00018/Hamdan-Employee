@@ -513,6 +513,7 @@ export default function SuperAdminDashboard() {
     if (v === 'late') return 'tag-late';
     if (v === 'excused') return 'tag-excused';
     if (v === 'absent') return 'tag-absent';
+    if (v === 'leave') return 'tag-leave';
     return 'tag-present';
   };
 
@@ -1269,6 +1270,7 @@ export default function SuperAdminDashboard() {
               <option value="Late">Late</option>
               <option value="Excused">Excused</option>
               <option value="Absent">Absent</option>
+              <option value="Leave">Leave</option>
             </select>
 
             <div className="flex gap-3">

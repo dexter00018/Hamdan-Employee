@@ -91,7 +91,6 @@ export default function HRDashboard() {
   const [employeesListOpen, setEmployeesListOpen] = useState(false);
   const [attendanceHistoryOpen, setAttendanceHistoryOpen] = useState(false);
   const [holidaysOpen, setHolidaysOpen] = useState(false);
-  const [notTimedInOpen, setNotTimedInOpen] = useState(false);
   const PAGE_SIZE = 10;
   const [employeesPage, setEmployeesPage] = useState(1);
   const [attendancePage, setAttendancePage] = useState(1);
@@ -830,6 +829,7 @@ export default function HRDashboard() {
     if (v === 'late') return 'tag-late';
     if (v === 'excused') return 'tag-excused';
     if (v === 'absent') return 'tag-absent';
+    if (v === 'leave') return 'tag-leave';
     return 'tag-present';
   };
 
@@ -939,6 +939,18 @@ export default function HRDashboard() {
   // row (that only happens for days that have already fully passed, via
   // settle_overdue_absences). It just naturally clears an employee off this
   // list the moment their time-in shows up in `attendance`.
+  // Employees on an approved leave that covers today shouldn't show up as
+  // "not yet timed in" -- they're expected to be out, not tardy/absent.
+  const onApprovedLeaveToday = useMemo(
+    () =>
+      new Set(
+        leaveRequests
+          .filter((l) => l.status === 'Approved' && l.start_date <= todayManila && l.end_date >= todayManila)
+          .map((l) => l.employee?.id)
+      ),
+    [leaveRequests, todayManila]
+  );
+
   const notYetTimedInToday = useMemo(
     () => profiles.filter((p) => !todaysLogs.some((log) => log.user_id === p.id)),
     [profiles, todaysLogs]
@@ -995,38 +1007,28 @@ export default function HRDashboard() {
         {/* Not Yet Timed In Today -- live view, not a permanent Absent tag */}
         {notYetTimedInToday.length > 0 && (
         <section className="card-style !p-4">
-          <button
-            type="button"
-            onClick={() => setNotTimedInOpen((v) => !v)}
-            className="w-full flex items-center justify-between gap-2 text-left"
-          >
-            <h3 className="mb-0 text-sm">
-              Not Yet Timed In Today
-              <span className="block text-[10px] font-medium text-red-600 normal-case tracking-normal mt-0.5">
-                {notYetTimedInToday.length} employee{notYetTimedInToday.length === 1 ? '' : 's'} — auto-updates as they time in
-              </span>
-            </h3>
-            <svg
-              width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-              className={`text-slate-400 flex-shrink-0 transition-transform ${notTimedInOpen ? 'rotate-180' : ''}`}
-            >
-              <polyline points="6 9 12 15 18 9"/>
-            </svg>
-          </button>
+          <h3 className="mb-0 text-sm">
+            Not Yet Timed In Today
+            <span className="block text-[10px] font-medium text-red-600 normal-case tracking-normal mt-0.5">
+              {notYetTimedInToday.length} employee{notYetTimedInToday.length === 1 ? '' : 's'} — auto-updates as they time in
+            </span>
+          </h3>
 
-          {notTimedInOpen && (
-            <div className="mt-4 space-y-1.5">
-              {notYetTimedInToday.map((p) => (
-                <div key={p.id} className="flex items-center justify-between gap-2 p-2.5 bg-slate-50 rounded-xl border border-slate-100">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-7 h-7 rounded-full bg-blue-50 text-blue-600 font-bold text-[9px] flex items-center justify-center flex-shrink-0">{initials(p.full_name)}</div>
-                    <span className="font-bold text-slate-900 text-xs truncate">{p.full_name}</span>
-                  </div>
-                  <span className="tag-absent flex-shrink-0">Absent</span>
+          <div className="mt-4 space-y-1.5">
+            {notYetTimedInToday.map((p) => (
+              <div key={p.id} className="flex items-center justify-between gap-2 p-2.5 bg-slate-50 rounded-xl border border-slate-100">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-7 h-7 rounded-full bg-blue-50 text-blue-600 font-bold text-[9px] flex items-center justify-center flex-shrink-0">{initials(p.full_name)}</div>
+                  <span className="font-bold text-slate-900 text-xs truncate">{p.full_name}</span>
                 </div>
-              ))}
-            </div>
-          )}
+                {onApprovedLeaveToday.has(p.id) ? (
+                  <span className="tag-leave flex-shrink-0">Leave</span>
+                ) : (
+                  <span className="tag-absent flex-shrink-0">Absent</span>
+                )}
+              </div>
+            ))}
+          </div>
         </section>
         )}
 

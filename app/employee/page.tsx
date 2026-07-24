@@ -503,7 +503,10 @@ export default function EmployeeDashboard() {
 
   const statusTagClass = (s: string | null) => {
     const v = s?.toLowerCase();
-    return v === 'late' ? 'tag-late' : v === 'absent' ? 'tag-absent' : 'tag-present';
+    if (v === 'late') return 'tag-late';
+    if (v === 'absent') return 'tag-absent';
+    if (v === 'leave') return 'tag-leave';
+    return 'tag-present';
   };
 
   // --- Early time-out warning (before 7PM) ---
@@ -823,10 +826,10 @@ export default function EmployeeDashboard() {
   const summary = useMemo(() => {
     const cutoffLogs = history.filter(log => matchesCutoff(log.log_date, summaryCutoffKey));
     // "Present" here means the employee actually showed up (on-time or late) --
-    // it must exclude 'Absent' rows, which now also live in attendance_logs.
-    // Status is compared case-insensitively since it can also be hand-edited
-    // directly in Supabase (e.g. "late" instead of "Late").
-    const present = cutoffLogs.filter(l => l.status?.toLowerCase() !== 'absent').length;
+    // it must exclude 'Absent' and 'Leave' rows, which now also live in
+    // attendance_logs. Status is compared case-insensitively since it can
+    // also be hand-edited directly in Supabase (e.g. "late" instead of "Late").
+    const present = cutoffLogs.filter(l => !['absent', 'leave'].includes(l.status?.toLowerCase() ?? '')).length;
     const late = cutoffLogs.filter(l => l.status?.toLowerCase() === 'late').length;
     const absent = cutoffLogs.filter(l => l.status?.toLowerCase() === 'absent').length;
     const onTime = present - late;
