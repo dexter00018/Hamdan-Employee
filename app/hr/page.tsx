@@ -346,7 +346,7 @@ export default function HRDashboard() {
     const { data, error } = await supabase
       .from('attendance_disputes')
       .select(`
-        id, attendance_log_id, dispute_date, claimed_time_in, original_time_in, reason, status, hr_notes, created_at, reviewed_at,
+        id, attendance_log_id, dispute_date, dispute_type, claimed_time_in, original_time_in, claimed_time_out, original_time_out, reason, status, hr_notes, created_at, reviewed_at,
         employee:profiles!attendance_disputes_user_id_fkey(full_name),
         reviewer:profiles!attendance_disputes_reviewed_by_fkey(full_name)
       `)
@@ -362,7 +362,9 @@ export default function HRDashboard() {
   };
 
   // Computes Present/Late the same way as everywhere else in the app,
-  // based on the claimed time-in in Philippine time.
+  // based on the claimed time-in in Philippine time. Only relevant for
+  // TimeIn-type disputes -- TimeOut disputes don't change the Present/
+  // Late status, since that's determined solely by time_in.
   const computeStatusForTime = (isoString: string) => {
     const parts = new Intl.DateTimeFormat('en-US', {
       timeZone: 'Asia/Manila',
@@ -384,10 +386,24 @@ export default function HRDashboard() {
     setDisputeMsg(null);
     try {
       const { data: { user: currentUser } } = await supabase.auth.getUser();
-      const newStatus = computeStatusForTime(dispute.claimed_time_in);
+      const disputeType = dispute.dispute_type || 'TimeIn';
 
-      if (dispute.attendance_log_id) {
+      if (disputeType === 'TimeOut') {
+        // Timeout disputes always reference an existing log (the
+        // employee already timed in that day) -- just correct time_out.
+        // Status (Present/Late) is untouched since that's derived from
+        // time_in only.
+        if (!dispute.attendance_log_id) {
+          throw new Error('This dispute has no linked attendance record to update.');
+        }
+        const { error } = await supabase
+          .from('attendance_logs')
+          .update({ time_out: dispute.claimed_time_out })
+          .eq('id', dispute.attendance_log_id);
+        if (error) throw error;
+      } else if (dispute.attendance_log_id) {
         // Existing (wrongly-tagged) log -- correct its time_in/status.
+        const newStatus = computeStatusForTime(dispute.claimed_time_in);
         const { error } = await supabase
           .from('attendance_logs')
           .update({ time_in: dispute.claimed_time_in, status: newStatus })
@@ -400,6 +416,7 @@ export default function HRDashboard() {
         // (see settle_overdue_absences) -- this overwrites that placeholder
         // with the real, HR-confirmed time_in/status instead of colliding
         // with the unique (user_id, log_date) constraint.
+        const newStatus = computeStatusForTime(dispute.claimed_time_in);
         const { data: disputeRow } = await supabase
           .from('attendance_disputes')
           .select('user_id')
@@ -974,6 +991,20 @@ export default function HRDashboard() {
       .join('')
       .toUpperCase();
 
+  // Human-friendly label + formatted before/after times for a dispute,
+  // regardless of whether it's a TimeIn or TimeOut dispute -- used in
+  // both the pending list and the history detail view.
+  const disputeTypeLabel = (d: any) => {
+    const dType = d.dispute_type || 'TimeIn';
+    if (dType === 'TimeOut') return 'Missed time-out';
+    return d.attendance_log_id ? 'Late tag dispute' : 'Missed time-in';
+  };
+  const disputeOriginal = (d: any) => ((d.dispute_type || 'TimeIn') === 'TimeOut' ? d.original_time_out : d.original_time_in);
+  const disputeClaimed = (d: any) => ((d.dispute_type || 'TimeIn') === 'TimeOut' ? d.claimed_time_out : d.claimed_time_in);
+  const disputeFieldLabel = (d: any) => ((d.dispute_type || 'TimeIn') === 'TimeOut' ? 'Time-Out' : 'Time-In');
+  const formatPh = (iso: string) =>
+    new Date(iso).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
   return (
     <main className="min-h-screen p-3 sm:p-4 md:p-6 lg:p-8">
       <div className="max-w-7xl mx-auto space-y-3 sm:space-y-4 md:space-y-5">
@@ -1193,9 +1224,9 @@ export default function HRDashboard() {
                         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
                           <div className="min-w-0">
                             <p className="font-bold text-slate-900 text-xs">{d.employee?.full_name ?? 'Unknown'}</p>
-                            <p className="text-slate-500 text-xs mt-0.5">{d.attendance_log_id ? 'Late tag dispute' : 'Missed time-in'} · <span className="font-medium">{d.dispute_date}</span></p>
-                            {d.original_time_in && <p className="text-slate-400 text-xs">Was: <span className="font-bold text-slate-600">{new Date(d.original_time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span></p>}
-                            <p className="text-slate-400 text-xs">Claimed: <span className="font-bold text-slate-600">{new Date(d.claimed_time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span></p>
+                            <p className="text-slate-500 text-xs mt-0.5">{disputeTypeLabel(d)} · <span className="font-medium">{d.dispute_date}</span></p>
+                            {disputeOriginal(d) && <p className="text-slate-400 text-xs">Was: <span className="font-bold text-slate-600">{formatPh(disputeOriginal(d))}</span></p>}
+                            {disputeClaimed(d) && <p className="text-slate-400 text-xs">Claimed: <span className="font-bold text-slate-600">{formatPh(disputeClaimed(d))}</span></p>}
                             {d.reason && <p className="text-slate-400 text-[10px] italic mt-0.5">&ldquo;{d.reason}&rdquo;</p>}
                           </div>
                           <div className="flex gap-1.5 flex-shrink-0">
@@ -1659,20 +1690,24 @@ export default function HRDashboard() {
                     <span className={selectedDisputeDetail.status === 'Approved' ? 'tag-present' : 'tag-late'}>{selectedDisputeDetail.status}</span>
                   </div>
 
+                  <div className="flex items-center gap-2">
+                    <span className="tag-excused">{disputeTypeLabel(selectedDisputeDetail)}</span>
+                  </div>
+
                   <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-2">
                     <div>
                       <p className="label-branded mb-0.5">Dispute Date</p>
                       <p className="text-slate-700 text-xs">{selectedDisputeDetail.dispute_date}</p>
                     </div>
-                    {selectedDisputeDetail.original_time_in && (
+                    {disputeOriginal(selectedDisputeDetail) && (
                       <div>
-                        <p className="label-branded mb-0.5">Original Time-In</p>
-                        <p className="text-slate-700 text-xs">{new Date(selectedDisputeDetail.original_time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</p>
+                        <p className="label-branded mb-0.5">Original {disputeFieldLabel(selectedDisputeDetail)}</p>
+                        <p className="text-slate-700 text-xs">{formatPh(disputeOriginal(selectedDisputeDetail))}</p>
                       </div>
                     )}
                     <div>
-                      <p className="label-branded mb-0.5">Claimed Time-In</p>
-                      <p className="text-slate-700 text-xs">{new Date(selectedDisputeDetail.claimed_time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</p>
+                      <p className="label-branded mb-0.5">Claimed {disputeFieldLabel(selectedDisputeDetail)}</p>
+                      <p className="text-slate-700 text-xs">{disputeClaimed(selectedDisputeDetail) ? formatPh(disputeClaimed(selectedDisputeDetail)) : '—'}</p>
                     </div>
                   </div>
 
@@ -1708,7 +1743,7 @@ export default function HRDashboard() {
                     >
                       <div className="min-w-0">
                         <span className="font-bold text-slate-900 text-xs">{d.employee?.full_name ?? 'Unknown'}</span>
-                        <span className="text-slate-400 text-xs"> · {d.dispute_date}</span>
+                        <span className="text-slate-400 text-xs"> · {disputeTypeLabel(d)} · {d.dispute_date}</span>
                       </div>
                       <span className={d.status === 'Approved' ? 'tag-present' : 'tag-late'}>{d.status}</span>
                     </button>

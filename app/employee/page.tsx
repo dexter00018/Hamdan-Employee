@@ -176,7 +176,7 @@ export default function EmployeeDashboard() {
   const [announcementError, setAnnouncementError] = useState<string | null>(null);
   const [announcementUpdatedAt, setAnnouncementUpdatedAt] = useState<string | null>(null);
   const [showAnnouncementToast, setShowAnnouncementToast] = useState(false);
-  const [disputeResultToast, setDisputeResultToast] = useState<{ status: string; date: string } | null>(null);
+  const [disputeResultToast, setDisputeResultToast] = useState<{ status: string; date: string; disputeType: string } | null>(null);
 
   // Office network check -- Time In is only enabled when the request is
   // coming from the office's known public IP. See
@@ -308,9 +308,9 @@ export default function EmployeeDashboard() {
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'attendance_disputes', filter: `user_id=eq.${currentUserId}` },
         (payload) => {
-          const newRow = payload.new as { status?: string; dispute_date?: string };
+          const newRow = payload.new as { status?: string; dispute_date?: string; dispute_type?: string };
           if (newRow.status === 'Approved' || newRow.status === 'Rejected') {
-            setDisputeResultToast({ status: newRow.status, date: newRow.dispute_date || '' });
+            setDisputeResultToast({ status: newRow.status, date: newRow.dispute_date || '', disputeType: newRow.dispute_type || 'TimeIn' });
             playNotificationSound();
             fetchMyDisputes();
             initializeDashboard();
@@ -645,16 +645,18 @@ export default function EmployeeDashboard() {
 
   // --- Attendance Disputes ---
   // Employees can dispute a day tagged "Late" (claiming they actually
-  // arrived earlier) or a day with no time-in at all (they forgot to
-  // time in). Both go through the same request; HR approves/rejects.
+  // arrived earlier), a day with no time-in at all (they forgot to time
+  // in), or a day where they timed in but forgot to time out. All three
+  // go through the same request table; HR approves/rejects.
   const [myDisputes, setMyDisputes] = useState<any[]>([]);
   const [myDisputesModalOpen, setMyDisputesModalOpen] = useState(false);
   const [disputeModalOpen, setDisputeModalOpen] = useState(false);
-  const [disputeForm, setDisputeForm] = useState<{ attendanceLogId: string | null; date: string; timeLocal: string; reason: string }>({
+  const [disputeForm, setDisputeForm] = useState<{ attendanceLogId: string | null; date: string; timeLocal: string; reason: string; type: 'TimeIn' | 'TimeOut' }>({
     attendanceLogId: null,
     date: '',
     timeLocal: '',
     reason: '',
+    type: 'TimeIn',
   });
   const [disputeSaving, setDisputeSaving] = useState(false);
   const [disputeMsg, setDisputeMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -664,7 +666,7 @@ export default function EmployeeDashboard() {
     if (!user) return;
     const { data, error } = await supabase
       .from('attendance_disputes')
-      .select('id, attendance_log_id, dispute_date, claimed_time_in, original_time_in, reason, status, hr_notes, created_at, reviewed_at')
+      .select('id, attendance_log_id, dispute_date, dispute_type, claimed_time_in, original_time_in, claimed_time_out, original_time_out, reason, status, hr_notes, created_at, reviewed_at')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false });
     if (error) {
@@ -675,20 +677,63 @@ export default function EmployeeDashboard() {
   };
 
   // Opens the dispute modal. If a log already exists for that day
-  // (disputing a wrong "Late" tag), pass it in; otherwise leave it
-  // null (the "I forgot to time in" case) and just prefill the date.
-  const openDisputeModal = (attendanceLogId: string | null, date: string) => {
-    setDisputeForm({ attendanceLogId, date, timeLocal: '', reason: '' });
+  // (disputing a wrong "Late" tag, or a missed time-out), pass it in;
+  // otherwise leave it null (the "I forgot to time in" case) and just
+  // prefill the date. `type` controls which field (time-in or time-out)
+  // is being disputed. `locked` = true means this was opened from a
+  // specific row (Late tag / missed time-out link) and the type can't
+  // be switched; false means it was opened from the generic
+  // "+ Missed time-in / time-out" action and the employee can toggle
+  // between the two.
+  const openDisputeModal = (attendanceLogId: string | null, date: string, type: 'TimeIn' | 'TimeOut' = 'TimeIn', locked: boolean = true) => {
+    disputeTypeLocked.current = locked;
+    setDisputeForm({ attendanceLogId, date, timeLocal: '', reason: '', type });
     setDisputeMsg(null);
     setDisputeModalOpen(true);
   };
 
-  const hasPendingDispute = (dateStr: string) =>
-    myDisputes.some((d) => d.dispute_date === dateStr && d.status === 'Pending');
+  const hasPendingDispute = (dateStr: string, type: 'TimeIn' | 'TimeOut') =>
+    myDisputes.some((d) => d.dispute_date === dateStr && d.status === 'Pending' && (d.dispute_type || 'TimeIn') === type);
+
+  // Whether the currently-open dispute modal was launched from a
+  // specific row (Late tag / missed time-out link -- type is fixed) or
+  // from the generic "+ Missed time-in / time-out" action (type is
+  // toggleable). When toggleable and switched to "TimeOut", there's no
+  // way to dispute a time-out without an existing log for that day
+  // (can't add a time-out to a day you never timed in on) -- so a date
+  // change looks up that day's log from already-loaded history and
+  // silently attaches its id, same as clicking the row's own
+  // "Dispute missed time-out" link directly.
+  const disputeTypeLocked = useRef(true);
+
+  const handleDisputeDateChange = (newDate: string) => {
+    if (disputeForm.type === 'TimeOut' && !disputeTypeLocked.current) {
+      const match = history.find((h) => h.log_date === newDate);
+      setDisputeForm((f) => ({ ...f, date: newDate, attendanceLogId: match?.id ?? null }));
+    } else {
+      setDisputeForm((f) => ({ ...f, date: newDate }));
+    }
+  };
+
+  // Only ever called from the toggleable (non-locked) modal.
+  const handleDisputeTypeChange = (type: 'TimeIn' | 'TimeOut') => {
+    if (type === 'TimeOut' && disputeForm.date) {
+      const match = history.find((h) => h.log_date === disputeForm.date);
+      setDisputeForm((f) => ({ ...f, type, attendanceLogId: match?.id ?? null }));
+    } else if (type === 'TimeIn') {
+      setDisputeForm((f) => ({ ...f, type, attendanceLogId: null }));
+    } else {
+      setDisputeForm((f) => ({ ...f, type }));
+    }
+  };
 
   const submitDispute = async () => {
     if (!disputeForm.date || !disputeForm.timeLocal) {
-      setDisputeMsg({ type: 'error', text: 'Please fill in the date and the time you actually arrived.' });
+      setDisputeMsg({ type: 'error', text: disputeForm.type === 'TimeOut' ? 'Please fill in the date and the time you actually left.' : 'Please fill in the date and the time you actually arrived.' });
+      return;
+    }
+    if (disputeForm.type === 'TimeOut' && !disputeForm.attendanceLogId) {
+      setDisputeMsg({ type: 'error', text: "You don't have a time-in recorded on that date yet, so there's no time-out to correct. File a missed time-in dispute for that date first." });
       return;
     }
     setDisputeSaving(true);
@@ -700,23 +745,33 @@ export default function EmployeeDashboard() {
       // disputeForm.timeLocal is a PH wall-clock time like "08:05";
       // combine with the date and convert to a real UTC timestamp,
       // same +08:00 fixed-offset approach used elsewhere in the app.
-      const claimedTimeInISO = new Date(`${disputeForm.date}T${disputeForm.timeLocal}:00+08:00`).toISOString();
+      const claimedTimeISO = new Date(`${disputeForm.date}T${disputeForm.timeLocal}:00+08:00`).toISOString();
 
-      // Snapshot what time_in currently is (if a log already exists for
-      // this day), so we can show a clear "before -> after" comparison
-      // even after HR approves and the real record gets overwritten.
+      // Snapshot what time_in/time_out currently is (if a log already
+      // exists for this day), so we can show a clear "before -> after"
+      // comparison even after HR approves and the real record gets
+      // overwritten.
       const existingLog = disputeForm.attendanceLogId
         ? history.find((h) => h.id === disputeForm.attendanceLogId)
         : null;
 
-      const { error } = await supabase.from('attendance_disputes').insert([{
+      const payload: Record<string, any> = {
         attendance_log_id: disputeForm.attendanceLogId,
         user_id: user.id,
         dispute_date: disputeForm.date,
-        claimed_time_in: claimedTimeInISO,
-        original_time_in: existingLog?.time_in ?? null,
+        dispute_type: disputeForm.type,
         reason: disputeForm.reason.trim() || null,
-      }]);
+      };
+
+      if (disputeForm.type === 'TimeOut') {
+        payload.claimed_time_out = claimedTimeISO;
+        payload.original_time_out = existingLog?.time_out ?? null;
+      } else {
+        payload.claimed_time_in = claimedTimeISO;
+        payload.original_time_in = existingLog?.time_in ?? null;
+      }
+
+      const { error } = await supabase.from('attendance_disputes').insert([payload]);
 
       if (error) throw error;
 
@@ -792,6 +847,14 @@ export default function EmployeeDashboard() {
     const half = now.getDate() <= 15 ? 'H1' : 'H2';
     return `${ym}:${half}`;
   }, []);
+
+  // Today's date in Manila -- used to decide whether a "no time out"
+  // row is eligible for a missed-time-out dispute (only past days;
+  // today's row already has its own Time Out button/reminder).
+  const todayManila = useMemo(
+    () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date()),
+    []
+  );
 
   // If the employee has filtered Attendance History to a specific
   // cutoff, the summary cards follow that same cutoff. Otherwise,
@@ -1091,7 +1154,7 @@ export default function EmployeeDashboard() {
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
                 <h3 className="mb-0 text-sm">Attendance History</h3>
                 <div className="flex flex-wrap items-center gap-2">
-                  <button onClick={() => openDisputeModal(null, '')} className="text-blue-600 text-xs font-bold hover:underline whitespace-nowrap">+ Missed time-in</button>
+                  <button onClick={() => openDisputeModal(null, '', 'TimeIn', false)} className="text-blue-600 text-xs font-bold hover:underline whitespace-nowrap">+ Missed time-in / time-out</button>
                   <select className="input-field !py-1.5 !text-xs !min-h-0 w-auto" value={selectedYm} onChange={(e) => handleMonthChange(e.target.value)}>
                     <option value="">All months</option>
                     {availableMonths.map((ym) => <option key={ym} value={ym}>{formatMonthOnly(ym)}</option>)}
@@ -1133,8 +1196,13 @@ export default function EmployeeDashboard() {
                           {log.time_in ? new Date(log.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }) : '--:--'}
                           {log.time_out && <> – {new Date(log.time_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}</>}
                         </div>
-                        {!log.time_out && <div className="text-slate-400 text-[9px] uppercase tracking-wide">No time out</div>}
-                        {log.status?.toLowerCase() === 'late' && (hasPendingDispute(log.log_date) ? <div className="text-orange-600 text-[9px] font-bold uppercase">Dispute Pending</div> : <button onClick={() => openDisputeModal(log.id, log.log_date)} className="text-blue-600 text-[9px] font-bold uppercase hover:underline">Dispute</button>)}
+                        {!log.time_out && log.time_in && log.log_date !== todayManila && (
+                          hasPendingDispute(log.log_date, 'TimeOut')
+                            ? <div className="text-orange-600 text-[9px] font-bold uppercase">Timeout Dispute Pending</div>
+                            : <button onClick={() => openDisputeModal(log.id, log.log_date, 'TimeOut')} className="text-blue-600 text-[9px] font-bold uppercase hover:underline">Dispute missed time-out</button>
+                        )}
+                        {!log.time_out && (log.log_date === todayManila || !log.time_in) && <div className="text-slate-400 text-[9px] uppercase tracking-wide">No time out</div>}
+                        {log.status?.toLowerCase() === 'late' && (hasPendingDispute(log.log_date, 'TimeIn') ? <div className="text-orange-600 text-[9px] font-bold uppercase">Dispute Pending</div> : <button onClick={() => openDisputeModal(log.id, log.log_date, 'TimeIn')} className="text-blue-600 text-[9px] font-bold uppercase hover:underline">Dispute</button>)}
                       </div>
                     </div>
                   </div>
@@ -1174,12 +1242,16 @@ export default function EmployeeDashboard() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
           <div className="w-full max-w-sm card-style shadow-2xl">
             <h3 className="mb-2">
-              {disputeForm.attendanceLogId ? 'Dispute Late Tag' : 'Report Missed Time-In'}
+              {disputeForm.type === 'TimeOut'
+                ? 'Report Missed Time-Out'
+                : disputeForm.attendanceLogId ? 'Dispute Late Tag' : 'Report Missed Time-In'}
             </h3>
             <p className="text-sm text-slate-400 mb-6">
-              {disputeForm.attendanceLogId
-                ? "Tell us what time you actually arrived, and HR will review it."
-                : "Forgot to time in on a previous day? Let us know when you actually arrived."}
+              {disputeForm.type === 'TimeOut'
+                ? "Forgot to time out that day? Tell us what time you actually left, and HR will review it."
+                : disputeForm.attendanceLogId
+                  ? "Tell us what time you actually arrived, and HR will review it."
+                  : "Forgot to time in on a previous day? Let us know when you actually arrived."}
             </p>
 
             {disputeMsg && (
@@ -1188,17 +1260,43 @@ export default function EmployeeDashboard() {
               </div>
             )}
 
+            {!disputeTypeLocked.current && (
+              <>
+                <label className="label-branded">What did you forget?</label>
+                <div className="grid grid-cols-2 gap-2 mb-4">
+                  <button
+                    type="button"
+                    onClick={() => handleDisputeTypeChange('TimeIn')}
+                    className={`py-2.5 rounded-full text-xs font-bold transition ${disputeForm.type === 'TimeIn' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                  >
+                    Time In
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDisputeTypeChange('TimeOut')}
+                    className={`py-2.5 rounded-full text-xs font-bold transition ${disputeForm.type === 'TimeOut' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                  >
+                    Time Out
+                  </button>
+                </div>
+              </>
+            )}
+
             <label className="label-branded">Date</label>
             <input
               type="date"
-              className="input-field mb-4"
+              className="input-field mb-1"
               value={disputeForm.date}
-              onChange={(e) => setDisputeForm({ ...disputeForm, date: e.target.value })}
-              disabled={!!disputeForm.attendanceLogId}
+              onChange={(e) => handleDisputeDateChange(e.target.value)}
+              disabled={disputeTypeLocked.current && !!disputeForm.attendanceLogId}
               max={new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())}
             />
+            {!disputeTypeLocked.current && disputeForm.type === 'TimeOut' && disputeForm.date && !disputeForm.attendanceLogId && (
+              <p className="text-orange-600 text-[11px] font-medium mb-3 ml-1">⚠️ No time-in recorded on that date yet — you can't dispute a time-out without one.</p>
+            )}
+            <div className="mb-3" />
 
-            <label className="label-branded">Time You Actually Arrived (Philippine Time)</label>
+            <label className="label-branded">{disputeForm.type === 'TimeOut' ? 'Time You Actually Left (Philippine Time)' : 'Time You Actually Arrived (Philippine Time)'}</label>
             <input
               type="time"
               className="input-field mb-4"
@@ -1211,7 +1309,7 @@ export default function EmployeeDashboard() {
               className="input-field mb-6 min-h-[80px] resize-y"
               value={disputeForm.reason}
               onChange={(e) => setDisputeForm({ ...disputeForm, reason: e.target.value })}
-              placeholder="e.g. I forgot to time in when I arrived."
+              placeholder={disputeForm.type === 'TimeOut' ? 'e.g. I forgot to time out before leaving.' : 'e.g. I forgot to time in when I arrived.'}
             />
 
             <div className="flex gap-3">
@@ -1252,7 +1350,7 @@ export default function EmployeeDashboard() {
                 Dispute {disputeResultToast.status === 'Approved' ? 'Approved' : 'Declined'}
               </p>
               <p className="text-white/80 text-xs mt-1">
-                Your time-in dispute for {disputeResultToast.date} was {disputeResultToast.status === 'Approved' ? 'approved' : 'declined'} by HR.
+                Your {disputeResultToast.disputeType === 'TimeOut' ? 'time-out' : 'time-in'} dispute for {disputeResultToast.date} was {disputeResultToast.status === 'Approved' ? 'approved' : 'declined'} by HR.
               </p>
             </div>
             <button
@@ -1457,18 +1555,24 @@ export default function EmployeeDashboard() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {myDisputes.map((d) => (
-                    <div key={d.id} className="flex items-center justify-between gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <div className="min-w-0">
-                        <div className="font-medium text-slate-900 text-xs truncate">{d.attendance_log_id ? 'Late dispute' : 'Missed time-in'} — {d.dispute_date}</div>
-                        <div className="text-slate-400 text-[10px] mt-0.5">
-                          {d.original_time_in && <>{new Date(d.original_time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })} → </>}
-                          {new Date(d.claimed_time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}
+                  {myDisputes.map((d) => {
+                    const dType = d.dispute_type || 'TimeIn';
+                    const label = dType === 'TimeOut' ? 'Missed time-out' : d.attendance_log_id ? 'Late dispute' : 'Missed time-in';
+                    const original = dType === 'TimeOut' ? d.original_time_out : d.original_time_in;
+                    const claimed = dType === 'TimeOut' ? d.claimed_time_out : d.claimed_time_in;
+                    return (
+                      <div key={d.id} className="flex items-center justify-between gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                        <div className="min-w-0">
+                          <div className="font-medium text-slate-900 text-xs truncate">{label} — {d.dispute_date}</div>
+                          <div className="text-slate-400 text-[10px] mt-0.5">
+                            {original && <>{new Date(original).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })} → </>}
+                            {claimed && new Date(claimed).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}
+                          </div>
                         </div>
+                        <span className={d.status === 'Approved' ? 'tag-present' : d.status === 'Rejected' ? 'tag-late' : 'tag-excused'}>{d.status}</span>
                       </div>
-                      <span className={d.status === 'Approved' ? 'tag-present' : d.status === 'Rejected' ? 'tag-late' : 'tag-excused'}>{d.status}</span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
