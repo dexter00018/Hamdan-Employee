@@ -68,7 +68,7 @@ export default function HRDashboard() {
   const [payslipCutoff, setPayslipCutoff] = useState('');
   const [payslipUploading, setPayslipUploading] = useState(false);
   const [payslipMsg, setPayslipMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [employeePayslips, setEmployeePayslips] = useState<{ id: string; cutoff_label: string; file_name: string; uploaded_at: string }[]>([]);
+  const [employeePayslips, setEmployeePayslips] = useState<{ id: string; cutoff_label: string; file_name: string; uploaded_at: string; published: boolean; published_at: string | null }[]>([]);
   const [employeePayslipsLoading, setEmployeePayslipsLoading] = useState(false);
   const payslipFileRef = useRef<HTMLInputElement>(null);
 
@@ -746,6 +746,7 @@ export default function HRDashboard() {
     setPayslipFile(null);
     setPayslipCutoff('');
     setPayslipMsg(null);
+    setPublishMsg(null);
     if (payslipFileRef.current) payslipFileRef.current.value = '';
     fetchEmployeePayslips(p.id);
     setModalMode('payslips');
@@ -855,12 +856,46 @@ export default function HRDashboard() {
     setEmployeePayslipsLoading(true);
     const { data, error } = await supabase
       .from('payslips')
-      .select('id, cutoff_label, file_name, file_path, uploaded_at')
+      .select('id, cutoff_label, file_name, file_path, uploaded_at, published, published_at')
       .eq('user_id', userId)
       .order('uploaded_at', { ascending: false });
     if (error) console.error('Error fetching employee payslips:', error);
-    setEmployeePayslips((data || []) as { id: string; cutoff_label: string; file_name: string; file_path: string; uploaded_at: string }[]);
+    setEmployeePayslips((data || []) as { id: string; cutoff_label: string; file_name: string; file_path: string; uploaded_at: string; published: boolean; published_at: string | null }[]);
     setEmployeePayslipsLoading(false);
+  };
+
+  // --- Publish payslip (triggers the payslip email send) ---
+  // Marks the payslip published (visible/emailed) and asks the local API
+  // route to fire the n8n webhook so the email goes out right away, instead
+  // of waiting for the workflow's 10-minute polling fallback.
+  const [publishingId, setPublishingId] = useState<string | null>(null);
+  const [publishMsg, setPublishMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const publishPayslip = async (payslipId: string, employeeId: string) => {
+    setPublishingId(payslipId);
+    setPublishMsg(null);
+    try {
+      const res = await fetch('/api/publish-payslip', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payslip_id: payslipId }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || 'Failed to publish payslip.');
+
+      setPublishMsg({
+        type: 'success',
+        text: result.emailTriggered
+          ? 'Published! Email is being sent now.'
+          : 'Published, but the instant email trigger failed -- it will still go out within 10 minutes via the automatic check.',
+      });
+      await fetchEmployeePayslips(employeeId);
+    } catch (err: any) {
+      console.error('Error publishing payslip:', err);
+      setPublishMsg({ type: 'error', text: err?.message ?? 'Failed to publish payslip.' });
+    } finally {
+      setPublishingId(null);
+    }
   };
 
   // Generate cutoff options: current month ± 3 months, both halves.
@@ -1581,6 +1616,11 @@ export default function HRDashboard() {
             </div>
 
             {/* Existing payslips */}
+            {publishMsg && (
+              <div className={`p-2.5 rounded-xl text-xs font-bold mb-3 ${publishMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                {publishMsg.text}
+              </div>
+            )}
             {employeePayslipsLoading ? (
               <p className="text-slate-400 text-xs mb-4">Loading payslips...</p>
             ) : employeePayslips.length === 0 ? (
@@ -1597,15 +1637,34 @@ export default function HRDashboard() {
                       <p className="text-slate-300 text-[10px]">
                         {new Date(ps.uploaded_at).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' })}
                       </p>
+                      {ps.published ? (
+                        <span className="tag-present inline-block mt-1">
+                          Published{ps.published_at ? ` · ${new Date(ps.published_at).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric' })}` : ''}
+                        </span>
+                      ) : (
+                        <span className="tag-excused inline-block mt-1">Not yet published</span>
+                      )}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => deletePayslip(ps.id, (ps as any).file_path, selectedProfile.id)}
-                      className="flex-shrink-0 text-rose-500 hover:text-rose-700 text-xs font-bold transition px-2"
-                      title="Delete payslip"
-                    >
-                      ✕
-                    </button>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      {!ps.published && (
+                        <button
+                          type="button"
+                          onClick={() => publishPayslip(ps.id, selectedProfile.id)}
+                          disabled={publishingId === ps.id}
+                          className="flex-shrink-0 flex items-center gap-1.5 bg-blue-600 text-white text-xs font-bold px-3 py-2 rounded-full hover:bg-blue-700 transition disabled:opacity-50"
+                        >
+                          {publishingId === ps.id ? <><Spinner size="sm" />Publishing...</> : 'Publish'}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => deletePayslip(ps.id, (ps as any).file_path, selectedProfile.id)}
+                        className="flex-shrink-0 text-rose-500 hover:text-rose-700 text-xs font-bold transition px-2"
+                        title="Delete payslip"
+                      >
+                        ✕
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
