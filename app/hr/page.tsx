@@ -20,6 +20,8 @@ type Profile = {
   full_name: string | null;
   employee_id: string | null;
   designation: string | null;
+  avatar_url: string | null;
+  employee_email: string | null;
 };
 
 // Must match app/employee/page.tsx and app/api/time-in/route.ts.
@@ -46,8 +48,33 @@ export default function HRDashboard() {
   // Which modal is open: null | 'choice' | 'edit' | 'payslips'
   const [modalMode, setModalMode] = useState<null | 'choice' | 'edit' | 'payslips'>(null);
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null);
-  const [editing, setEditing] = useState({ id: null as string | null, full_name: '', employee_id: '', designation: '', sss_number: '', philhealth_number: '', pagibig_number: '', tin_number: '', hired_date: '', employment_status: '' });
+  const [editing, setEditing] = useState({ id: null as string | null, full_name: '', employee_id: '', designation: '', employee_email: '', sss_number: '', philhealth_number: '', pagibig_number: '', tin_number: '', hired_date: '', employment_status: '' });
   const [saveLoading, setSaveLoading] = useState(false);
+
+  // Avatar upload (HR uploads directly on behalf of the employee) --
+  // stored in the public "avatars" Supabase Storage bucket, URL saved
+  // into profiles.avatar_url. See storage RLS: HR/super_admin only.
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [currentAvatarUrl, setCurrentAvatarUrl] = useState<string | null>(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const MAX_AVATAR_MB = 5;
+
+  const handleAvatarChange = (file: File | null) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setErrorMsg('Please choose an image file.');
+      return;
+    }
+    if (file.size > MAX_AVATAR_MB * 1024 * 1024) {
+      setErrorMsg(`Image must be under ${MAX_AVATAR_MB}MB.`);
+      return;
+    }
+    setErrorMsg(null);
+    setAvatarFile(file);
+    setAvatarPreview(URL.createObjectURL(file));
+  };
 
   // Announcement States
   const [announcementId, setAnnouncementId] = useState<string | null>(null);
@@ -136,7 +163,7 @@ export default function HRDashboard() {
         .order('time_in', { ascending: false, nullsFirst: false }),
       supabase
         .from('profiles')
-        .select('id, full_name, employee_id, designation')
+        .select('id, full_name, employee_id, designation, avatar_url, employee_email')
         .eq('role', 'employee')
         .order('full_name'),
     ]);
@@ -713,6 +740,7 @@ export default function HRDashboard() {
       full_name: p.full_name || '',
       employee_id: p.employee_id || '',
       designation: p.designation || '',
+      employee_email: p.employee_email || '',
       sss_number: '',
       philhealth_number: '',
       pagibig_number: '',
@@ -720,6 +748,14 @@ export default function HRDashboard() {
       hired_date: '',
       employment_status: '',
     });
+
+    // Reset avatar picker state and load the employee's current photo
+    // (if any) as the starting preview.
+    setAvatarFile(null);
+    setAvatarPreview(null);
+    setCurrentAvatarUrl(p.avatar_url ?? null);
+    if (avatarInputRef.current) avatarInputRef.current.value = '';
+
     setModalMode('edit');
 
     const { data: govIdData } = await supabase
@@ -788,13 +824,42 @@ export default function HRDashboard() {
     if (!editing.id) return;
     setSaveLoading(true);
 
+    // Upload the new avatar first (if HR picked one) so we have the
+    // final public URL ready to include in the same profiles update
+    // below -- avoids a second round-trip / partial-save state.
+    let nextAvatarUrl: string | undefined = undefined;
+    if (avatarFile) {
+      setAvatarUploading(true);
+      const ext = avatarFile.name.split('.').pop() || 'jpg';
+      const filePath = `${editing.id}/avatar_${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, avatarFile, { contentType: avatarFile.type, upsert: false });
+
+      if (uploadError) {
+        console.error('Error uploading avatar:', uploadError);
+        setErrorMsg(getFriendlyErrorMessage(uploadError.message));
+        setAvatarUploading(false);
+        setSaveLoading(false);
+        return;
+      }
+
+      const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
+      nextAvatarUrl = publicUrlData.publicUrl;
+      setAvatarUploading(false);
+    }
+
+    const updatePayload: Record<string, any> = {
+      full_name: editing.full_name,
+      employee_id: editing.employee_id,
+      designation: editing.designation,
+      employee_email: editing.employee_email.trim() || null,
+    };
+    if (nextAvatarUrl !== undefined) updatePayload.avatar_url = nextAvatarUrl;
+
     const { error } = await supabase
       .from('profiles')
-      .update({
-        full_name: editing.full_name,
-        employee_id: editing.employee_id,
-        designation: editing.designation,
-      })
+      .update(updatePayload)
       .eq('id', editing.id);
 
     if (error) {
@@ -1359,7 +1424,14 @@ export default function HRDashboard() {
               {!loadingData && profiles.length === 0 && <p className="text-slate-400 text-xs">No employees found.</p>}
               {paginatedProfiles.map((p) => (
                 <button key={p.id} onClick={() => openProfileChoice(p)} className="w-full flex items-center gap-2.5 text-left p-3 rounded-2xl hover:bg-slate-50 border border-slate-100 transition">
-                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-50 text-blue-600 font-bold text-[10px] flex items-center justify-center">{initials(p.full_name)}</div>
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-50 text-blue-600 font-bold text-[10px] flex items-center justify-center overflow-hidden">
+                    {p.avatar_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- external Supabase Storage URL, not a static asset
+                      <img src={p.avatar_url} alt={p.full_name ?? 'Employee'} className="w-full h-full object-cover" />
+                    ) : (
+                      initials(p.full_name)
+                    )}
+                  </div>
                   <div className="min-w-0">
                     <div className="font-medium text-slate-900 text-xs truncate">{p.full_name}</div>
                     <div className="text-blue-600 text-[10px] truncate">{p.designation || '---'}</div>
@@ -1505,8 +1577,13 @@ export default function HRDashboard() {
       {modalMode === 'choice' && selectedProfile && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
           <div className="w-full max-w-xs card-style shadow-2xl text-center">
-            <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-blue-50 text-blue-600 font-bold text-sm flex items-center justify-center">
-              {initials(selectedProfile.full_name)}
+            <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-blue-50 text-blue-600 font-bold text-sm flex items-center justify-center overflow-hidden">
+              {selectedProfile.avatar_url ? (
+                // eslint-disable-next-line @next/next/no-img-element -- external Supabase Storage URL, not a static asset
+                <img src={selectedProfile.avatar_url} alt={selectedProfile.full_name ?? 'Employee'} className="w-full h-full object-cover" />
+              ) : (
+                initials(selectedProfile.full_name)
+              )}
             </div>
             <h3 className="mb-1">{selectedProfile.full_name}</h3>
             <p className="text-slate-400 text-xs mb-6">{selectedProfile.designation || '---'}</p>
@@ -1551,6 +1628,35 @@ export default function HRDashboard() {
                 ← Back
               </button>
             </div>
+
+            {/* Profile Photo — HR can upload/replace directly on behalf
+                of the employee. Stored in the public "avatars" bucket;
+                the URL is only written to profiles.avatar_url on Save. */}
+            <div className="mb-6">
+              <p className="label-branded mb-2">Profile Photo</p>
+              <div className="flex items-center gap-3">
+                <div className="w-14 h-14 rounded-full bg-slate-100 overflow-hidden border border-slate-200 flex-shrink-0 flex items-center justify-center">
+                  {(avatarPreview || currentAvatarUrl) ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- external Supabase Storage URL, not a static asset
+                    <img src={avatarPreview || currentAvatarUrl || ''} alt="Avatar preview" className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-slate-400 text-[9px] font-bold uppercase tracking-wide text-center px-1">No Photo</span>
+                  )}
+                </div>
+                <label className="inline-flex items-center gap-1.5 text-blue-600 text-xs font-bold cursor-pointer hover:underline">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>
+                  {(avatarPreview || currentAvatarUrl) ? 'Change Photo' : 'Upload Photo'}
+                  <input
+                    ref={avatarInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => handleAvatarChange(e.target.files?.[0] ?? null)}
+                  />
+                </label>
+              </div>
+            </div>
+
             <input className="input-field mb-3" value={editing.full_name} onChange={e => setEditing({...editing, full_name: e.target.value})} placeholder="Full Name" />
             <div className="mb-3">
               <input className="input-field" value={editing.employee_id} onChange={e => setEditing({...editing, employee_id: e.target.value})} placeholder="Employee ID" />
@@ -1560,7 +1666,14 @@ export default function HRDashboard() {
                 </p>
               )}
             </div>
-            <input className="input-field mb-6" value={editing.designation} onChange={e => setEditing({...editing, designation: e.target.value})} placeholder="Designation" />
+            <input className="input-field mb-3" value={editing.designation} onChange={e => setEditing({...editing, designation: e.target.value})} placeholder="Designation" />
+            <input
+              type="email"
+              className="input-field mb-6"
+              value={editing.employee_email}
+              onChange={e => setEditing({...editing, employee_email: e.target.value})}
+              placeholder="Employee Email (for notifications)"
+            />
 
             <div className="mb-6 pt-3 border-t border-slate-100">
               <p className="label-branded mb-3">Government IDs &amp; Employment Details</p>
@@ -1589,7 +1702,7 @@ export default function HRDashboard() {
               <button className="flex-1 p-3 bg-slate-100 rounded-full font-medium text-sm" onClick={closeModal}>Cancel</button>
               <button className="flex-1 btn-primary" onClick={saveEdit} disabled={saveLoading || !!editingEmployeeIdConflict}>
                 {saveLoading ? (
-                  <span className="flex items-center justify-center gap-2"><Spinner size="sm" />Saving...</span>
+                  <span className="flex items-center justify-center gap-2"><Spinner size="sm" />{avatarUploading ? 'Uploading photo...' : 'Saving...'}</span>
                 ) : editingEmployeeIdConflict ? 'Fix Conflict First' : 'Save'}
               </button>
             </div>
