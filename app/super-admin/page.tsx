@@ -54,8 +54,6 @@ export default function SuperAdminDashboard() {
       return 'This email address is not a valid format.';
     }
     if (msg.includes('duplicate key value violates unique constraint')) {
-      // Generic fallback for any other unique constraint we haven't
-      // special-cased above -- still better than the raw SQL text.
       return 'Another account is already using the same information (e.g. Employee ID or Email). Please check and try again.';
     }
     return rawMessage;
@@ -70,6 +68,19 @@ export default function SuperAdminDashboard() {
   const [archivePasswordInput, setArchivePasswordInput] = useState('');
   const [archivePasswordError, setArchivePasswordError] = useState<string | null>(null);
   const [archivePasswordVerifying, setArchivePasswordVerifying] = useState(false);
+
+  // --- Database Backup (mirrors the Archive password-confirmation pattern
+  // above) -- triggers the n8n workflow, which runs a full pg_dump on the
+  // server and emails the result. Gated behind a re-entered password the
+  // same way the archive action is, since this touches the entire
+  // database (including the auth schema).
+  const [backupLoading, setBackupLoading] = useState(false);
+  const [backupResult, setBackupResult] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [backupPasswordModalOpen, setBackupPasswordModalOpen] = useState(false);
+  const [backupPasswordInput, setBackupPasswordInput] = useState('');
+  const [backupPasswordError, setBackupPasswordError] = useState<string | null>(null);
+  const [backupPasswordVerifying, setBackupPasswordVerifying] = useState(false);
+
   const [attendanceSearch, setAttendanceSearch] = useState('');
   const [attendanceDateFilter, setAttendanceDateFilter] = useState(() =>
     new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())
@@ -77,8 +88,8 @@ export default function SuperAdminDashboard() {
   const [editingLog, setEditingLog] = useState<{
     id: string;
     employeeName: string;
-    timeInLocal: string; // datetime-local value, in PH time
-    timeOutLocal: string; // datetime-local value, in PH time (can be empty)
+    timeInLocal: string;
+    timeOutLocal: string;
     status: string;
   } | null>(null);
   const [logSaving, setLogSaving] = useState(false);
@@ -110,10 +121,6 @@ export default function SuperAdminDashboard() {
     const { data, error } = await supabase
       .from('attendance_logs')
       .select('id, time_in, time_out, log_date, status, profiles(full_name)')
-      // log_date is always populated (unlike time_in, which is null for
-      // 'Absent' rows) -- ordering by it keeps the most recent days first
-      // regardless of status. nullsFirst: false on time_in keeps each
-      // day's real time-ins ahead of any Absent placeholder for that day.
       .order('log_date', { ascending: false })
       .order('time_in', { ascending: false, nullsFirst: false })
       .limit(200);
@@ -137,11 +144,6 @@ export default function SuperAdminDashboard() {
     }
   };
 
-  // --- Manila timezone helpers ---
-  // The database always stores UTC. The Philippines has a fixed UTC+8
-  // offset (no daylight saving), so we can safely convert both ways
-  // without needing a full timezone library.
-
   const toManilaInputValue = (iso: string) => {
     const d = new Date(iso);
     const fmt = new Intl.DateTimeFormat('en-CA', {
@@ -161,7 +163,6 @@ export default function SuperAdminDashboard() {
   };
 
   const manilaInputValueToUTCISO = (value: string) => {
-    // value looks like "2026-07-03T08:09" (a PH wall-clock time)
     return new Date(`${value}:00+08:00`).toISOString();
   };
 
@@ -174,9 +175,6 @@ export default function SuperAdminDashboard() {
     const matchesSearch = log.profiles?.full_name
       ?.toLowerCase()
       .includes(attendanceSearch.toLowerCase());
-    // Use log_date directly -- it's always populated, unlike time_in, which
-    // is null for 'Absent' rows (no time-in happened that day) and would
-    // otherwise make those rows unmatchable by any date filter.
     const matchesDate = attendanceDateFilter
       ? log.log_date === attendanceDateFilter
       : true;
@@ -210,10 +208,6 @@ export default function SuperAdminDashboard() {
 
     setArchivePasswordVerifying(true);
 
-    // There's no dedicated "just check this password" endpoint -- the
-    // standard way to re-verify is to sign in again with it. Since it's
-    // the same account, this just refreshes the existing session; it
-    // doesn't log anyone else in or out.
     const { error: signInError } = await supabase.auth.signInWithPassword({
       email: userData.user.email,
       password: archivePasswordInput,
@@ -258,9 +252,65 @@ export default function SuperAdminDashboard() {
           : `Archived ${row.archived_attendance_logs} attendance log(s), ${row.archived_disputes} dispute(s), ${row.archived_leave_requests} leave request(s), and ${row.archived_leave_request_days} leave day(s).`,
     });
 
-    // Refresh so the (now-shrunk) live tables reflect immediately.
     await fetchAttendanceLogs();
     setArchiveLoading(false);
+  };
+
+  // --- Database Backup handlers (mirrors the archive flow exactly) ---
+  const handleBackupDatabase = () => {
+    setBackupPasswordInput('');
+    setBackupPasswordError(null);
+    setBackupPasswordModalOpen(true);
+  };
+
+  const confirmBackupWithPassword = async () => {
+    setBackupPasswordError(null);
+
+    const { data: userData, error: getUserError } = await supabase.auth.getUser();
+    if (getUserError || !userData.user?.email) {
+      setBackupPasswordError('Could not verify your session. Please try logging in again.');
+      return;
+    }
+
+    setBackupPasswordVerifying(true);
+
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email: userData.user.email,
+      password: backupPasswordInput,
+    });
+
+    setBackupPasswordVerifying(false);
+
+    if (signInError) {
+      setBackupPasswordError('Incorrect password.');
+      return;
+    }
+
+    setBackupPasswordModalOpen(false);
+    setBackupPasswordInput('');
+    await runBackupDatabase();
+  };
+
+  const runBackupDatabase = async () => {
+    setBackupLoading(true);
+    setBackupResult(null);
+
+    try {
+      const res = await fetch('/api/backup-database', { method: 'POST' });
+      const result = await res.json();
+
+      if (!res.ok) throw new Error(result.error || 'Failed to start the backup.');
+
+      setBackupResult({
+        type: 'success',
+        text: "Backup started! It's running on the server now -- you'll get an email with the .sql file attached once it finishes (success or failure).",
+      });
+    } catch (err: any) {
+      console.error('Error triggering backup:', err);
+      setBackupResult({ type: 'error', text: err?.message ?? 'Failed to start the backup.' });
+    } finally {
+      setBackupLoading(false);
+    }
   };
 
   const saveEditLog = async () => {
@@ -269,9 +319,7 @@ export default function SuperAdminDashboard() {
 
     try {
       const newTimeInISO = manilaInputValueToUTCISO(editingLog.timeInLocal);
-      // Keep log_date consistent with the corrected time_in (in PH time)
       const newLogDate = editingLog.timeInLocal.split('T')[0];
-      // time_out is optional -- only convert it if the admin filled it in.
       const newTimeOutISO = editingLog.timeOutLocal
         ? manilaInputValueToUTCISO(editingLog.timeOutLocal)
         : null;
@@ -342,9 +390,6 @@ export default function SuperAdminDashboard() {
 
     try {
       if (editingId) {
-        // Editing an existing profile stays a normal client-side update,
-        // since it doesn't touch auth and RLS should already restrict
-        // this to admins only.
         const { error } = await supabase
           .from('profiles')
           .update({
@@ -363,11 +408,6 @@ export default function SuperAdminDashboard() {
         return;
       }
 
-      // Create mode: call our secure server-side API route instead of
-      // supabase.auth.signUp(). signUp() would create the user AND log
-      // them in on this browser, silently kicking out the admin's own
-      // session. The API route uses the service_role key on the server
-      // to create the user without touching the admin's session at all.
       const res = await fetch('/api/create-employee', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -411,10 +451,6 @@ export default function SuperAdminDashboard() {
     try {
       const redirectTo = `${window.location.origin}/auth/reset-password`;
 
-      // Uses supabaseAuthActions (a plain, non-cookie-syncing client) so
-      // the generated recovery link is implicit-flow / hash-based, not
-      // tied to a PKCE verifier stored in THIS (the admin's) browser --
-      // see lib/supabase.ts for the full explanation.
       const { error } = await supabaseAuthActions.auth.resetPasswordForEmail(resetEmail, {
         redirectTo,
       });
@@ -436,10 +472,6 @@ export default function SuperAdminDashboard() {
     }
   };
 
-  // Real-time warning: flags if the Employee ID being typed already
-  // belongs to another account, so the admin sees it BEFORE submitting
-  // instead of only after a failed save. Excludes the profile currently
-  // being edited (so editing someone's own record doesn't false-flag).
   const employeeIdConflict = useMemo(() => {
     const trimmed = employeeId.trim().toLowerCase();
     if (!trimmed) return null;
@@ -450,8 +482,6 @@ export default function SuperAdminDashboard() {
     return match ? match.full_name : null;
   }, [employeeId, employees, editingId]);
 
-  // Same idea for Full Name -- not a hard DB constraint, but duplicate
-  // names are a common source of mix-ups, so we warn (non-blocking).
   const fullNameConflict = useMemo(() => {
     const trimmed = fullName.trim().toLowerCase();
     if (!trimmed) return null;
@@ -462,15 +492,10 @@ export default function SuperAdminDashboard() {
     return match ? true : false;
   }, [fullName, employees, editingId]);
 
-  // Email can't be checked client-side (emails live in auth.users, not
-  // the profiles table the browser can read), so we debounce a call to
-  // our own /api/check-email route as the admin types.
   const [emailConflict, setEmailConflict] = useState(false);
   const [emailChecking, setEmailChecking] = useState(false);
 
   useEffect(() => {
-    // Only relevant when creating a new account, not editing an existing
-    // one (edit mode doesn't show/change the email field at all).
     if (editingId || !email.trim()) {
       setEmailConflict(false);
       return;
@@ -494,14 +519,11 @@ export default function SuperAdminDashboard() {
         setEmailConflict(!!result.exists);
       } catch (err) {
         console.error('Error checking email availability:', err);
-        // Fail open -- don't block the form just because the check
-        // itself failed; the server-side create step will still catch
-        // a real duplicate.
         setEmailConflict(false);
       } finally {
         setEmailChecking(false);
       }
-    }, 500); // debounce so we're not firing a request on every keystroke
+    }, 500);
 
     return () => clearTimeout(timer);
   }, [email, editingId]);
@@ -525,10 +547,6 @@ export default function SuperAdminDashboard() {
       .join('')
       .toUpperCase();
 
-  // Only relevant while creating a new account (editing never shows the
-  // password fields). Only flags once both fields have something typed,
-  // so the note doesn't flash red while the person is still typing the
-  // first field.
   const passwordMismatch =
     !editingId && password.length > 0 && confirmPassword.length > 0 && password !== confirmPassword;
 
@@ -1164,6 +1182,34 @@ export default function SuperAdminDashboard() {
             </p>
           )}
         </section>
+
+        {/* DATABASE BACKUP */}
+        <section className="card-style !p-4 sm:!p-5 md:!p-6">
+          <h3 className="mb-1">Database Backup</h3>
+          <p className="text-sm text-slate-400 mb-4">
+            Runs a full backup (schema + all data, including the auth schema) of the production Supabase
+            database and emails you the .sql file once it completes -- a genuine off-site copy, separate
+            from the server this app runs on.
+          </p>
+          <button
+            type="button"
+            onClick={handleBackupDatabase}
+            disabled={backupLoading}
+            className="bg-slate-100 text-slate-700 px-5 py-2.5 rounded-full font-bold text-sm hover:bg-slate-200 transition disabled:opacity-50"
+          >
+            {backupLoading ? (
+              <span className="flex items-center gap-2">
+                <Spinner size="sm" />
+                Starting Backup...
+              </span>
+            ) : '🗄️ Backup Database'}
+          </button>
+          {backupResult && (
+            <p className={`text-sm font-medium mt-3 ${backupResult.type === 'error' ? 'text-red-600' : 'text-green-600'}`}>
+              {backupResult.type === 'error' ? `⚠️ ${backupResult.text}` : `✅ ${backupResult.text}`}
+            </p>
+          )}
+        </section>
       </div>
 
       {/* ARCHIVE PASSWORD CONFIRMATION MODAL */}
@@ -1215,6 +1261,61 @@ export default function SuperAdminDashboard() {
                     Verifying...
                   </span>
                 ) : 'Confirm & Archive'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BACKUP PASSWORD CONFIRMATION MODAL */}
+      {backupPasswordModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm card-style shadow-2xl">
+            <h3 className="mb-2">Confirm Your Password</h3>
+            <p className="text-sm text-slate-400 mb-4">
+              For security, re-enter your password to run a full database backup. This includes every
+              user&apos;s account records, and the resulting file will be emailed to you.
+            </p>
+            <input
+              type="password"
+              autoFocus
+              placeholder="Your password"
+              value={backupPasswordInput}
+              onChange={(e) => setBackupPasswordInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && backupPasswordInput && !backupPasswordVerifying) {
+                  confirmBackupWithPassword();
+                }
+              }}
+              className="input-field"
+            />
+            {backupPasswordError && (
+              <p className="text-red-600 text-sm font-medium mt-2">⚠️ {backupPasswordError}</p>
+            )}
+            <div className="flex gap-3 mt-6">
+              <button
+                type="button"
+                onClick={() => {
+                  setBackupPasswordModalOpen(false);
+                  setBackupPasswordInput('');
+                  setBackupPasswordError(null);
+                }}
+                className="flex-1 p-3 bg-slate-100 rounded-full font-medium text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmBackupWithPassword}
+                disabled={!backupPasswordInput || backupPasswordVerifying}
+                className="flex-1 btn-primary disabled:opacity-50"
+              >
+                {backupPasswordVerifying ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <Spinner size="sm" />
+                    Verifying...
+                  </span>
+                ) : 'Confirm & Backup'}
               </button>
             </div>
           </div>

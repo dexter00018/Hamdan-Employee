@@ -6,9 +6,13 @@ import { cookies } from 'next/headers';
 // whenever the local ngrok process restarts. Set N8N_PUBLISH_PAYSLIP_WEBHOOK_URL
 // in Vercel's project environment variables so updating it doesn't require a
 // redeploy -- the hardcoded value below is only a fallback for local dev.
+//
+// IMPORTANT: this is the custom "path" configured on the webhook node itself
+// (no ID segment needed) -- confirmed directly via the n8n editor's
+// Production URL tab. Do not add an ID segment back in here.
 const N8N_WEBHOOK_URL =
   process.env.N8N_PUBLISH_PAYSLIP_WEBHOOK_URL ||
-  'https://yearly-goggles-proved.ngrok-free.dev/webhook/46f7dcd7-df0a-4224-b533-d57b401f9e9e/publish-payslip';
+  'https://yearly-goggles-proved.ngrok-free.dev/webhook/publish-payslip';
 
 // Shared secret the n8n workflow checks before processing a publish request --
 // without this, anyone who discovered the webhook URL could re-trigger a
