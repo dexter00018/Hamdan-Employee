@@ -530,12 +530,15 @@ export default function SuperAdminDashboard() {
 
   const roleTagClass = (r: string) => (r === 'admin' ? 'tag-admin' : 'tag-employee');
 
+  // Type-specific leave statuses (e.g. "Sick Leave", "Vacation Leave",
+  // "Emergency Leave") set by settle_leave_day() all get the same tag
+  // styling as the old generic "Leave" status -- match by substring.
   const statusTagClass = (s: string) => {
-    const v = s?.toLowerCase();
+    const v = s?.toLowerCase() ?? '';
     if (v === 'late') return 'tag-late';
     if (v === 'excused') return 'tag-excused';
     if (v === 'absent') return 'tag-absent';
-    if (v === 'leave') return 'tag-leave';
+    if (v.includes('leave')) return 'tag-leave';
     return 'tag-present';
   };
 
@@ -1371,7 +1374,9 @@ export default function SuperAdminDashboard() {
               <option value="Late">Late</option>
               <option value="Excused">Excused</option>
               <option value="Absent">Absent</option>
-              <option value="Leave">Leave</option>
+              <option value="Sick Leave">Sick Leave</option>
+              <option value="Vacation Leave">Vacation Leave</option>
+              <option value="Emergency Leave">Emergency Leave</option>
             </select>
 
             <div className="flex gap-3">

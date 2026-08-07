@@ -501,11 +501,14 @@ export default function EmployeeDashboard() {
     }
   };
 
+  // Type-specific leave statuses (e.g. "Sick Leave", "Vacation Leave",
+  // "Emergency Leave") all get the same tag styling as the old generic
+  // "Leave" status -- match by substring instead of exact equality.
   const statusTagClass = (s: string | null) => {
-    const v = s?.toLowerCase();
+    const v = s?.toLowerCase() ?? '';
     if (v === 'late') return 'tag-late';
     if (v === 'absent') return 'tag-absent';
-    if (v === 'leave') return 'tag-leave';
+    if (v.includes('leave')) return 'tag-leave';
     return 'tag-present';
   };
 
@@ -563,7 +566,10 @@ export default function EmployeeDashboard() {
   const [leaveMsg, setLeaveMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [leaveResultToast, setLeaveResultToast] = useState<{ status: string; leave_type: string } | null>(null);
   const isRegular = governmentIds?.employment_status === 'Regular';
-  const remainingCredits = leaveCredits ? leaveCredits.total_credits - leaveCredits.used_credits : 15;
+  // Flat 10 credits/year default -- matches the DB column default and
+  // the fallback used server-side in settle_leave_day() when a
+  // leave_credits row doesn't exist yet for the employee/year.
+  const remainingCredits = leaveCredits ? leaveCredits.total_credits - leaveCredits.used_credits : 10;
 
   const fetchMyLeaves = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -886,13 +892,18 @@ export default function EmployeeDashboard() {
     return h === 0 ? `${m} min` : `${h}h ${m}m`;
   };
 
+  // "Leave" here now covers any type-specific status ("Sick Leave",
+  // "Vacation Leave", "Emergency Leave") set by settle_leave_day(), not
+  // just the literal word "Leave" -- match by substring.
+  const isLeaveStatus = (s: string | null | undefined) => (s ?? '').toLowerCase().includes('leave');
+
   const summary = useMemo(() => {
     const cutoffLogs = history.filter(log => matchesCutoff(log.log_date, summaryCutoffKey));
     // "Present" here means the employee actually showed up (on-time or late) --
-    // it must exclude 'Absent' and 'Leave' rows, which now also live in
+    // it must exclude 'Absent' and any Leave-type rows, which now also live in
     // attendance_logs. Status is compared case-insensitively since it can
     // also be hand-edited directly in Supabase (e.g. "late" instead of "Late").
-    const present = cutoffLogs.filter(l => !['absent', 'leave'].includes(l.status?.toLowerCase() ?? '')).length;
+    const present = cutoffLogs.filter(l => l.status?.toLowerCase() !== 'absent' && !isLeaveStatus(l.status)).length;
     const late = cutoffLogs.filter(l => l.status?.toLowerCase() === 'late').length;
     const absent = cutoffLogs.filter(l => l.status?.toLowerCase() === 'absent').length;
     const onTime = present - late;
@@ -1606,7 +1617,7 @@ export default function EmployeeDashboard() {
                   Leave Credits ({new Date().getFullYear()})
                 </p>
                 <p className={`text-sm font-extrabold ${remainingCredits <= 3 ? 'text-orange-700' : 'text-green-700'}`}>
-                  {remainingCredits} / {leaveCredits?.total_credits ?? 15} remaining
+                  {remainingCredits} / {leaveCredits?.total_credits ?? 10} remaining
                 </p>
               </div>
             )}
@@ -1637,13 +1648,17 @@ export default function EmployeeDashboard() {
               ))}
             </div>
 
+            {/* Start/End Date -- no `min` restriction to today anymore, so
+                past dates can be filed retroactively (e.g. forgot to file
+                before a day already tagged "Absent" by the overnight
+                sweep). Once HR approves, settle_overdue_leave_days() will
+                flip that Absent tag to the specific leave type filed here. */}
             <label className="label-branded">Start Date</label>
             <input
               type="date"
               className="input-field mb-3"
               value={leaveForm.start_date}
               onChange={(e) => setLeaveForm({ ...leaveForm, start_date: e.target.value, end_date: e.target.value })}
-              min={new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())}
             />
 
             <label className="label-branded">End Date</label>
@@ -1652,12 +1667,15 @@ export default function EmployeeDashboard() {
               className="input-field mb-3"
               value={leaveForm.end_date}
               onChange={(e) => setLeaveForm({ ...leaveForm, end_date: e.target.value })}
-              min={leaveForm.start_date || new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())}
+              min={leaveForm.start_date || undefined}
             />
 
             {leaveForm.start_date && leaveForm.end_date && (
               <p className="text-slate-400 text-xs mb-3 ml-1">
                 📅 {countLeaveDays(leaveForm.start_date, leaveForm.end_date)} working day{countLeaveDays(leaveForm.start_date, leaveForm.end_date) > 1 ? 's' : ''}
+                {leaveForm.start_date < todayManila && (
+                  <span className="text-blue-600 font-bold"> · Filing for a past date</span>
+                )}
                 {isRegular && remainingCredits < countLeaveDays(leaveForm.start_date, leaveForm.end_date) && (
                   <span className="text-orange-600 font-bold"> · ⚠️ Exceeds remaining credits</span>
                 )}
