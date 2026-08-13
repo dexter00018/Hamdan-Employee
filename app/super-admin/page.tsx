@@ -4,6 +4,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { supabase, supabaseAuthActions } from '@/lib/supabase';
 import Spinner from '@/components/Spinner';
 
+const PAGE_SIZE = 5;
+
 export default function SuperAdminDashboard() {
   const [employees, setEmployees] = useState<any[]>([]);
   const [employeesLoading, setEmployeesLoading] = useState(true);
@@ -19,8 +21,6 @@ export default function SuperAdminDashboard() {
 
   // Edit account fields
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [createFormOpen, setCreateFormOpen] = useState(false);
-  const [resetFormOpen, setResetFormOpen] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{
@@ -58,10 +58,10 @@ export default function SuperAdminDashboard() {
     }
     return rawMessage;
   };
+
   const [attendanceLoading, setAttendanceLoading] = useState(false);
-  const [accountsOpen, setAccountsOpen] = useState(false);
-  const [attendanceOpen, setAttendanceOpen] = useState(false);
   const [attendanceFetched, setAttendanceFetched] = useState(false);
+
   const [archiveLoading, setArchiveLoading] = useState(false);
   const [archiveResult, setArchiveResult] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [archivePasswordModalOpen, setArchivePasswordModalOpen] = useState(false);
@@ -81,6 +81,24 @@ export default function SuperAdminDashboard() {
   const [backupPasswordError, setBackupPasswordError] = useState<string | null>(null);
   const [backupPasswordVerifying, setBackupPasswordVerifying] = useState(false);
 
+  // --- Section modals -- every management area (Create/Edit Account,
+  // Reset Password, User Accounts, Attendance Records, Data Archival,
+  // Database Backup) now opens from a compact icon button into its own
+  // modal, instead of an always-visible or accordion-expanding card.
+  // Keeps the dashboard body short and uncluttered.
+  const [createAccountModalOpen, setCreateAccountModalOpen] = useState(false);
+  const [resetPasswordModalOpen, setResetPasswordModalOpen] = useState(false);
+  const [userAccountsModalOpen, setUserAccountsModalOpen] = useState(false);
+  const [attendanceRecordsModalOpen, setAttendanceRecordsModalOpen] = useState(false);
+  const [archivalModalOpen, setArchivalModalOpen] = useState(false);
+  const [backupModalOpen, setBackupModalOpen] = useState(false);
+
+  // Pagination -- 5 records per page for both the User Accounts list and
+  // the Attendance Records list, now that both live inside a fixed-size
+  // modal rather than a full-width page section.
+  const [employeesPage, setEmployeesPage] = useState(1);
+  const [attendancePage, setAttendancePage] = useState(1);
+
   const [attendanceSearch, setAttendanceSearch] = useState('');
   const [attendanceDateFilter, setAttendanceDateFilter] = useState(() =>
     new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())
@@ -88,8 +106,8 @@ export default function SuperAdminDashboard() {
   const [editingLog, setEditingLog] = useState<{
     id: string;
     employeeName: string;
-    timeInLocal: string;
-    timeOutLocal: string;
+    timeInLocal: string; // datetime-local value, in PH time
+    timeOutLocal: string; // datetime-local value, in PH time (can be empty)
     status: string;
   } | null>(null);
   const [logSaving, setLogSaving] = useState(false);
@@ -121,6 +139,10 @@ export default function SuperAdminDashboard() {
     const { data, error } = await supabase
       .from('attendance_logs')
       .select('id, time_in, time_out, log_date, status, profiles(full_name)')
+      // log_date is always populated (unlike time_in, which is null for
+      // 'Absent' rows) -- ordering by it keeps the most recent days first
+      // regardless of status. nullsFirst: false on time_in keeps each
+      // day's real time-ins ahead of any Absent placeholder for that day.
       .order('log_date', { ascending: false })
       .order('time_in', { ascending: false, nullsFirst: false })
       .limit(200);
@@ -136,13 +158,24 @@ export default function SuperAdminDashboard() {
     setAttendanceLoading(false);
   };
 
-  const toggleAttendanceRecords = () => {
-    setAttendanceOpen((v) => !v);
+  const openUserAccountsModal = () => {
+    setEmployeesPage(1);
+    setUserAccountsModalOpen(true);
+  };
+
+  const openAttendanceRecordsModal = () => {
+    setAttendancePage(1);
+    setAttendanceRecordsModalOpen(true);
     if (!attendanceFetched) {
       setAttendanceFetched(true);
       fetchAttendanceLogs();
     }
   };
+
+  // --- Manila timezone helpers ---
+  // The database always stores UTC. The Philippines has a fixed UTC+8
+  // offset (no daylight saving), so we can safely convert both ways
+  // without needing a full timezone library.
 
   const toManilaInputValue = (iso: string) => {
     const d = new Date(iso);
@@ -163,6 +196,7 @@ export default function SuperAdminDashboard() {
   };
 
   const manilaInputValueToUTCISO = (value: string) => {
+    // value looks like "2026-07-03T08:09" (a PH wall-clock time)
     return new Date(`${value}:00+08:00`).toISOString();
   };
 
@@ -175,11 +209,37 @@ export default function SuperAdminDashboard() {
     const matchesSearch = log.profiles?.full_name
       ?.toLowerCase()
       .includes(attendanceSearch.toLowerCase());
+    // Use log_date directly -- it's always populated, unlike time_in, which
+    // is null for 'Absent' rows (no time-in happened that day) and would
+    // otherwise make those rows unmatchable by any date filter.
     const matchesDate = attendanceDateFilter
       ? log.log_date === attendanceDateFilter
       : true;
     return matchesSearch && matchesDate;
   });
+
+  // Reset to page 1 whenever the search or date filter changes, so we
+  // don't land on a now-empty page.
+  const handleAttendanceSearchChange = (value: string) => {
+    setAttendanceSearch(value);
+    setAttendancePage(1);
+  };
+  const handleAttendanceDateChange = (value: string) => {
+    setAttendanceDateFilter(value);
+    setAttendancePage(1);
+  };
+
+  const attendanceTotalPages = Math.max(1, Math.ceil(filteredAttendanceLogs.length / PAGE_SIZE));
+  const paginatedAttendanceLogs = filteredAttendanceLogs.slice(
+    (attendancePage - 1) * PAGE_SIZE,
+    attendancePage * PAGE_SIZE
+  );
+
+  const employeesTotalPages = Math.max(1, Math.ceil(employees.length / PAGE_SIZE));
+  const paginatedEmployees = employees.slice(
+    (employeesPage - 1) * PAGE_SIZE,
+    employeesPage * PAGE_SIZE
+  );
 
   const startEditLog = (log: any) => {
     setEditingLog({
@@ -192,6 +252,7 @@ export default function SuperAdminDashboard() {
   };
 
   const handleArchiveOldRecords = () => {
+    setArchivalModalOpen(false);
     setArchivePasswordInput('');
     setArchivePasswordError(null);
     setArchivePasswordModalOpen(true);
@@ -208,6 +269,10 @@ export default function SuperAdminDashboard() {
 
     setArchivePasswordVerifying(true);
 
+    // There's no dedicated "just check this password" endpoint -- the
+    // standard way to re-verify is to sign in again with it. Since it's
+    // the same account, this just refreshes the existing session; it
+    // doesn't log anyone else in or out.
     const { error: signInError } = await supabase.auth.signInWithPassword({
       email: userData.user.email,
       password: archivePasswordInput,
@@ -252,12 +317,14 @@ export default function SuperAdminDashboard() {
           : `Archived ${row.archived_attendance_logs} attendance log(s), ${row.archived_disputes} dispute(s), ${row.archived_leave_requests} leave request(s), and ${row.archived_leave_request_days} leave day(s).`,
     });
 
+    // Refresh so the (now-shrunk) live tables reflect immediately.
     await fetchAttendanceLogs();
     setArchiveLoading(false);
   };
 
   // --- Database Backup handlers (mirrors the archive flow exactly) ---
   const handleBackupDatabase = () => {
+    setBackupModalOpen(false);
     setBackupPasswordInput('');
     setBackupPasswordError(null);
     setBackupPasswordModalOpen(true);
@@ -319,7 +386,9 @@ export default function SuperAdminDashboard() {
 
     try {
       const newTimeInISO = manilaInputValueToUTCISO(editingLog.timeInLocal);
+      // Keep log_date consistent with the corrected time_in (in PH time)
       const newLogDate = editingLog.timeInLocal.split('T')[0];
+      // time_out is optional -- only convert it if the admin filled it in.
       const newTimeOutISO = editingLog.timeOutLocal
         ? manilaInputValueToUTCISO(editingLog.timeOutLocal)
         : null;
@@ -363,7 +432,21 @@ export default function SuperAdminDashboard() {
     setEmployeeId('');
     setDesignation('');
     setRole('employee');
-    setCreateFormOpen(false);
+    setCreateAccountModalOpen(false);
+  };
+
+  // Opens the Create Account modal fresh (not editing anyone).
+  const openCreateAccountModal = () => {
+    setEditingId(null);
+    setEmail('');
+    setPassword('');
+    setConfirmPassword('');
+    setFullName('');
+    setEmployeeId('');
+    setDesignation('');
+    setRole('employee');
+    setMessage(null);
+    setCreateAccountModalOpen(true);
   };
 
   const startEdit = (emp: any) => {
@@ -373,8 +456,8 @@ export default function SuperAdminDashboard() {
     setDesignation(emp.designation ?? '');
     setRole((emp.role ?? 'employee') as 'employee' | 'admin');
     setMessage(null);
-    setCreateFormOpen(true);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setUserAccountsModalOpen(false);
+    setCreateAccountModalOpen(true);
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -390,6 +473,9 @@ export default function SuperAdminDashboard() {
 
     try {
       if (editingId) {
+        // Editing an existing profile stays a normal client-side update,
+        // since it doesn't touch auth and RLS should already restrict
+        // this to admins only.
         const { error } = await supabase
           .from('profiles')
           .update({
@@ -408,6 +494,11 @@ export default function SuperAdminDashboard() {
         return;
       }
 
+      // Create mode: call our secure server-side API route instead of
+      // supabase.auth.signUp(). signUp() would create the user AND log
+      // them in on this browser, silently kicking out the admin's own
+      // session. The API route uses the service_role key on the server
+      // to create the user without touching the admin's session at all.
       const res = await fetch('/api/create-employee', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -451,6 +542,10 @@ export default function SuperAdminDashboard() {
     try {
       const redirectTo = `${window.location.origin}/auth/reset-password`;
 
+      // Uses supabaseAuthActions (a plain, non-cookie-syncing client) so
+      // the generated recovery link is implicit-flow / hash-based, not
+      // tied to a PKCE verifier stored in THIS (the admin's) browser --
+      // see lib/supabase.ts for the full explanation.
       const { error } = await supabaseAuthActions.auth.resetPasswordForEmail(resetEmail, {
         redirectTo,
       });
@@ -463,7 +558,7 @@ export default function SuperAdminDashboard() {
       });
 
       setResetEmail('');
-      setResetFormOpen(false);
+      setResetPasswordModalOpen(false);
     } catch (err: any) {
       console.error(err);
       setMessage({ type: 'error', text: err?.message ?? 'Reset password failed' });
@@ -472,6 +567,10 @@ export default function SuperAdminDashboard() {
     }
   };
 
+  // Real-time warning: flags if the Employee ID being typed already
+  // belongs to another account, so the admin sees it BEFORE submitting
+  // instead of only after a failed save. Excludes the profile currently
+  // being edited (so editing someone's own record doesn't false-flag).
   const employeeIdConflict = useMemo(() => {
     const trimmed = employeeId.trim().toLowerCase();
     if (!trimmed) return null;
@@ -482,6 +581,8 @@ export default function SuperAdminDashboard() {
     return match ? match.full_name : null;
   }, [employeeId, employees, editingId]);
 
+  // Same idea for Full Name -- not a hard DB constraint, but duplicate
+  // names are a common source of mix-ups, so we warn (non-blocking).
   const fullNameConflict = useMemo(() => {
     const trimmed = fullName.trim().toLowerCase();
     if (!trimmed) return null;
@@ -492,10 +593,15 @@ export default function SuperAdminDashboard() {
     return match ? true : false;
   }, [fullName, employees, editingId]);
 
+  // Email can't be checked client-side (emails live in auth.users, not
+  // the profiles table the browser can read), so we debounce a call to
+  // our own /api/check-email route as the admin types.
   const [emailConflict, setEmailConflict] = useState(false);
   const [emailChecking, setEmailChecking] = useState(false);
 
   useEffect(() => {
+    // Only relevant when creating a new account, not editing an existing
+    // one (edit mode doesn't show/change the email field at all).
     if (editingId || !email.trim()) {
       setEmailConflict(false);
       return;
@@ -519,11 +625,14 @@ export default function SuperAdminDashboard() {
         setEmailConflict(!!result.exists);
       } catch (err) {
         console.error('Error checking email availability:', err);
+        // Fail open -- don't block the form just because the check
+        // itself failed; the server-side create step will still catch
+        // a real duplicate.
         setEmailConflict(false);
       } finally {
         setEmailChecking(false);
       }
-    }, 500);
+    }, 500); // debounce so we're not firing a request on every keystroke
 
     return () => clearTimeout(timer);
   }, [email, editingId]);
@@ -550,6 +659,10 @@ export default function SuperAdminDashboard() {
       .join('')
       .toUpperCase();
 
+  // Only relevant while creating a new account (editing never shows the
+  // password fields). Only flags once both fields have something typed,
+  // so the note doesn't flash red while the person is still typing the
+  // first field.
   const passwordMismatch =
     !editingId && password.length > 0 && confirmPassword.length > 0 && password !== confirmPassword;
 
@@ -608,27 +721,86 @@ export default function SuperAdminDashboard() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4 md:gap-5">
-          {/* FORM CARD */}
-          <section className="card-style h-fit !p-4 sm:!p-5 md:!p-6">
-            <button
-              type="button"
-              onClick={() => setCreateFormOpen((v) => !v)}
-              className="w-full flex items-center justify-between gap-2"
-            >
-              <h3 className="mb-0">
-                {editingId ? 'Edit Account' : 'Create New Account'}
-              </h3>
-              <svg
-                width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                className={`text-slate-400 flex-shrink-0 transition-transform ${createFormOpen ? 'rotate-180' : ''}`}
-              >
-                <polyline points="6 9 12 15 18 9"/>
-              </svg>
-            </button>
+        {/* ACTION GRID -- every management area is a compact icon button
+            that opens its own modal, instead of an always-expanded or
+            accordion-style card. Keeps the dashboard short and tidy. */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <button
+            type="button"
+            onClick={openCreateAccountModal}
+            className="card-style !p-4 flex flex-col items-center justify-center gap-2 text-center hover:bg-slate-50 transition"
+          >
+            <span className="w-10 h-10 rounded-2xl bg-sky-50 flex items-center justify-center text-lg flex-shrink-0">➕</span>
+            <span className="font-bold text-slate-900 text-xs">Create New Account</span>
+          </button>
 
-            {createFormOpen && (
-            <form onSubmit={handleSave} className="space-y-4 mt-6">
+          <button
+            type="button"
+            onClick={() => { setResetEmail(''); setMessage(null); setResetPasswordModalOpen(true); }}
+            className="card-style !p-4 flex flex-col items-center justify-center gap-2 text-center hover:bg-slate-50 transition"
+          >
+            <span className="w-10 h-10 rounded-2xl bg-amber-50 flex items-center justify-center text-lg flex-shrink-0">🔑</span>
+            <span className="font-bold text-slate-900 text-xs">Reset Password</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={openUserAccountsModal}
+            className="card-style !p-4 flex flex-col items-center justify-center gap-2 text-center hover:bg-slate-50 transition"
+          >
+            <span className="w-10 h-10 rounded-2xl bg-blue-50 flex items-center justify-center text-lg flex-shrink-0">👥</span>
+            <span className="font-bold text-slate-900 text-xs">User Accounts</span>
+            <span className="text-slate-400 text-[10px] -mt-1">{totalAccounts} total</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={openAttendanceRecordsModal}
+            className="card-style !p-4 flex flex-col items-center justify-center gap-2 text-center hover:bg-slate-50 transition"
+          >
+            <span className="w-10 h-10 rounded-2xl bg-emerald-50 flex items-center justify-center text-lg flex-shrink-0">📋</span>
+            <span className="font-bold text-slate-900 text-xs">Attendance Records</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setArchivalModalOpen(true)}
+            className="card-style !p-4 flex flex-col items-center justify-center gap-2 text-center hover:bg-slate-50 transition"
+          >
+            <span className="w-10 h-10 rounded-2xl bg-slate-100 flex items-center justify-center text-lg flex-shrink-0">🗃️</span>
+            <span className="font-bold text-slate-900 text-xs">Data Archival</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setBackupModalOpen(true)}
+            className="card-style !p-4 flex flex-col items-center justify-center gap-2 text-center hover:bg-slate-50 transition"
+          >
+            <span className="w-10 h-10 rounded-2xl bg-slate-100 flex items-center justify-center text-lg flex-shrink-0">🗄️</span>
+            <span className="font-bold text-slate-900 text-xs">Database Backup</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ── CREATE / EDIT ACCOUNT MODAL ── */}
+      {createAccountModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm card-style shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="mb-0">{editingId ? 'Edit Account' : 'Create New Account'}</h3>
+              <button
+                type="button"
+                onClick={resetForm}
+                className="text-slate-400 hover:text-slate-600 transition"
+                aria-label="Close"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+
+            <form onSubmit={handleSave} className="space-y-4">
               <div>
                 <input
                   type="text"
@@ -764,80 +936,73 @@ export default function SuperAdminDashboard() {
                   : 'Create Account'}
               </button>
             </form>
-            )}
+          </div>
+        </div>
+      )}
 
-            {/* RESET PASSWORD FORM */}
-            <div className="pt-6 mt-6 border-t border-slate-100">
+      {/* ── RESET PASSWORD MODAL ── */}
+      {resetPasswordModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm card-style shadow-2xl">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="mb-0">Reset Password</h3>
               <button
                 type="button"
-                onClick={() => setResetFormOpen((v) => !v)}
-                className="w-full flex items-center justify-between gap-2"
+                onClick={() => setResetPasswordModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 transition"
+                aria-label="Close"
               >
-                <h3 className="mb-0">Reset Password</h3>
-                <svg
-                  width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                  className={`text-slate-400 flex-shrink-0 transition-transform ${resetFormOpen ? 'rotate-180' : ''}`}
-                >
-                  <polyline points="6 9 12 15 18 9"/>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
                 </svg>
               </button>
-
-              {resetFormOpen && (
-              <form
-                onSubmit={handleResetPassword}
-                className="space-y-3 mt-4"
-              >
-                <input
-                  type="email"
-                  placeholder="Email to reset"
-                  required
-                  value={resetEmail}
-                  onChange={(e) => setResetEmail(e.target.value)}
-                  className="input-field"
-                />
-
-                <button
-                  type="submit"
-                  disabled={resetLoading}
-                  className="btn-primary"
-                >
-                  {resetLoading ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <Spinner size="sm" />
-                      Sending...
-                    </span>
-                  ) : 'Send Reset Email'}
-                </button>
-              </form>
-              )}
             </div>
-          </section>
 
-          {/* TABLE SECTION */}
-          <section className="lg:col-span-2 card-style !p-4 sm:!p-5 md:!p-6">
-            <button
-              type="button"
-              onClick={() => setAccountsOpen((v) => !v)}
-              className="w-full flex items-center justify-between gap-2"
-            >
-              <h3 className="mb-0">
-                User Accounts
-                <span className="block text-[11px] font-medium text-slate-400 normal-case tracking-normal mt-0.5">
-                  {totalAccounts} account{totalAccounts === 1 ? '' : 's'}
-                </span>
-              </h3>
-              <svg
-                width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                className={`text-slate-400 flex-shrink-0 transition-transform ${accountsOpen ? 'rotate-180' : ''}`}
+            <form onSubmit={handleResetPassword} className="space-y-3">
+              <input
+                type="email"
+                placeholder="Email to reset"
+                required
+                value={resetEmail}
+                onChange={(e) => setResetEmail(e.target.value)}
+                className="input-field"
+              />
+
+              <button type="submit" disabled={resetLoading} className="btn-primary">
+                {resetLoading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <Spinner size="sm" />
+                    Sending...
+                  </span>
+                ) : 'Send Reset Email'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── USER ACCOUNTS MODAL ── */}
+      {userAccountsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm card-style shadow-2xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between mb-4 flex-shrink-0">
+              <div>
+                <h3 className="mb-0">User Accounts</h3>
+                <p className="text-slate-400 text-xs mt-1">{totalAccounts} account{totalAccounts === 1 ? '' : 's'}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setUserAccountsModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 transition"
+                aria-label="Close"
               >
-                <polyline points="6 9 12 15 18 9"/>
-              </svg>
-            </button>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
 
-            {accountsOpen && (
-            <div className="mt-4 md:mt-6">
-            {/* Mobile: card list */}
-            <div className="md:hidden space-y-2">
+            <div className="overflow-y-auto flex-1 space-y-2">
               {employeesLoading && employees.length === 0 && (
                 Array.from({ length: 5 }).map((_, i) => (
                   <div key={`emp-skel-${i}`} className="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-100 animate-pulse">
@@ -849,7 +1014,7 @@ export default function SuperAdminDashboard() {
                   </div>
                 ))
               )}
-              {employees.map((emp) => (
+              {!employeesLoading && paginatedEmployees.map((emp) => (
                 <button
                   key={emp.id}
                   type="button"
@@ -874,130 +1039,72 @@ export default function SuperAdminDashboard() {
               )}
             </div>
 
-            {/* Desktop: table */}
-            <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-left">
-                <thead>
-                  <tr className="text-slate-400 text-xs font-bold uppercase tracking-widest border-b border-slate-100">
-                    <th className="pb-4">Employee</th>
-                    <th className="pb-4">Emp ID</th>
-                    <th className="pb-4">Role</th>
-                    <th className="pb-4 text-right">Action</th>
-                  </tr>
-                </thead>
-
-                <tbody className="divide-y divide-slate-100">
-                  {employeesLoading && employees.length === 0 && (
-                    Array.from({ length: 8 }).map((_, i) => (
-                      <tr key={`emp-skel-${i}`} className="animate-pulse">
-                        <td className="py-4">
-                          <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-full bg-slate-100 flex-shrink-0" />
-                            <div className="h-3.5 w-32 bg-slate-100 rounded" />
-                          </div>
-                        </td>
-                        <td className="py-4"><div className="h-3.5 w-16 bg-slate-100 rounded" /></td>
-                        <td className="py-4"><div className="h-5 w-16 bg-slate-100 rounded-full" /></td>
-                        <td className="py-4 text-right"><div className="h-3.5 w-10 bg-slate-100 rounded ml-auto" /></td>
-                      </tr>
-                    ))
-                  )}
-                  {employees.map((emp) => (
-                    <tr
-                      key={emp.id}
-                      className="hover:bg-slate-50 transition-colors"
-                    >
-                      <td className="py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="flex-shrink-0 w-9 h-9 rounded-full bg-blue-50 text-blue-600 font-bold text-xs flex items-center justify-center">
-                            {initials(emp.full_name)}
-                          </div>
-                          <span className="font-bold text-slate-900">{emp.full_name}</span>
-                        </div>
-                      </td>
-                      <td className="py-4 font-mono font-bold text-slate-500 text-sm">
-                        {emp.employee_id || '-'}
-                      </td>
-                      <td className="py-4">
-                        <span className={roleTagClass(emp.role)}>{emp.role}</span>
-                      </td>
-                      <td className="py-4 text-right">
-                        <button
-                          type="button"
-                          onClick={() => startEdit(emp)}
-                          className="text-blue-600 font-bold text-sm hover:underline"
-                        >
-                          Edit
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                  {!employeesLoading && employees.length === 0 && (
-                    <tr>
-                      <td colSpan={4} className="py-8 text-center text-slate-400 text-sm">
-                        No accounts found.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            </div>
+            {employees.length > PAGE_SIZE && (
+              <div className="flex items-center justify-between pt-4 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setEmployeesPage((p) => Math.max(1, p - 1))}
+                  disabled={employeesPage === 1}
+                  className="text-xs font-bold text-blue-600 disabled:text-slate-300 disabled:cursor-not-allowed"
+                >
+                  ← Prev
+                </button>
+                <span className="text-slate-400 text-[10px] font-medium">Page {employeesPage} of {employeesTotalPages}</span>
+                <button
+                  type="button"
+                  onClick={() => setEmployeesPage((p) => Math.min(employeesTotalPages, p + 1))}
+                  disabled={employeesPage === employeesTotalPages}
+                  className="text-xs font-bold text-blue-600 disabled:text-slate-300 disabled:cursor-not-allowed"
+                >
+                  Next →
+                </button>
+              </div>
             )}
-          </section>
+          </div>
         </div>
+      )}
 
-        {/* ATTENDANCE RECORDS SECTION (dispute / late corrections) */}
-        <section className="card-style !p-4 sm:!p-5 md:!p-6">
-          <button
-            type="button"
-            onClick={toggleAttendanceRecords}
-            className="w-full flex items-center justify-between gap-2"
-          >
-            <h3 className="mb-0">
-              Attendance Records
-              {attendanceDateFilter && (
-                <span className="block text-[11px] font-medium text-slate-400 normal-case tracking-normal mt-0.5">
-                  {attendanceDateFilter === todayManila
-                    ? "Showing today's records"
-                    : `Showing records for ${attendanceDateFilter}`}
-                </span>
-              )}
-            </h3>
-            <svg
-              width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-              className={`text-slate-400 flex-shrink-0 transition-transform ${attendanceOpen ? 'rotate-180' : ''}`}
-            >
-              <polyline points="6 9 12 15 18 9"/>
-            </svg>
-          </button>
-
-          {attendanceOpen && (
-          <div className="mt-4 md:mt-6">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4 md:mb-6">
-            <div>
-              <p className="text-sm text-slate-400">
-                Edit an employee&apos;s time in for disputes or forgotten time-ins.
-              </p>
+      {/* ── ATTENDANCE RECORDS MODAL ── */}
+      {attendanceRecordsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm card-style shadow-2xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between mb-4 flex-shrink-0">
+              <div>
+                <h3 className="mb-0">Attendance Records</h3>
+                <p className="text-slate-400 text-xs mt-1">
+                  {attendanceDateFilter === todayManila ? "Today's records" : attendanceDateFilter ? `Records for ${attendanceDateFilter}` : 'All records'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAttendanceRecordsModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 transition"
+                aria-label="Close"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
             </div>
-            <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:items-center w-full md:w-auto">
+
+            <div className="flex flex-wrap gap-2 mb-3 flex-shrink-0">
               <input
                 type="text"
                 placeholder="Search employee..."
                 value={attendanceSearch}
-                onChange={(e) => setAttendanceSearch(e.target.value)}
-                className="input-field md:w-56"
+                onChange={(e) => handleAttendanceSearchChange(e.target.value)}
+                className="input-field !py-1.5 !text-xs !min-h-0 flex-1 min-w-[140px]"
               />
               <input
                 type="date"
                 value={attendanceDateFilter}
-                onChange={(e) => setAttendanceDateFilter(e.target.value)}
-                className="input-field md:w-auto"
+                onChange={(e) => handleAttendanceDateChange(e.target.value)}
+                className="input-field !py-1.5 !text-xs !min-h-0 w-auto"
               />
-              <div className="flex gap-3">
+              <div className="flex gap-3 w-full">
                 {attendanceDateFilter !== todayManila && (
                   <button
-                    onClick={() => setAttendanceDateFilter(todayManila)}
+                    onClick={() => handleAttendanceDateChange(todayManila)}
                     className="text-blue-600 font-bold text-xs whitespace-nowrap"
                   >
                     Today
@@ -1005,7 +1112,7 @@ export default function SuperAdminDashboard() {
                 )}
                 {attendanceDateFilter && (
                   <button
-                    onClick={() => setAttendanceDateFilter('')}
+                    onClick={() => handleAttendanceDateChange('')}
                     className="text-slate-400 font-bold text-xs whitespace-nowrap"
                   >
                     View All
@@ -1013,207 +1120,189 @@ export default function SuperAdminDashboard() {
                 )}
               </div>
             </div>
-          </div>
 
-          {/* Mobile: card list */}
-          <div className="md:hidden space-y-2">
-            {attendanceLoading && (
-              Array.from({ length: 5 }).map((_, i) => (
-                <div key={`att-skel-${i}`} className="p-3 bg-slate-50 rounded-2xl border border-slate-100 animate-pulse">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="h-3.5 w-28 bg-slate-200 rounded" />
-                    <div className="h-5 w-14 bg-slate-200 rounded-full" />
+            <div className="overflow-y-auto flex-1 space-y-2">
+              {attendanceLoading && (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <div key={`att-skel-${i}`} className="p-3 bg-slate-50 rounded-2xl border border-slate-100 animate-pulse">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="h-3.5 w-28 bg-slate-200 rounded" />
+                      <div className="h-5 w-14 bg-slate-200 rounded-full" />
+                    </div>
+                    <div className="flex items-center justify-between gap-2 mt-2">
+                      <div className="h-3 w-20 bg-slate-200 rounded" />
+                      <div className="h-3 w-24 bg-slate-200 rounded" />
+                    </div>
                   </div>
-                  <div className="flex items-center justify-between gap-2 mt-2">
-                    <div className="h-3 w-20 bg-slate-200 rounded" />
-                    <div className="h-3 w-24 bg-slate-200 rounded" />
-                  </div>
-                </div>
-              ))
-            )}
-            {!attendanceLoading &&
-              filteredAttendanceLogs.map((log) => (
-                <button
-                  key={log.id}
-                  type="button"
-                  onClick={() => startEditLog(log)}
-                  className="w-full p-3 bg-slate-50 rounded-2xl border border-slate-100 hover:bg-slate-100 transition text-left"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-bold text-slate-900 text-sm truncate">{log.profiles?.full_name ?? '-'}</span>
-                    <span className={statusTagClass(log.status)}>{log.status}</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-2 mt-1.5">
-                    <span className="text-slate-400 text-xs">
-                      {log.log_date
-                        ? new Date(log.log_date).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' })
-                        : 'N/A'}
-                    </span>
-                    <span className="text-slate-600 text-xs">
-                      {log.time_in
-                        ? new Date(log.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })
-                        : 'N/A'}
-                      {' – '}
-                      {log.time_out
-                        ? new Date(log.time_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })
-                        : '—'}
-                    </span>
-                  </div>
-                </button>
-              ))}
-            {!attendanceLoading && filteredAttendanceLogs.length === 0 && (
-              <p className="py-8 text-center text-slate-400 text-sm">No attendance records found.</p>
-            )}
-          </div>
-
-          {/* Desktop: table */}
-          <div className="hidden md:block overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="text-slate-400 text-xs font-bold uppercase tracking-widest border-b border-slate-100">
-                  <th className="pb-4">Employee</th>
-                  <th className="pb-4">Date</th>
-                  <th className="pb-4">Time In</th>
-                  <th className="pb-4">Time Out</th>
-                  <th className="pb-4">Status</th>
-                  <th className="pb-4 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {attendanceLoading && (
-                  Array.from({ length: 6 }).map((_, i) => (
-                    <tr key={`att-skel-${i}`} className="animate-pulse">
-                      <td className="py-4"><div className="h-3.5 w-28 bg-slate-100 rounded" /></td>
-                      <td className="py-4"><div className="h-3.5 w-20 bg-slate-100 rounded" /></td>
-                      <td className="py-4"><div className="h-3.5 w-16 bg-slate-100 rounded" /></td>
-                      <td className="py-4"><div className="h-3.5 w-16 bg-slate-100 rounded" /></td>
-                      <td className="py-4"><div className="h-5 w-14 bg-slate-100 rounded-full" /></td>
-                      <td className="py-4 text-right"><div className="h-3.5 w-10 bg-slate-100 rounded ml-auto" /></td>
-                    </tr>
-                  ))
-                )}
-
-                {!attendanceLoading &&
-                  filteredAttendanceLogs.map((log) => (
-                    <tr key={log.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="py-4 font-bold text-slate-900">
-                        {log.profiles?.full_name ?? '-'}
-                      </td>
-                      <td className="py-4 text-slate-600 text-sm">
+                ))
+              )}
+              {!attendanceLoading &&
+                paginatedAttendanceLogs.map((log) => (
+                  <button
+                    key={log.id}
+                    type="button"
+                    onClick={() => startEditLog(log)}
+                    className="w-full p-3 bg-slate-50 rounded-2xl border border-slate-100 hover:bg-slate-100 transition text-left"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-bold text-slate-900 text-sm truncate">{log.profiles?.full_name ?? '-'}</span>
+                      <span className={statusTagClass(log.status)}>{log.status}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 mt-1.5">
+                      <span className="text-slate-400 text-xs">
                         {log.log_date
-                          ? new Date(log.log_date).toLocaleDateString('en-US', {
-                              timeZone: 'Asia/Manila',
-                              month: 'short',
-                              day: 'numeric',
-                              year: 'numeric',
-                            })
+                          ? new Date(log.log_date).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' })
                           : 'N/A'}
-                      </td>
-                      <td className="py-4 text-slate-600 text-sm">
+                      </span>
+                      <span className="text-slate-600 text-xs">
                         {log.time_in
-                          ? new Date(log.time_in).toLocaleTimeString('en-US', {
-                              timeZone: 'Asia/Manila',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                              second: '2-digit',
-                            })
+                          ? new Date(log.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })
                           : 'N/A'}
-                      </td>
-                      <td className="py-4 text-slate-600 text-sm">
+                        {' – '}
                         {log.time_out
-                          ? new Date(log.time_out).toLocaleTimeString('en-US', {
-                              timeZone: 'Asia/Manila',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                              second: '2-digit',
-                            })
+                          ? new Date(log.time_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })
                           : '—'}
-                      </td>
-                      <td className="py-4">
-                        <span className={statusTagClass(log.status)}>{log.status}</span>
-                      </td>
-                      <td className="py-4 text-right">
-                        <button
-                          type="button"
-                          onClick={() => startEditLog(log)}
-                          className="text-blue-600 font-bold text-sm hover:underline"
-                        >
-                          Edit
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              {!attendanceLoading && filteredAttendanceLogs.length === 0 && (
+                <p className="py-8 text-center text-slate-400 text-sm">No attendance records found.</p>
+              )}
+            </div>
 
-                {!attendanceLoading && filteredAttendanceLogs.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="py-8 text-center text-slate-400 text-sm">
-                      No attendance records found.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+            {filteredAttendanceLogs.length > PAGE_SIZE && (
+              <div className="flex items-center justify-between pt-4 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setAttendancePage((p) => Math.max(1, p - 1))}
+                  disabled={attendancePage === 1}
+                  className="text-xs font-bold text-blue-600 disabled:text-slate-300 disabled:cursor-not-allowed"
+                >
+                  ← Prev
+                </button>
+                <span className="text-slate-400 text-[10px] font-medium">Page {attendancePage} of {attendanceTotalPages} · {filteredAttendanceLogs.length} records</span>
+                <button
+                  type="button"
+                  onClick={() => setAttendancePage((p) => Math.min(attendanceTotalPages, p + 1))}
+                  disabled={attendancePage === attendanceTotalPages}
+                  className="text-xs font-bold text-blue-600 disabled:text-slate-300 disabled:cursor-not-allowed"
+                >
+                  Next →
+                </button>
+              </div>
+            )}
           </div>
+        </div>
+      )}
+
+      {/* DATA ARCHIVAL MODAL */}
+      {archivalModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm card-style shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2.5">
+                <span className="w-9 h-9 rounded-2xl bg-slate-100 flex items-center justify-center text-base flex-shrink-0">🗃️</span>
+                <h3 className="mb-0">Data Archival</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setArchivalModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 transition"
+                aria-label="Close"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+            <p className="text-sm text-slate-400 mb-6">
+              Moves attendance, dispute, and leave records older than 1 year out of the main tables and into
+              the archive tables, to keep everything fast as data grows. Nothing is permanently deleted --
+              archived records stay viewable, just moved out of the way.
+            </p>
+            <button
+              type="button"
+              onClick={handleArchiveOldRecords}
+              disabled={archiveLoading}
+              className="w-full btn-primary disabled:opacity-50"
+            >
+              {archiveLoading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <Spinner size="sm" />
+                  Archiving...
+                </span>
+              ) : 'Archive Records Older Than 1 Year'}
+            </button>
+            {archiveResult && (
+              <p className={`text-sm font-medium mt-3 ${archiveResult.type === 'error' ? 'text-red-600' : 'text-green-600'}`}>
+                {archiveResult.type === 'error' ? `⚠️ ${archiveResult.text}` : `✅ ${archiveResult.text}`}
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={() => setArchivalModalOpen(false)}
+              className="mt-4 w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 transition"
+            >
+              Close
+            </button>
           </div>
-          )}
-        </section>
+        </div>
+      )}
 
-        {/* DATA ARCHIVAL */}
-        <section className="card-style !p-4 sm:!p-5 md:!p-6">
-          <h3 className="mb-1">Data Archival</h3>
-          <p className="text-sm text-slate-400 mb-4">
-            Moves attendance, dispute, and leave records older than 1 year out of the main tables and into
-            the archive tables, to keep everything fast as data grows. Nothing is permanently deleted --
-            archived records stay viewable, just moved out of the way.
-          </p>
-          <button
-            type="button"
-            onClick={handleArchiveOldRecords}
-            disabled={archiveLoading}
-            className="bg-slate-100 text-slate-700 px-5 py-2.5 rounded-full font-bold text-sm hover:bg-slate-200 transition disabled:opacity-50"
-          >
-            {archiveLoading ? (
-              <span className="flex items-center gap-2">
-                <Spinner size="sm" />
-                Archiving...
-              </span>
-            ) : 'Archive Records Older Than 1 Year'}
-          </button>
-          {archiveResult && (
-            <p className={`text-sm font-medium mt-3 ${archiveResult.type === 'error' ? 'text-red-600' : 'text-green-600'}`}>
-              {archiveResult.type === 'error' ? `⚠️ ${archiveResult.text}` : `✅ ${archiveResult.text}`}
+      {/* DATABASE BACKUP MODAL */}
+      {backupModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm card-style shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2.5">
+                <span className="w-9 h-9 rounded-2xl bg-slate-100 flex items-center justify-center text-base flex-shrink-0">🗄️</span>
+                <h3 className="mb-0">Database Backup</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBackupModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 transition"
+                aria-label="Close"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+            <p className="text-sm text-slate-400 mb-6">
+              Runs a full backup (schema + all data, including the auth schema) of the production Supabase
+              database and emails you the .sql file once it completes -- a genuine off-site copy, separate
+              from the server this app runs on.
             </p>
-          )}
-        </section>
-
-        {/* DATABASE BACKUP */}
-        <section className="card-style !p-4 sm:!p-5 md:!p-6">
-          <h3 className="mb-1">Database Backup</h3>
-          <p className="text-sm text-slate-400 mb-4">
-            Runs a full backup (schema + all data, including the auth schema) of the production Supabase
-            database and emails you the .sql file once it completes -- a genuine off-site copy, separate
-            from the server this app runs on.
-          </p>
-          <button
-            type="button"
-            onClick={handleBackupDatabase}
-            disabled={backupLoading}
-            className="bg-slate-100 text-slate-700 px-5 py-2.5 rounded-full font-bold text-sm hover:bg-slate-200 transition disabled:opacity-50"
-          >
-            {backupLoading ? (
-              <span className="flex items-center gap-2">
-                <Spinner size="sm" />
-                Starting Backup...
-              </span>
-            ) : '🗄️ Backup Database'}
-          </button>
-          {backupResult && (
-            <p className={`text-sm font-medium mt-3 ${backupResult.type === 'error' ? 'text-red-600' : 'text-green-600'}`}>
-              {backupResult.type === 'error' ? `⚠️ ${backupResult.text}` : `✅ ${backupResult.text}`}
-            </p>
-          )}
-        </section>
-      </div>
+            <button
+              type="button"
+              onClick={handleBackupDatabase}
+              disabled={backupLoading}
+              className="w-full btn-primary disabled:opacity-50"
+            >
+              {backupLoading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <Spinner size="sm" />
+                  Starting Backup...
+                </span>
+              ) : 'Backup Database'}
+            </button>
+            {backupResult && (
+              <p className={`text-sm font-medium mt-3 ${backupResult.type === 'error' ? 'text-red-600' : 'text-green-600'}`}>
+                {backupResult.type === 'error' ? `⚠️ ${backupResult.text}` : `✅ ${backupResult.text}`}
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={() => setBackupModalOpen(false)}
+              className="mt-4 w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 transition"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ARCHIVE PASSWORD CONFIRMATION MODAL */}
       {archivePasswordModalOpen && (
@@ -1325,7 +1414,8 @@ export default function SuperAdminDashboard() {
         </div>
       )}
 
-      {/* EDIT ATTENDANCE MODAL */}
+      {/* EDIT ATTENDANCE MODAL -- opens on top of the Attendance Records
+          modal when a row is tapped. */}
       {editingLog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
           <div className="w-full max-w-sm card-style shadow-2xl">
