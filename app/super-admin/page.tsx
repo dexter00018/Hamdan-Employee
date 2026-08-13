@@ -31,6 +31,11 @@ export default function SuperAdminDashboard() {
   // Reset password fields
   const [resetEmail, setResetEmail] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
+  // Local success/error message for the Reset Password modal -- the
+  // top-level `message` banner lives on the page behind the modal
+  // overlay and isn't visible while the modal is open, so this needs
+  // its own feedback shown inside the modal itself.
+  const [resetPasswordMsg, setResetPasswordMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Attendance records (for dispute/late corrections)
   const [attendanceLogs, setAttendanceLogs] = useState<any[]>([]);
@@ -287,6 +292,11 @@ export default function SuperAdminDashboard() {
 
     setArchivePasswordModalOpen(false);
     setArchivePasswordInput('');
+    // Reopen the Data Archival modal so the success/error result has
+    // somewhere to display -- it was closed to keep focus on the
+    // password prompt, and now shows the "Archiving..." spinner followed
+    // by the result once runArchiveOldRecords() finishes.
+    setArchivalModalOpen(true);
     await runArchiveOldRecords();
   };
 
@@ -355,6 +365,9 @@ export default function SuperAdminDashboard() {
 
     setBackupPasswordModalOpen(false);
     setBackupPasswordInput('');
+    // Same reasoning as the archival flow -- reopen so the result has
+    // somewhere to display.
+    setBackupModalOpen(true);
     await runBackupDatabase();
   };
 
@@ -537,7 +550,7 @@ export default function SuperAdminDashboard() {
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setResetLoading(true);
-    setMessage(null);
+    setResetPasswordMsg(null);
 
     try {
       const redirectTo = `${window.location.origin}/auth/reset-password`;
@@ -552,16 +565,18 @@ export default function SuperAdminDashboard() {
 
       if (error) throw error;
 
-      setMessage({
-        type: 'success',
-        text: 'Check your email for reset password instructions.',
-      });
-
+      setResetPasswordMsg({ type: 'success', text: 'Check your email for reset password instructions.' });
+      // Only clear the field once we know it actually succeeded --
+      // an error leaves the typed email in place so the admin doesn't
+      // have to retype it after fixing whatever went wrong.
       setResetEmail('');
-      setResetPasswordModalOpen(false);
+      setTimeout(() => {
+        setResetPasswordModalOpen(false);
+        setResetPasswordMsg(null);
+      }, 1500);
     } catch (err: any) {
       console.error(err);
-      setMessage({ type: 'error', text: err?.message ?? 'Reset password failed' });
+      setResetPasswordMsg({ type: 'error', text: err?.message ?? 'Reset password failed' });
     } finally {
       setResetLoading(false);
     }
@@ -636,6 +651,40 @@ export default function SuperAdminDashboard() {
 
     return () => clearTimeout(timer);
   }, [email, editingId]);
+
+  const [deactivating, setDeactivating] = useState(false);
+
+  const toggleAccountActive = async (deactivate: boolean) => {
+    if (!editingId) return;
+
+    const editingEmployee = employees.find((e) => e.id === editingId);
+    const confirmMsg = deactivate
+      ? `Deactivate ${editingEmployee?.full_name ?? 'this account'}? They will no longer be able to log in, but their attendance, leave, and payslip history stays intact.`
+      : `Reactivate ${editingEmployee?.full_name ?? 'this account'}? They will be able to log in again.`;
+
+    if (!confirm(confirmMsg)) return;
+
+    setDeactivating(true);
+    setMessage(null);
+    try {
+      const res = await fetch('/api/deactivate-employee', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: editingId, deactivate }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || 'Failed to update account status.');
+
+      setMessage({ type: 'success', text: result.message });
+      resetForm();
+      await fetchEmployees();
+    } catch (err: any) {
+      console.error('Error toggling account active state:', err);
+      setMessage({ type: 'error', text: err?.message ?? 'Failed to update account status.' });
+    } finally {
+      setDeactivating(false);
+    }
+  };
 
   const roleTagClass = (r: string) => (r === 'admin' ? 'tag-admin' : 'tag-employee');
 
@@ -736,7 +785,7 @@ export default function SuperAdminDashboard() {
 
           <button
             type="button"
-            onClick={() => { setResetEmail(''); setMessage(null); setResetPasswordModalOpen(true); }}
+            onClick={() => { setResetEmail(''); setResetPasswordMsg(null); setResetPasswordModalOpen(true); }}
             className="card-style !p-4 flex flex-col items-center justify-center gap-2 text-center hover:bg-slate-50 transition"
           >
             <span className="w-10 h-10 rounded-2xl bg-amber-50 flex items-center justify-center text-lg flex-shrink-0">🔑</span>
@@ -919,6 +968,41 @@ export default function SuperAdminDashboard() {
                 </button>
               )}
 
+              {/* Deactivate / Reactivate -- hidden for super_admin accounts
+                  (the API route itself also refuses those, this just keeps
+                  the button from showing up as a false option). Sits
+                  visually separate as a danger-zone style action. */}
+              {editingId && employees.find((e) => e.id === editingId)?.role !== 'super_admin' && (
+                <div className="pt-4 border-t border-slate-100">
+                  {employees.find((e) => e.id === editingId)?.is_active === false ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleAccountActive(false)}
+                      disabled={deactivating}
+                      className="w-full p-3 rounded-full font-bold bg-green-50 text-green-700 hover:bg-green-100 transition disabled:opacity-50"
+                    >
+                      {deactivating ? (
+                        <span className="flex items-center justify-center gap-2"><Spinner size="sm" />Reactivating...</span>
+                      ) : 'Reactivate Account'}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => toggleAccountActive(true)}
+                      disabled={deactivating}
+                      className="w-full p-3 rounded-full font-bold bg-red-50 text-red-700 hover:bg-red-100 transition disabled:opacity-50"
+                    >
+                      {deactivating ? (
+                        <span className="flex items-center justify-center gap-2"><Spinner size="sm" />Deactivating...</span>
+                      ) : 'Deactivate Account'}
+                    </button>
+                  )}
+                  <p className="text-slate-400 text-[11px] mt-2 text-center">
+                    Deactivating blocks login but keeps all attendance, leave, and payslip history.
+                  </p>
+                </div>
+              )}
+
               <button disabled={loading || !!employeeIdConflict || emailConflict || passwordMismatch} className="btn-primary">
                 {loading ? (
                   <span className="flex items-center justify-center gap-2">
@@ -948,7 +1032,7 @@ export default function SuperAdminDashboard() {
               <h3 className="mb-0">Reset Password</h3>
               <button
                 type="button"
-                onClick={() => setResetPasswordModalOpen(false)}
+                onClick={() => { setResetPasswordModalOpen(false); setResetPasswordMsg(null); }}
                 className="text-slate-400 hover:text-slate-600 transition"
                 aria-label="Close"
               >
@@ -957,6 +1041,12 @@ export default function SuperAdminDashboard() {
                 </svg>
               </button>
             </div>
+
+            {resetPasswordMsg && (
+              <div className={`p-3 rounded-xl text-sm font-bold mb-4 ${resetPasswordMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                {resetPasswordMsg.text}
+              </div>
+            )}
 
             <form onSubmit={handleResetPassword} className="space-y-3">
               <input
@@ -1019,7 +1109,7 @@ export default function SuperAdminDashboard() {
                   key={emp.id}
                   type="button"
                   onClick={() => startEdit(emp)}
-                  className="w-full flex items-center gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-100 hover:bg-slate-100 transition text-left"
+                  className={`w-full flex items-center gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-100 hover:bg-slate-100 transition text-left ${emp.is_active === false ? 'opacity-60' : ''}`}
                 >
                   <div className="flex-shrink-0 w-9 h-9 rounded-full bg-blue-50 text-blue-600 font-bold text-xs flex items-center justify-center">
                     {initials(emp.full_name)}
@@ -1029,6 +1119,7 @@ export default function SuperAdminDashboard() {
                     <div className="flex items-center gap-2 mt-0.5">
                       <span className="font-mono font-bold text-slate-500 text-xs">{emp.employee_id || '-'}</span>
                       <span className={roleTagClass(emp.role)}>{emp.role}</span>
+                      {emp.is_active === false && <span className="tag-absent">Inactive</span>}
                     </div>
                   </div>
                   <span className="text-blue-600 font-bold text-xs flex-shrink-0">Edit</span>

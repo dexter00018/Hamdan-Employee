@@ -657,6 +657,12 @@ export default function EmployeeDashboard() {
   const [myDisputes, setMyDisputes] = useState<any[]>([]);
   const [myDisputesModalOpen, setMyDisputesModalOpen] = useState(false);
   const [disputeModalOpen, setDisputeModalOpen] = useState(false);
+  // Three-step flow:
+  // "choice"  -> pick Time In or Time Out dispute (only shown when the
+  //              modal was opened generically, i.e. type isn't locked yet)
+  // "form"    -> fill in date / time / reason
+  // "confirm" -> review everything highlighted before actually submitting
+  const [disputeStep, setDisputeStep] = useState<'choice' | 'form' | 'confirm'>('form');
   const [disputeForm, setDisputeForm] = useState<{ attendanceLogId: string | null; date: string; timeLocal: string; reason: string; type: 'TimeIn' | 'TimeOut' }>({
     attendanceLogId: null,
     date: '',
@@ -695,6 +701,10 @@ export default function EmployeeDashboard() {
     disputeTypeLocked.current = locked;
     setDisputeForm({ attendanceLogId, date, timeLocal: '', reason: '', type });
     setDisputeMsg(null);
+    // Locked (opened from a specific row -- type already known): skip
+    // straight to the form. Unlocked (generic "+ Missed time-in /
+    // time-out" action): make the employee choose the type first.
+    setDisputeStep(locked ? 'form' : 'choice');
     setDisputeModalOpen(true);
   };
 
@@ -703,34 +713,113 @@ export default function EmployeeDashboard() {
 
   // Whether the currently-open dispute modal was launched from a
   // specific row (Late tag / missed time-out link -- type is fixed) or
-  // from the generic "+ Missed time-in / time-out" action (type is
-  // toggleable). When toggleable and switched to "TimeOut", there's no
-  // way to dispute a time-out without an existing log for that day
-  // (can't add a time-out to a day you never timed in on) -- so a date
-  // change looks up that day's log from already-loaded history and
-  // silently attaches its id, same as clicking the row's own
-  // "Dispute missed time-out" link directly.
+  // from the generic "Dispute" action, where the employee picks the
+  // type themselves on the "choice" screen (type is toggleable). When
+  // toggleable, both a date change and a type change re-look-up that
+  // day's log from already-loaded history and attach its id when one
+  // applies -- e.g. correcting an existing "Late" log's time-in, or
+  // adding a missing time-out to a day that already has a time-in.
   const disputeTypeLocked = useRef(true);
 
+  // Given a target date + dispute type, figures out which existing
+  // attendance_logs row (if any) this dispute should be tied to.
+  // - TimeOut: only makes sense if that date's log already has a
+  //   time-in on record (nothing to attach a missed time-out to
+  //   otherwise).
+  // - TimeIn: if a log already exists for that date (e.g. tagged
+  //   "Late"), we're correcting it; otherwise this is a brand-new
+  //   missed time-in entry (attendanceLogId stays null, which the
+  //   dispute-approval flow treats as "create a new log").
+  const resolveDisputeLogId = (dateStr: string, type: 'TimeIn' | 'TimeOut') => {
+    if (!dateStr) return null;
+    const match = history.find((h) => h.log_date === dateStr);
+    if (type === 'TimeOut') return match?.time_in ? match.id : null;
+    return match?.id ?? null;
+  };
+
   const handleDisputeDateChange = (newDate: string) => {
-    if (disputeForm.type === 'TimeOut' && !disputeTypeLocked.current) {
-      const match = history.find((h) => h.log_date === newDate);
-      setDisputeForm((f) => ({ ...f, date: newDate, attendanceLogId: match?.id ?? null }));
-    } else {
+    if (disputeTypeLocked.current) {
       setDisputeForm((f) => ({ ...f, date: newDate }));
+      return;
     }
+    setDisputeForm((f) => ({ ...f, date: newDate, attendanceLogId: resolveDisputeLogId(newDate, f.type) }));
   };
 
   // Only ever called from the toggleable (non-locked) modal.
   const handleDisputeTypeChange = (type: 'TimeIn' | 'TimeOut') => {
-    if (type === 'TimeOut' && disputeForm.date) {
-      const match = history.find((h) => h.log_date === disputeForm.date);
-      setDisputeForm((f) => ({ ...f, type, attendanceLogId: match?.id ?? null }));
-    } else if (type === 'TimeIn') {
-      setDisputeForm((f) => ({ ...f, type, attendanceLogId: null }));
-    } else {
-      setDisputeForm((f) => ({ ...f, type }));
+    setDisputeForm((f) => ({ ...f, type, attendanceLogId: resolveDisputeLogId(f.date, type) }));
+  };
+
+  // Called from the "choice" step -- sets the chosen type (reusing the
+  // same lookup logic as handleDisputeTypeChange) then advances to the
+  // form step where the employee fills in date/time/reason.
+  const selectDisputeType = (type: 'TimeIn' | 'TimeOut') => {
+    handleDisputeTypeChange(type);
+    setDisputeMsg(null);
+    setDisputeStep('form');
+  };
+
+  // Same cutoffs used everywhere else in this file (9:15 AM late cutoff,
+  // 7:00 PM time-out cutoff) -- used here to decide whether each option
+  // on the "choice" screen is actually worth disputing.
+  const isTimeInOnTime = (timeInIso: string) => {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Manila',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(new Date(timeInIso)).reduce((acc: any, p) => { acc[p.type] = p.value; return acc; }, {});
+    const minutesSinceMidnight = parseInt(parts.hour, 10) * 60 + parseInt(parts.minute, 10);
+    return minutesSinceMidnight < 9 * 60 + 15; // before 9:15 AM
+  };
+
+  const isTimeOutComplete = (timeOutIso: string) => {
+    const manilaHour = parseInt(
+      new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', hour12: false }).format(new Date(timeOutIso)),
+      10
+    );
+    return manilaHour >= 19; // 7:00 PM onwards
+  };
+
+  // Whether each dispute type is actually worth offering on the "choice"
+  // screen for the date currently selected. If no date is chosen yet
+  // (e.g. opened via the generic top button before the form is filled
+  // in), both stay enabled -- there's nothing to check against yet.
+  const disputeChoiceEligibility = useMemo(() => {
+    if (!disputeForm.date) {
+      return {
+        timeIn: { eligible: true, reason: '' },
+        timeOut: { eligible: true, reason: '' },
+      };
     }
+    const match = history.find((h) => h.log_date === disputeForm.date);
+
+    const timeIn = match?.time_in && isTimeInOnTime(match.time_in)
+      ? { eligible: false, reason: 'Already on time -- nothing to dispute.' }
+      : { eligible: true, reason: '' };
+
+    const timeOut = !match?.time_in
+      ? { eligible: false, reason: 'No time-in recorded yet for this date.' }
+      : match?.time_out && isTimeOutComplete(match.time_out)
+        ? { eligible: false, reason: 'Already timed out -- nothing to dispute.' }
+        : { eligible: true, reason: '' };
+
+    return { timeIn, timeOut };
+  }, [disputeForm.date, history]);
+
+  // Validates the form and, if everything checks out, moves to the
+  // highlighted review/confirm screen instead of submitting right away.
+  const proceedToDisputeConfirm = () => {
+    if (!disputeForm.date || !disputeForm.timeLocal) {
+      setDisputeMsg({ type: 'error', text: disputeForm.type === 'TimeOut' ? 'Please fill in the date and the time you actually left.' : 'Please fill in the date and the time you actually arrived.' });
+      return;
+    }
+    if (disputeForm.type === 'TimeOut' && !disputeForm.attendanceLogId) {
+      setDisputeMsg({ type: 'error', text: "You don't have a time-in recorded on that date yet, so there's no time-out to correct. File a missed time-in dispute for that date first." });
+      return;
+    }
+    setDisputeMsg(null);
+    setDisputeStep('confirm');
   };
 
   const submitDispute = async () => {
@@ -971,6 +1060,13 @@ export default function EmployeeDashboard() {
     return half === 'H1' ? `${monthName} 1-15, ${y}` : `${monthName} 16-31, ${y}`;
   };
 
+  // Formats "HH:MM" (24h) into a readable 12h time, e.g. "8:05 AM" --
+  // used on the dispute confirmation screen.
+  const formatTimeLocal = (hhmm: string) => {
+    if (!hhmm) return '--';
+    return new Date(`2000-01-01T${hhmm}:00`).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  };
+
   return (
     <main className="min-h-screen p-3 sm:p-4 md:p-6 lg:p-8">
       <div className="max-w-7xl mx-auto space-y-3 sm:space-y-4 md:space-y-5">
@@ -1165,7 +1261,14 @@ export default function EmployeeDashboard() {
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
                 <h3 className="mb-0 text-sm">Attendance History</h3>
                 <div className="flex flex-wrap items-center gap-2">
-                  <button onClick={() => openDisputeModal(null, '', 'TimeIn', false)} className="text-blue-600 text-xs font-bold hover:underline whitespace-nowrap">+ Missed time-in / time-out</button>
+                  <button
+                    type="button"
+                    onClick={() => openDisputeModal(null, '', 'TimeIn', false)}
+                    className="inline-flex items-center gap-1.5 bg-blue-600 text-white text-[11px] font-bold px-3.5 py-2 rounded-full hover:bg-blue-700 active:scale-95 transition whitespace-nowrap shadow-sm"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    No Logs 
+                  </button>
                   <select className="input-field !py-1.5 !text-xs !min-h-0 w-auto" value={selectedYm} onChange={(e) => handleMonthChange(e.target.value)}>
                     <option value="">All months</option>
                     {availableMonths.map((ym) => <option key={ym} value={ym}>{formatMonthOnly(ym)}</option>)}
@@ -1207,13 +1310,45 @@ export default function EmployeeDashboard() {
                           {log.time_in ? new Date(log.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }) : '--:--'}
                           {log.time_out && <> – {new Date(log.time_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}</>}
                         </div>
-                        {!log.time_out && log.time_in && log.log_date !== todayManila && (
-                          hasPendingDispute(log.log_date, 'TimeOut')
-                            ? <div className="text-orange-600 text-[9px] font-bold uppercase">Timeout Dispute Pending</div>
-                            : <button onClick={() => openDisputeModal(log.id, log.log_date, 'TimeOut')} className="text-blue-600 text-[9px] font-bold uppercase hover:underline">Dispute missed time-out</button>
-                        )}
-                        {!log.time_out && (log.log_date === todayManila || !log.time_in) && <div className="text-slate-400 text-[9px] uppercase tracking-wide">No time out</div>}
-                        {log.status?.toLowerCase() === 'late' && (hasPendingDispute(log.log_date, 'TimeIn') ? <div className="text-orange-600 text-[9px] font-bold uppercase">Dispute Pending</div> : <button onClick={() => openDisputeModal(log.id, log.log_date, 'TimeIn')} className="text-blue-600 text-[9px] font-bold uppercase hover:underline">Dispute</button>)}
+                        {/* Single "Dispute" button -- lets the employee pick Time In or
+                            Time Out on the choice screen, instead of two separate,
+                            cramped buttons. Only one pending dispute is allowed per
+                            date, so a single pending badge covers either type. */}
+                        <div className="mt-1.5 flex justify-end">
+                          {(() => {
+                            const canDisputeTimeOut = !log.time_out && log.time_in;
+                            const canDisputeLate = log.status?.toLowerCase() === 'late';
+                            const isPending = hasPendingDispute(log.log_date, 'TimeIn') || hasPendingDispute(log.log_date, 'TimeOut');
+
+                            if (isPending) {
+                              return (
+                                <span className="inline-flex items-center gap-1 text-orange-600 text-[9px] font-bold uppercase tracking-wide">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-orange-500 flex-shrink-0" />
+                                  Dispute Pending
+                                </span>
+                              );
+                            }
+
+                            if (canDisputeTimeOut || canDisputeLate) {
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => openDisputeModal(log.id, log.log_date, canDisputeLate ? 'TimeIn' : 'TimeOut', false)}
+                                  className="inline-flex items-center gap-1 bg-blue-50 text-blue-600 text-[9px] font-bold uppercase tracking-wide px-3 py-1 rounded-full hover:bg-blue-100 transition whitespace-nowrap"
+                                >
+                                  Dispute
+                                </button>
+                              );
+                            }
+
+                            // No time-in at all that day -- nothing to dispute yet.
+                            if (!log.time_out && !log.time_in) {
+                              return <span className="text-slate-400 text-[9px] uppercase tracking-wide">No time out</span>;
+                            }
+
+                            return null;
+                          })()}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1248,103 +1383,230 @@ export default function EmployeeDashboard() {
         </div>
       )}
 
-      {/* File a Dispute Modal */}
+      {/* File a Dispute Modal -- two steps: "form" then a highlighted
+          "confirm" review screen before the dispute is actually submitted. */}
       {disputeModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
           <div className="w-full max-w-sm card-style shadow-2xl">
-            <h3 className="mb-2">
-              {disputeForm.type === 'TimeOut'
-                ? 'Report Missed Time-Out'
-                : disputeForm.attendanceLogId ? 'Dispute Late Tag' : 'Report Missed Time-In'}
-            </h3>
-            <p className="text-sm text-slate-400 mb-6">
-              {disputeForm.type === 'TimeOut'
-                ? "Forgot to time out that day? Tell us what time you actually left, and HR will review it."
-                : disputeForm.attendanceLogId
-                  ? "Tell us what time you actually arrived, and HR will review it."
-                  : "Forgot to time in on a previous day? Let us know when you actually arrived."}
-            </p>
 
-            {disputeMsg && (
-              <div className={`p-3 rounded-xl text-sm font-bold mb-4 ${disputeMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                {disputeMsg.text}
-              </div>
-            )}
-
-            {!disputeTypeLocked.current && (
+            {disputeStep === 'choice' ? (
               <>
-                <label className="label-branded">What did you forget?</label>
-                <div className="grid grid-cols-2 gap-2 mb-4">
+                {/* ── STEP 1: CHOOSE DISPUTE TYPE ── */}
+                <h3 className="mb-2">File a Dispute</h3>
+                <p className="text-sm text-slate-400 mb-6">
+                  What would you like to report?
+                </p>
+
+                {disputeMsg && (
+                  <div className={`p-3 rounded-xl text-sm font-bold mb-4 ${disputeMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                    {disputeMsg.text}
+                  </div>
+                )}
+
+                <div className="space-y-3">
                   <button
                     type="button"
-                    onClick={() => handleDisputeTypeChange('TimeIn')}
-                    className={`py-2.5 rounded-full text-xs font-bold transition ${disputeForm.type === 'TimeIn' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                    onClick={() => disputeChoiceEligibility.timeIn.eligible && selectDisputeType('TimeIn')}
+                    disabled={!disputeChoiceEligibility.timeIn.eligible}
+                    className={`w-full flex items-center gap-3 p-4 rounded-2xl border border-slate-100 bg-slate-50 transition text-left ${
+                      disputeChoiceEligibility.timeIn.eligible ? 'hover:bg-slate-100' : 'opacity-40 cursor-not-allowed'
+                    }`}
                   >
-                    Time In
+                    <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0 text-lg">🕗</div>
+                    <div className="min-w-0">
+                      <p className="font-bold text-slate-900 text-sm">Time In Dispute</p>
+                      <p className="text-slate-400 text-xs mt-0.5">
+                        {disputeChoiceEligibility.timeIn.eligible
+                          ? 'Forgot to time in, or tagged Late by mistake'
+                          : disputeChoiceEligibility.timeIn.reason}
+                      </p>
+                    </div>
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleDisputeTypeChange('TimeOut')}
-                    className={`py-2.5 rounded-full text-xs font-bold transition ${disputeForm.type === 'TimeOut' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                    onClick={() => disputeChoiceEligibility.timeOut.eligible && selectDisputeType('TimeOut')}
+                    disabled={!disputeChoiceEligibility.timeOut.eligible}
+                    className={`w-full flex items-center gap-3 p-4 rounded-2xl border border-slate-100 bg-slate-50 transition text-left ${
+                      disputeChoiceEligibility.timeOut.eligible ? 'hover:bg-slate-100' : 'opacity-40 cursor-not-allowed'
+                    }`}
                   >
-                    Time Out
+                    <div className="w-10 h-10 rounded-xl bg-rose-50 flex items-center justify-center flex-shrink-0 text-lg">🕕</div>
+                    <div className="min-w-0">
+                      <p className="font-bold text-slate-900 text-sm">Time Out Dispute</p>
+                      <p className="text-slate-400 text-xs mt-0.5">
+                        {disputeChoiceEligibility.timeOut.eligible
+                          ? 'Forgot to time out before leaving'
+                          : disputeChoiceEligibility.timeOut.reason}
+                      </p>
+                    </div>
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  className="w-full mt-6 p-3 bg-slate-100 rounded-full font-medium text-sm"
+                  onClick={() => setDisputeModalOpen(false)}
+                >
+                  Cancel
+                </button>
+              </>
+            ) : disputeStep === 'form' ? (
+              <>
+                {/* ── STEP 2: FILL IN DETAILS ── */}
+                <h3 className="mb-2">
+                  {disputeForm.type === 'TimeOut'
+                    ? 'Report Missed Time-Out'
+                    : disputeForm.attendanceLogId ? 'Dispute Late Tag' : 'Report Missed Time-In'}
+                </h3>
+                <p className="text-sm text-slate-400 mb-4">
+                  {disputeForm.type === 'TimeOut'
+                    ? "Forgot to time out that day? Tell us what time you actually left, and HR will review it."
+                    : disputeForm.attendanceLogId
+                      ? "Tell us what time you actually arrived, and HR will review it."
+                      : "Forgot to time in on a previous day? Let us know when you actually arrived."}
+                </p>
+
+                {disputeMsg && (
+                  <div className={`p-3 rounded-xl text-sm font-bold mb-4 ${disputeMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                    {disputeMsg.text}
+                  </div>
+                )}
+
+                {!disputeTypeLocked.current && (
+                  <div className="flex items-center justify-between gap-2 mb-4 p-2.5 bg-slate-50 rounded-xl border border-slate-100">
+                    <span className="text-xs font-bold text-slate-600">
+                      {disputeForm.type === 'TimeOut' ? '🕕 Time Out Dispute' : '🕗 Time In Dispute'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setDisputeStep('choice')}
+                      className="text-blue-600 text-xs font-bold hover:underline"
+                    >
+                      Change
+                    </button>
+                  </div>
+                )}
+
+                <label className="label-branded">Date</label>
+                <input
+                  type="date"
+                  className="input-field mb-1"
+                  value={disputeForm.date}
+                  onChange={(e) => handleDisputeDateChange(e.target.value)}
+                  disabled={disputeTypeLocked.current && !!disputeForm.attendanceLogId}
+                  max={new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())}
+                />
+                {!disputeTypeLocked.current && disputeForm.type === 'TimeOut' && disputeForm.date && !disputeForm.attendanceLogId && (
+                  <p className="text-orange-600 text-[11px] font-medium mb-3 ml-1">⚠️ No time-in recorded on that date yet — you can't dispute a time-out without one.</p>
+                )}
+                <div className="mb-3" />
+
+                <label className="label-branded">{disputeForm.type === 'TimeOut' ? 'Time You Actually Left (Philippine Time)' : 'Time You Actually Arrived (Philippine Time)'}</label>
+                <input
+                  type="time"
+                  className="input-field mb-4"
+                  value={disputeForm.timeLocal}
+                  onChange={(e) => setDisputeForm({ ...disputeForm, timeLocal: e.target.value })}
+                />
+
+                <label className="label-branded">Reason (optional)</label>
+                <textarea
+                  className="input-field mb-6 min-h-[80px] resize-y"
+                  value={disputeForm.reason}
+                  onChange={(e) => setDisputeForm({ ...disputeForm, reason: e.target.value })}
+                  placeholder={disputeForm.type === 'TimeOut' ? 'e.g. I forgot to time out before leaving.' : 'e.g. I forgot to time in when I arrived.'}
+                />
+
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    className="flex-1 p-3 bg-slate-100 rounded-full font-medium text-sm"
+                    onClick={() => {
+                      if (!disputeTypeLocked.current) {
+                        setDisputeStep('choice');
+                      } else {
+                        setDisputeModalOpen(false);
+                      }
+                    }}
+                  >
+                    {disputeTypeLocked.current ? 'Cancel' : '← Back'}
+                  </button>
+                  <button
+                    type="button"
+                    className="flex-1 btn-primary disabled:opacity-50"
+                    onClick={proceedToDisputeConfirm}
+                    disabled={!disputeForm.date || !disputeForm.timeLocal}
+                  >
+                    Review Dispute
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* ── STEP 3: CONFIRMATION -- highlighted summary before actually submitting ── */}
+                <h3 className="mb-2">Confirm Your Dispute</h3>
+                <p className="text-sm text-slate-400 mb-6">
+                  Please review the details below before submitting. HR will see exactly this.
+                </p>
+
+                {disputeMsg && (
+                  <div className={`p-3 rounded-xl text-sm font-bold mb-4 ${disputeMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                    {disputeMsg.text}
+                  </div>
+                )}
+
+                <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 mb-6 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="label-branded mb-0">Dispute Type</span>
+                    <span className="tag-excused">
+                      {disputeForm.type === 'TimeOut' ? 'Missed Time-Out' : disputeForm.attendanceLogId ? 'Late Tag' : 'Missed Time-In'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="label-branded mb-0">Date</span>
+                    <span className="font-bold text-slate-800 text-sm">{disputeForm.date}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="label-branded mb-0">
+                      {disputeForm.type === 'TimeOut' ? 'Time You Left' : 'Time You Arrived'}
+                    </span>
+                    <span className="font-bold text-slate-800 text-sm tabular-nums">
+                      {formatTimeLocal(disputeForm.timeLocal)}
+                    </span>
+                  </div>
+                  {disputeForm.reason && (
+                    <div>
+                      <span className="label-branded block mb-1">Reason</span>
+                      <p className="text-slate-700 text-sm bg-white rounded-xl p-3 border border-blue-100">{disputeForm.reason}</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    className="flex-1 p-3 bg-slate-100 rounded-full font-medium text-sm"
+                    onClick={() => setDisputeStep('form')}
+                    disabled={disputeSaving}
+                  >
+                    ← Back
+                  </button>
+                  <button
+                    type="button"
+                    className="flex-1 btn-primary disabled:opacity-50"
+                    onClick={submitDispute}
+                    disabled={disputeSaving}
+                  >
+                    {disputeSaving ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <Spinner size="sm" />
+                        Submitting...
+                      </span>
+                    ) : 'Confirm & Submit'}
                   </button>
                 </div>
               </>
             )}
-
-            <label className="label-branded">Date</label>
-            <input
-              type="date"
-              className="input-field mb-1"
-              value={disputeForm.date}
-              onChange={(e) => handleDisputeDateChange(e.target.value)}
-              disabled={disputeTypeLocked.current && !!disputeForm.attendanceLogId}
-              max={new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())}
-            />
-            {!disputeTypeLocked.current && disputeForm.type === 'TimeOut' && disputeForm.date && !disputeForm.attendanceLogId && (
-              <p className="text-orange-600 text-[11px] font-medium mb-3 ml-1">⚠️ No time-in recorded on that date yet — you can't dispute a time-out without one.</p>
-            )}
-            <div className="mb-3" />
-
-            <label className="label-branded">{disputeForm.type === 'TimeOut' ? 'Time You Actually Left (Philippine Time)' : 'Time You Actually Arrived (Philippine Time)'}</label>
-            <input
-              type="time"
-              className="input-field mb-4"
-              value={disputeForm.timeLocal}
-              onChange={(e) => setDisputeForm({ ...disputeForm, timeLocal: e.target.value })}
-            />
-
-            <label className="label-branded">Reason (optional)</label>
-            <textarea
-              className="input-field mb-6 min-h-[80px] resize-y"
-              value={disputeForm.reason}
-              onChange={(e) => setDisputeForm({ ...disputeForm, reason: e.target.value })}
-              placeholder={disputeForm.type === 'TimeOut' ? 'e.g. I forgot to time out before leaving.' : 'e.g. I forgot to time in when I arrived.'}
-            />
-
-            <div className="flex gap-3">
-              <button
-                type="button"
-                className="flex-1 p-3 bg-slate-100 rounded-full font-medium text-sm"
-                onClick={() => setDisputeModalOpen(false)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="flex-1 btn-primary disabled:opacity-50"
-                onClick={submitDispute}
-                disabled={disputeSaving || !disputeForm.date || !disputeForm.timeLocal}
-              >
-                {disputeSaving ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <Spinner size="sm" />
-                    Submitting...
-                  </span>
-                ) : 'Submit Dispute'}
-              </button>
-            </div>
           </div>
         </div>
       )}
