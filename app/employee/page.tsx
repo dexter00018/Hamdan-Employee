@@ -169,6 +169,10 @@ export default function EmployeeDashboard() {
     return `${ym}:${half}`;
   });
 
+  // Collapsed by default so the dashboard opens short and uncluttered;
+  // the employee taps to expand when they actually want to look at it.
+  const [attendanceHistoryOpen, setAttendanceHistoryOpen] = useState(false);
+
   // Announcements
   const [announcement, setAnnouncement] = useState<string>('');
   const [announcementImageUrl, setAnnouncementImageUrl] = useState<string | null>(null);
@@ -1256,104 +1260,130 @@ export default function EmployeeDashboard() {
               </button>
             </div>
 
-            {/* Attendance History */}
+            {/* Attendance History -- collapsed by default; tap the header to expand. */}
             <div className="card-style !p-4">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
-                <h3 className="mb-0 text-sm">Attendance History</h3>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => openDisputeModal(null, '', 'TimeIn', false)}
-                    className="inline-flex items-center gap-1.5 bg-blue-600 text-white text-[11px] font-bold px-3.5 py-2 rounded-full hover:bg-blue-700 active:scale-95 transition whitespace-nowrap shadow-sm"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                    No Logs 
-                  </button>
-                  <select className="input-field !py-1.5 !text-xs !min-h-0 w-auto" value={selectedYm} onChange={(e) => handleMonthChange(e.target.value)}>
-                    <option value="">All months</option>
-                    {availableMonths.map((ym) => <option key={ym} value={ym}>{formatMonthOnly(ym)}</option>)}
-                  </select>
-                  {selectedYm && (
-                    <div className="flex rounded-full bg-slate-100 p-0.5">
-                      <button
-                        type="button"
-                        onClick={() => handleHalfChange('H1')}
-                        className={`px-3 py-1 rounded-full text-[11px] font-bold transition whitespace-nowrap ${selectedHalf === 'H1' ? 'bg-white shadow text-slate-900' : 'text-slate-400'}`}
-                      >
-                        1st Half
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleHalfChange('H2')}
-                        className={`px-3 py-1 rounded-full text-[11px] font-bold transition whitespace-nowrap ${selectedHalf === 'H2' ? 'bg-white shadow text-slate-900' : 'text-slate-400'}`}
-                      >
-                        2nd Half
-                      </button>
-                    </div>
+              <button
+                type="button"
+                onClick={() => setAttendanceHistoryOpen((v) => !v)}
+                className="w-full flex items-center justify-between gap-2"
+              >
+                <h3 className="mb-0 text-sm">
+                  Attendance History
+                  {!attendanceHistoryOpen && (
+                    <span className="block text-[10px] font-medium text-slate-400 normal-case tracking-normal mt-0.5">
+                      {monthFilter ? formatMonthLabel(monthFilter) : `${filteredHistory.length} record${filteredHistory.length === 1 ? '' : 's'}`}
+                    </span>
                   )}
-                  {monthFilter && <button onClick={() => setMonthFilter('')} className="text-slate-400 text-xs font-bold hover:text-slate-600">Clear</button>}
-                </div>
-              </div>
-              <div className="space-y-2">
-                {initLoading && <LoadingRow label="Loading..." />}
-                {!initLoading && filteredHistory.length === 0 && <p className="text-slate-400 text-xs">No records{monthFilter ? ' for this cutoff' : ''}.</p>}
-                {filteredHistory.map((log, index) => (
-                  <div key={index} className="flex items-center justify-between gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100">
-                    <div className="min-w-0">
-                      <div className="font-medium text-slate-900 text-xs">{new Date(log.log_date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</div>
-                      <div className="text-slate-400 text-[10px]">{log.log_date}</div>
+                </h3>
+                <svg
+                  width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                  className={`text-slate-400 flex-shrink-0 transition-transform ${attendanceHistoryOpen ? 'rotate-180' : ''}`}
+                >
+                  <polyline points="6 9 12 15 18 9"/>
+                </svg>
+              </button>
+
+              {attendanceHistoryOpen && (
+                <>
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-4 mb-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openDisputeModal(null, '', 'TimeIn', false)}
+                        className="inline-flex items-center gap-1.5 bg-blue-600 text-white text-[11px] font-bold px-3.5 py-2 rounded-full hover:bg-blue-700 active:scale-95 transition whitespace-nowrap shadow-sm"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                        Missed Time-In / Time-Out
+                      </button>
                     </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <span className={statusTagClass(log.status)}>{log.status}</span>
-                      <div className="text-right">
-                        <div className="font-semibold text-slate-700 text-xs">
-                          {log.time_in ? new Date(log.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }) : '--:--'}
-                          {log.time_out && <> – {new Date(log.time_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}</>}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <select className="input-field !py-1.5 !text-xs !min-h-0 w-auto" value={selectedYm} onChange={(e) => handleMonthChange(e.target.value)}>
+                        <option value="">All months</option>
+                        {availableMonths.map((ym) => <option key={ym} value={ym}>{formatMonthOnly(ym)}</option>)}
+                      </select>
+                      {selectedYm && (
+                        <div className="flex rounded-full bg-slate-100 p-0.5">
+                          <button
+                            type="button"
+                            onClick={() => handleHalfChange('H1')}
+                            className={`px-3 py-1 rounded-full text-[11px] font-bold transition whitespace-nowrap ${selectedHalf === 'H1' ? 'bg-white shadow text-slate-900' : 'text-slate-400'}`}
+                          >
+                            1st Half
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleHalfChange('H2')}
+                            className={`px-3 py-1 rounded-full text-[11px] font-bold transition whitespace-nowrap ${selectedHalf === 'H2' ? 'bg-white shadow text-slate-900' : 'text-slate-400'}`}
+                          >
+                            2nd Half
+                          </button>
                         </div>
-                        {/* Single "Dispute" button -- lets the employee pick Time In or
-                            Time Out on the choice screen, instead of two separate,
-                            cramped buttons. Only one pending dispute is allowed per
-                            date, so a single pending badge covers either type. */}
-                        <div className="mt-1.5 flex justify-end">
-                          {(() => {
-                            const canDisputeTimeOut = !log.time_out && log.time_in;
-                            const canDisputeLate = log.status?.toLowerCase() === 'late';
-                            const isPending = hasPendingDispute(log.log_date, 'TimeIn') || hasPendingDispute(log.log_date, 'TimeOut');
-
-                            if (isPending) {
-                              return (
-                                <span className="inline-flex items-center gap-1 text-orange-600 text-[9px] font-bold uppercase tracking-wide">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-orange-500 flex-shrink-0" />
-                                  Dispute Pending
-                                </span>
-                              );
-                            }
-
-                            if (canDisputeTimeOut || canDisputeLate) {
-                              return (
-                                <button
-                                  type="button"
-                                  onClick={() => openDisputeModal(log.id, log.log_date, canDisputeLate ? 'TimeIn' : 'TimeOut', false)}
-                                  className="inline-flex items-center gap-1 bg-blue-50 text-blue-600 text-[9px] font-bold uppercase tracking-wide px-3 py-1 rounded-full hover:bg-blue-100 transition whitespace-nowrap"
-                                >
-                                  Dispute
-                                </button>
-                              );
-                            }
-
-                            // No time-in at all that day -- nothing to dispute yet.
-                            if (!log.time_out && !log.time_in) {
-                              return <span className="text-slate-400 text-[9px] uppercase tracking-wide">No time out</span>;
-                            }
-
-                            return null;
-                          })()}
-                        </div>
-                      </div>
+                      )}
+                      {monthFilter && <button onClick={() => setMonthFilter('')} className="text-slate-400 text-xs font-bold hover:text-slate-600">Clear</button>}
                     </div>
                   </div>
-                ))}
-              </div>
+                  <div className="space-y-2">
+                    {initLoading && <LoadingRow label="Loading..." />}
+                    {!initLoading && filteredHistory.length === 0 && <p className="text-slate-400 text-xs">No records{monthFilter ? ' for this cutoff' : ''}.</p>}
+                    {filteredHistory.map((log, index) => (
+                      <div key={index} className="flex items-center justify-between gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                        <div className="min-w-0">
+                          <div className="font-medium text-slate-900 text-xs">{new Date(log.log_date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</div>
+                          <div className="text-slate-400 text-[10px]">{log.log_date}</div>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <span className={statusTagClass(log.status)}>{log.status}</span>
+                          <div className="text-right">
+                            <div className="font-semibold text-slate-700 text-xs">
+                              {log.time_in ? new Date(log.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }) : '--:--'}
+                              {log.time_out && <> – {new Date(log.time_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}</>}
+                            </div>
+                            {/* Single "Dispute" button -- lets the employee pick Time In or
+                                Time Out on the choice screen, instead of two separate,
+                                cramped buttons. Only one pending dispute is allowed per
+                                date, so a single pending badge covers either type. */}
+                            <div className="mt-1.5 flex justify-end">
+                              {(() => {
+                                const canDisputeTimeOut = !log.time_out && log.time_in;
+                                const canDisputeLate = log.status?.toLowerCase() === 'late';
+                                const isPending = hasPendingDispute(log.log_date, 'TimeIn') || hasPendingDispute(log.log_date, 'TimeOut');
+
+                                if (isPending) {
+                                  return (
+                                    <span className="inline-flex items-center gap-1 text-orange-600 text-[9px] font-bold uppercase tracking-wide">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-orange-500 flex-shrink-0" />
+                                      Dispute Pending
+                                    </span>
+                                  );
+                                }
+
+                                if (canDisputeTimeOut || canDisputeLate) {
+                                  return (
+                                    <button
+                                      type="button"
+                                      onClick={() => openDisputeModal(log.id, log.log_date, canDisputeLate ? 'TimeIn' : 'TimeOut', false)}
+                                      className="inline-flex items-center gap-1 bg-blue-50 text-blue-600 text-[9px] font-bold uppercase tracking-wide px-3 py-1 rounded-full hover:bg-blue-100 transition whitespace-nowrap"
+                                    >
+                                      Dispute
+                                    </button>
+                                  );
+                                }
+
+                                // No time-in at all that day -- nothing to dispute yet.
+                                if (!log.time_out && !log.time_in) {
+                                  return <span className="text-slate-400 text-[9px] uppercase tracking-wide">No time out</span>;
+                                }
+
+                                return null;
+                              })()}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
 
           </div>
