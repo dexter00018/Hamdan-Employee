@@ -519,6 +519,64 @@ export default function EmployeeDashboard() {
   // --- Early time-out warning (before 7PM) ---
   const [showEarlyTimeOutWarning, setShowEarlyTimeOutWarning] = useState(false);
 
+  // --- Employee Directory ---
+  // Read-only list of colleagues -- employees only (no HR admins or
+  // super-admins), showing name, designation, photo, and email so an
+  // employee can look someone up. Pulls straight from `profiles`; the
+  // government-ID table (SSS/PhilHealth/etc.) is a separate, more
+  // strictly-secured table and is never touched here.
+  const [directoryModalOpen, setDirectoryModalOpen] = useState(false);
+  const [directoryEmployees, setDirectoryEmployees] = useState<{ id: string; full_name: string | null; designation: string | null; avatar_url: string | null; employee_email: string | null }[]>([]);
+  const [directoryLoading, setDirectoryLoading] = useState(true);
+  const [directorySearch, setDirectorySearch] = useState('');
+
+  const fetchDirectory = async () => {
+    setDirectoryLoading(true);
+    // NOTE: this selects OTHER employees' basic profile info, not just the
+    // logged-in user's own row -- make sure the `profiles` table's RLS
+    // has a SELECT policy that lets any authenticated user read these
+    // columns (full_name, designation, avatar_url, employee_email, role)
+    // for all rows, e.g.:
+    //   create policy "Employees can view the directory"
+    //   on profiles for select
+    //   to authenticated
+    //   using (true);
+    // (Sensitive fields like SSS/PhilHealth/TIN live in
+    // employee_government_ids, a separate table, and are unaffected.)
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, full_name, designation, avatar_url, employee_email, role')
+      // Employees only -- HR admins and the super-admin account don't
+      // belong in a colleague directory.
+      .eq('role', 'employee')
+      .order('full_name', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching directory:', error);
+      setDirectoryLoading(false);
+      return;
+    }
+    setDirectoryEmployees(data || []);
+    setDirectoryLoading(false);
+  };
+
+  const directoryInitials = (name: string | null) =>
+    (name || '?')
+      .split(' ')
+      .map((n) => n[0])
+      .slice(0, 2)
+      .join('')
+      .toUpperCase();
+
+  const filteredDirectory = useMemo(() => {
+    const q = directorySearch.trim().toLowerCase();
+    if (!q) return directoryEmployees;
+    return directoryEmployees.filter((e) =>
+      e.full_name?.toLowerCase().includes(q) ||
+      e.designation?.toLowerCase().includes(q)
+    );
+  }, [directoryEmployees, directorySearch]);
+
   // --- Payslips modal ---
   const [payslipsModalOpen, setPayslipsModalOpen] = useState(false);
   const [payslips, setPayslips] = useState<{ id: string; cutoff_label: string; cutoff_period: string; file_name: string; file_path: string; uploaded_at: string }[]>([]);
@@ -565,6 +623,10 @@ export default function EmployeeDashboard() {
   const [myLeavesModalOpen, setMyLeavesModalOpen] = useState(false);
   const [leaveCredits, setLeaveCredits] = useState<{ total_credits: number; used_credits: number } | null>(null);
   const [leaveModalOpen, setLeaveModalOpen] = useState(false);
+  // Single "Leave" quick action opens this small choice screen first --
+  // "Request Leave" or "My Leave Requests" -- instead of two separate
+  // buttons on the dashboard.
+  const [leaveChoiceModalOpen, setLeaveChoiceModalOpen] = useState(false);
   const [leaveForm, setLeaveForm] = useState({ leave_type: 'Sick', start_date: '', end_date: '', reason: '' });
   const [leaveSaving, setLeaveSaving] = useState(false);
   const [leaveMsg, setLeaveMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -1222,13 +1284,13 @@ export default function EmployeeDashboard() {
 
             {/* Quick Actions */}
             <div className="grid grid-cols-2 gap-3">
-              <button type="button" onClick={() => { setLeaveModalOpen(true); setLeaveMsg(null); setLeaveForm({ leave_type: 'Sick', start_date: '', end_date: '', reason: '' }); }} className="card-style !p-3 flex items-center gap-2 hover:bg-slate-50 transition text-left">
+              <button type="button" onClick={() => setLeaveChoiceModalOpen(true)} className="card-style !p-3 flex items-center gap-2 hover:bg-slate-50 transition text-left">
                 <div className="w-8 h-8 rounded-xl bg-green-50 flex items-center justify-center flex-shrink-0">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-green-600"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
                 </div>
                 <div className="min-w-0">
-                  <p className="font-semibold text-slate-900 text-xs">Leave Request</p>
-                  <p className="text-slate-400 text-[10px] truncate">{isRegular ? `${remainingCredits} credits left` : 'File a leave'}</p>
+                  <p className="font-semibold text-slate-900 text-xs">Leave</p>
+                  <p className="text-slate-400 text-[10px] truncate">{isRegular ? `${remainingCredits} credits left` : 'Request or view leaves'}</p>
                 </div>
               </button>
               <button type="button" onClick={() => { setPayslipsModalOpen(true); fetchPayslips(); }} className="card-style !p-3 flex items-center gap-2 hover:bg-slate-50 transition text-left">
@@ -1240,15 +1302,6 @@ export default function EmployeeDashboard() {
                   <p className="text-slate-400 text-[10px] truncate">{payslips.length > 0 ? `${payslips.length} available` : 'No payslips yet'}</p>
                 </div>
               </button>
-              <button type="button" onClick={() => { setMyLeavesModalOpen(true); fetchMyLeaves(); }} className="card-style !p-3 flex items-center gap-2 hover:bg-slate-50 transition text-left">
-                <div className="w-8 h-8 rounded-xl bg-amber-50 flex items-center justify-center flex-shrink-0">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-600"><path d="M8 2v4M16 2v4M3 10h18"/><rect x="3" y="4" width="18" height="18" rx="2"/></svg>
-                </div>
-                <div className="min-w-0">
-                  <p className="font-semibold text-slate-900 text-xs">My Leave Requests</p>
-                  <p className="text-slate-400 text-[10px] truncate">{myLeaves.length > 0 ? `${myLeaves.length} request${myLeaves.length === 1 ? '' : 's'}` : 'No leave requests yet'}</p>
-                </div>
-              </button>
               <button type="button" onClick={() => { setMyDisputesModalOpen(true); fetchMyDisputes(); }} className="card-style !p-3 flex items-center gap-2 hover:bg-slate-50 transition text-left">
                 <div className="w-8 h-8 rounded-xl bg-rose-50 flex items-center justify-center flex-shrink-0">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-rose-600"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -1256,6 +1309,15 @@ export default function EmployeeDashboard() {
                 <div className="min-w-0">
                   <p className="font-semibold text-slate-900 text-xs">My Disputes</p>
                   <p className="text-slate-400 text-[10px] truncate">{myDisputes.length > 0 ? `${myDisputes.length} dispute${myDisputes.length === 1 ? '' : 's'}` : 'No disputes yet'}</p>
+                </div>
+              </button>
+              <button type="button" onClick={() => { setDirectoryModalOpen(true); setDirectorySearch(''); fetchDirectory(); }} className="card-style !p-3 flex items-center gap-2 hover:bg-slate-50 transition text-left">
+                <div className="w-8 h-8 rounded-xl bg-sky-50 flex items-center justify-center flex-shrink-0">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-sky-600"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                </div>
+                <div className="min-w-0">
+                  <p className="font-semibold text-slate-900 text-xs">Employee Directory</p>
+                  <p className="text-slate-400 text-[10px] truncate">Look up a colleague</p>
                 </div>
               </button>
             </div>
@@ -1778,6 +1840,63 @@ export default function EmployeeDashboard() {
         </div>
       )}
 
+      {/* Leave Choice Modal -- pick "Request Leave" or "My Leave Requests" */}
+      {leaveChoiceModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm card-style shadow-2xl">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="mb-0">Leave</h3>
+              <button type="button" onClick={() => setLeaveChoiceModalOpen(false)} className="text-slate-400 hover:text-slate-600 transition" aria-label="Close">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <p className="text-sm text-slate-400 mb-6">What would you like to do?</p>
+
+            <div className="space-y-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setLeaveChoiceModalOpen(false);
+                  setLeaveMsg(null);
+                  setLeaveForm({ leave_type: 'Sick', start_date: '', end_date: '', reason: '' });
+                  setLeaveModalOpen(true);
+                }}
+                className="w-full flex items-center gap-3 p-4 rounded-2xl border border-slate-100 bg-slate-50 hover:bg-slate-100 transition text-left"
+              >
+                <div className="w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center flex-shrink-0 text-lg">📝</div>
+                <div className="min-w-0">
+                  <p className="font-bold text-slate-900 text-sm">Request Leave</p>
+                  <p className="text-slate-400 text-xs mt-0.5">{isRegular ? `${remainingCredits} credits left` : 'File a new leave request'}</p>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setLeaveChoiceModalOpen(false);
+                  setMyLeavesModalOpen(true);
+                  fetchMyLeaves();
+                }}
+                className="w-full flex items-center gap-3 p-4 rounded-2xl border border-slate-100 bg-slate-50 hover:bg-slate-100 transition text-left"
+              >
+                <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center flex-shrink-0 text-lg">🗓️</div>
+                <div className="min-w-0">
+                  <p className="font-bold text-slate-900 text-sm">My Leave Requests</p>
+                  <p className="text-slate-400 text-xs mt-0.5">{myLeaves.length > 0 ? `${myLeaves.length} request${myLeaves.length === 1 ? '' : 's'}` : 'No leave requests yet'}</p>
+                </div>
+              </button>
+            </div>
+
+            <button
+              type="button"
+              className="w-full mt-6 p-3 bg-slate-100 rounded-full font-medium text-sm"
+              onClick={() => setLeaveChoiceModalOpen(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* My Leave Requests Modal */}
       {myLeavesModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
@@ -1883,6 +2002,89 @@ export default function EmployeeDashboard() {
             <button
               type="button"
               onClick={() => setMyDisputesModalOpen(false)}
+              className="mt-6 w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 transition flex-shrink-0"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Employee Directory Modal */}
+      {directoryModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm card-style shadow-2xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between mb-4 flex-shrink-0">
+              <div>
+                <h3 className="mb-0">Employee Directory</h3>
+                <p className="text-slate-400 text-xs mt-1">{directoryEmployees.length} account{directoryEmployees.length === 1 ? '' : 's'}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDirectoryModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 transition"
+                aria-label="Close"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+
+            <input
+              type="text"
+              placeholder="Search name or designation..."
+              value={directorySearch}
+              onChange={(e) => setDirectorySearch(e.target.value)}
+              className="input-field !py-2 !text-xs !min-h-0 mb-4 flex-shrink-0"
+            />
+
+            <div className="overflow-y-auto flex-1 space-y-2">
+              {directoryLoading && (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <div key={`dir-skel-${i}`} className="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-100 animate-pulse">
+                    <div className="w-10 h-10 rounded-full bg-slate-200 flex-shrink-0" />
+                    <div className="flex-1 space-y-1.5">
+                      <div className="h-3.5 w-2/3 bg-slate-200 rounded" />
+                      <div className="h-3 w-1/3 bg-slate-200 rounded" />
+                    </div>
+                  </div>
+                ))
+              )}
+              {!directoryLoading && filteredDirectory.length === 0 && (
+                <p className="py-10 text-center text-slate-400 text-sm">
+                  {directorySearch ? 'No matches found.' : 'No employees found.'}
+                </p>
+              )}
+              {!directoryLoading && filteredDirectory.map((emp) => (
+                <div key={emp.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div className="flex-shrink-0 w-10 h-10 rounded-full bg-blue-50 text-blue-600 font-bold text-xs flex items-center justify-center overflow-hidden">
+                    {emp.avatar_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- external Supabase Storage URL, not a static asset
+                      <img src={emp.avatar_url} alt={emp.full_name ?? 'Employee'} className="w-full h-full object-cover" />
+                    ) : (
+                      directoryInitials(emp.full_name)
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-bold text-slate-900 text-sm truncate">{emp.full_name || 'Unknown'}</p>
+                    <p className="text-blue-600 text-xs truncate">{emp.designation || '---'}</p>
+                    {emp.employee_email && (
+                      <a
+                        href={`mailto:${emp.employee_email}`}
+                        className="text-slate-400 text-[10px] hover:text-blue-600 hover:underline truncate block mt-0.5"
+                      >
+                        {emp.employee_email}
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setDirectoryModalOpen(false)}
               className="mt-6 w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 transition flex-shrink-0"
             >
               Close
