@@ -97,6 +97,198 @@ export default function SuperAdminDashboard() {
   const [attendanceRecordsModalOpen, setAttendanceRecordsModalOpen] = useState(false);
   const [archivalModalOpen, setArchivalModalOpen] = useState(false);
   const [backupModalOpen, setBackupModalOpen] = useState(false);
+  const [auditLogModalOpen, setAuditLogModalOpen] = useState(false);
+  const [healthModalOpen, setHealthModalOpen] = useState(false);
+  const [appSettingsModalOpen, setAppSettingsModalOpen] = useState(false);
+  const [appSettings, setAppSettings] = useState<{
+    late_cutoff_hour: number;
+    late_cutoff_minute: number;
+    default_leave_credits: number;
+    time_out_reminder_hour: number;
+  }>({ late_cutoff_hour: 9, late_cutoff_minute: 15, default_leave_credits: 10, time_out_reminder_hour: 19 });
+  const [appSettingsLoading, setAppSettingsLoading] = useState(false);
+  const [appSettingsSaving, setAppSettingsSaving] = useState(false);
+  const [appSettingsMsg, setAppSettingsMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [testEmailLoading, setTestEmailLoading] = useState(false);
+  const [testEmailResult, setTestEmailResult] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [lastBackupAt, setLastBackupAt] = useState<string | null>(null);
+  const [lastArchiveAt, setLastArchiveAt] = useState<string | null>(null);
+  const [healthStatusLoading, setHealthStatusLoading] = useState(false);
+  const [currentAdminEmail, setCurrentAdminEmail] = useState<string | null>(null);
+
+  // Audit Log -- read-only trail of admin/system actions. Entries are
+  // written via the log_audit_event() RPC (see migration), which stamps
+  // actor_id from the caller's own session -- never trusted from client
+  // input -- so this list can't be spoofed by calling code.
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [auditLogsLoading, setAuditLogsLoading] = useState(false);
+  const [auditLogsFetched, setAuditLogsFetched] = useState(false);
+  const [auditLogPage, setAuditLogPage] = useState(1);
+
+  const fetchAuditLogs = async () => {
+    setAuditLogsLoading(true);
+    const { data, error } = await supabase
+      .from('audit_logs')
+      .select('id, created_at, actor_name, action, entity_type, summary')
+      .order('created_at', { ascending: false })
+      .limit(200);
+    if (error) console.error('Error fetching audit logs:', error);
+    setAuditLogs(data || []);
+    setAuditLogsLoading(false);
+  };
+
+  const openAuditLogModal = () => {
+    setAuditLogPage(1);
+    setAuditLogModalOpen(true);
+    if (!auditLogsFetched) {
+      setAuditLogsFetched(true);
+      fetchAuditLogs();
+    }
+  };
+
+  // Fire-and-forget logging helper -- the action itself already
+  // succeeded by the time this is called, so a logging failure
+  // shouldn't surface as an error to the admin. Just console.error it.
+  const logAuditEvent = async (action: string, entityType: string, entityId: string | null, summary: string) => {
+    const { error } = await supabase.rpc('log_audit_event', {
+      p_action: action,
+      p_entity_type: entityType,
+      p_entity_id: entityId,
+      p_summary: summary,
+    });
+    if (error) console.error('Error logging audit event:', error);
+  };
+
+  const auditActionMeta = (action: string): { icon: string; label: string } => {
+    switch (action) {
+      case 'account_created': return { icon: '➕', label: 'Account Created' };
+      case 'account_updated': return { icon: '✏️', label: 'Account Updated' };
+      case 'account_deactivated': return { icon: '🚫', label: 'Account Deactivated' };
+      case 'account_reactivated': return { icon: '✅', label: 'Account Reactivated' };
+      case 'password_reset_sent': return { icon: '🔑', label: 'Password Reset Sent' };
+      case 'data_archived': return { icon: '🗃️', label: 'Data Archived' };
+      case 'database_backup': return { icon: '🗄️', label: 'Database Backup' };
+      case 'test_email_sent': return { icon: '📧', label: 'Test Email Sent' };
+      case 'app_settings_updated': return { icon: '⚙️', label: 'App Settings Updated' };
+      default: return { icon: '📝', label: action };
+    }
+  };
+
+  const auditLogTotalPages = Math.max(1, Math.ceil(auditLogs.length / PAGE_SIZE));
+  const paginatedAuditLogs = auditLogs.slice((auditLogPage - 1) * PAGE_SIZE, auditLogPage * PAGE_SIZE);
+
+  // --- System Health ---
+  // "Last Backup" / "Last Archive" are read straight from the audit
+  // trail we already write to -- no separate tracking table needed.
+  // "Send Test Email" reuses the password-reset flow (targeted at the
+  // currently logged-in admin's own email) since that's already wired
+  // through the exact same custom SMTP path every other auth email
+  // uses -- a real end-to-end proof it works, not a synthetic check.
+  const openHealthModal = async () => {
+    setTestEmailResult(null);
+    setHealthModalOpen(true);
+    setHealthStatusLoading(true);
+
+    const { data: { user } } = await supabase.auth.getUser();
+    setCurrentAdminEmail(user?.email ?? null);
+
+    const [{ data: backupRow }, { data: archiveRow }] = await Promise.all([
+      supabase.from('audit_logs').select('created_at').eq('action', 'database_backup').order('created_at', { ascending: false }).limit(1).maybeSingle(),
+      supabase.from('audit_logs').select('created_at').eq('action', 'data_archived').order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    ]);
+    setLastBackupAt(backupRow?.created_at ?? null);
+    setLastArchiveAt(archiveRow?.created_at ?? null);
+    setHealthStatusLoading(false);
+  };
+
+  const sendTestEmail = async () => {
+    if (!currentAdminEmail) {
+      setTestEmailResult({ type: 'error', text: 'Could not determine your account email.' });
+      return;
+    }
+    setTestEmailLoading(true);
+    setTestEmailResult(null);
+    try {
+      const redirectTo = `${window.location.origin}/auth/reset-password`;
+      const { error } = await supabaseAuthActions.auth.resetPasswordForEmail(currentAdminEmail, { redirectTo });
+      if (error) throw error;
+      setTestEmailResult({ type: 'success', text: `Test email sent to ${currentAdminEmail}. If it arrives, custom SMTP is working end-to-end.` });
+      await logAuditEvent('test_email_sent', 'system', null, `Sent a test email to ${currentAdminEmail} to verify SMTP.`);
+    } catch (err: any) {
+      console.error('Error sending test email:', err);
+      setTestEmailResult({ type: 'error', text: err?.message ?? 'Failed to send test email.' });
+    } finally {
+      setTestEmailLoading(false);
+    }
+  };
+
+  const formatHealthTimestamp = (iso: string | null) =>
+    iso
+      ? new Date(iso).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+      : 'Never';
+
+  // --- App Settings ---
+  // Business rules (late cutoff, default leave credits, time-out
+  // reminder hour) that used to be hardcoded across
+  // app/api/time-in/route.ts, app/employee/page.tsx, and app/hr/page.tsx.
+  // All three now read these values live from app_settings, so editing
+  // here takes effect immediately without a code change or redeploy.
+  const openAppSettingsModal = async () => {
+    setAppSettingsMsg(null);
+    setAppSettingsModalOpen(true);
+    setAppSettingsLoading(true);
+    const { data, error } = await supabase
+      .from('app_settings')
+      .select('key, value')
+      .in('key', ['late_cutoff_hour', 'late_cutoff_minute', 'default_leave_credits', 'time_out_reminder_hour']);
+    if (error) {
+      console.error('Error fetching app settings:', error);
+      setAppSettingsMsg({ type: 'error', text: error.message });
+      setAppSettingsLoading(false);
+      return;
+    }
+    const map = Object.fromEntries((data || []).map((r) => [r.key, r.value]));
+    setAppSettings({
+      late_cutoff_hour: typeof map.late_cutoff_hour === 'number' ? map.late_cutoff_hour : 9,
+      late_cutoff_minute: typeof map.late_cutoff_minute === 'number' ? map.late_cutoff_minute : 15,
+      default_leave_credits: typeof map.default_leave_credits === 'number' ? map.default_leave_credits : 10,
+      time_out_reminder_hour: typeof map.time_out_reminder_hour === 'number' ? map.time_out_reminder_hour : 19,
+    });
+    setAppSettingsLoading(false);
+  };
+
+  const saveAppSettings = async () => {
+    setAppSettingsSaving(true);
+    setAppSettingsMsg(null);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const rows = [
+        { key: 'late_cutoff_hour', value: appSettings.late_cutoff_hour },
+        { key: 'late_cutoff_minute', value: appSettings.late_cutoff_minute },
+        { key: 'default_leave_credits', value: appSettings.default_leave_credits },
+        { key: 'time_out_reminder_hour', value: appSettings.time_out_reminder_hour },
+      ];
+      for (const row of rows) {
+        const { error } = await supabase
+          .from('app_settings')
+          .update({ value: row.value, updated_at: new Date().toISOString(), updated_by: user?.id ?? null })
+          .eq('key', row.key);
+        if (error) throw error;
+      }
+      setAppSettingsMsg({ type: 'success', text: 'Settings saved. Takes effect immediately for new time-ins and dashboard loads.' });
+      await logAuditEvent(
+        'app_settings_updated',
+        'system',
+        null,
+        `Updated app settings: late cutoff ${appSettings.late_cutoff_hour}:${String(appSettings.late_cutoff_minute).padStart(2, '0')}, default leave credits ${appSettings.default_leave_credits}, time-out reminder ${appSettings.time_out_reminder_hour}:00`
+      );
+    } catch (err: any) {
+      console.error('Error saving app settings:', err);
+      setAppSettingsMsg({ type: 'error', text: err?.message ?? 'Failed to save settings.' });
+    } finally {
+      setAppSettingsSaving(false);
+    }
+  };
 
   // Pagination -- 5 records per page for both the User Accounts list and
   // the Attendance Records list, now that both live inside a fixed-size
@@ -327,6 +519,12 @@ export default function SuperAdminDashboard() {
           : `Archived ${row.archived_attendance_logs} attendance log(s), ${row.archived_disputes} dispute(s), ${row.archived_leave_requests} leave request(s), and ${row.archived_leave_request_days} leave day(s).`,
     });
 
+    await logAuditEvent('data_archived', 'system', null,
+      total === 0
+        ? 'Ran data archival -- nothing older than 1 year to move.'
+        : `Archived ${row.archived_attendance_logs} attendance log(s), ${row.archived_disputes} dispute(s), ${row.archived_leave_requests} leave request(s), ${row.archived_leave_request_days} leave day(s).`
+    );
+
     // Refresh so the (now-shrunk) live tables reflect immediately.
     await fetchAttendanceLogs();
     setArchiveLoading(false);
@@ -385,6 +583,7 @@ export default function SuperAdminDashboard() {
         type: 'success',
         text: "Backup started! It's running on the server now -- you'll get an email with the .sql file attached once it finishes (success or failure).",
       });
+      await logAuditEvent('database_backup', 'system', null, 'Triggered a full database backup.');
     } catch (err: any) {
       console.error('Error triggering backup:', err);
       setBackupResult({ type: 'error', text: err?.message ?? 'Failed to start the backup.' });
@@ -502,6 +701,7 @@ export default function SuperAdminDashboard() {
         if (error) throw error;
 
         setMessage({ type: 'success', text: 'Account updated successfully.' });
+        await logAuditEvent('account_updated', 'profile', editingId, `Updated account for ${fullName} (${employeeId || 'no ID'})`);
         resetForm();
         await fetchEmployees();
         return;
@@ -536,6 +736,7 @@ export default function SuperAdminDashboard() {
         text: `Account created successfully for ${fullName}!`,
       });
 
+      await logAuditEvent('account_created', 'profile', result?.id ?? null, `Created ${role} account for ${fullName} (${employeeId || 'no ID'})`);
       resetForm();
       await fetchEmployees();
     } catch (err: any) {
@@ -566,6 +767,7 @@ export default function SuperAdminDashboard() {
       if (error) throw error;
 
       setResetPasswordMsg({ type: 'success', text: 'Check your email for reset password instructions.' });
+      await logAuditEvent('password_reset_sent', 'profile', null, `Sent password reset email to ${resetEmail}`);
       // Only clear the field once we know it actually succeeded --
       // an error leaves the typed email in place so the admin doesn't
       // have to retype it after fixing whatever went wrong.
@@ -676,6 +878,12 @@ export default function SuperAdminDashboard() {
       if (!res.ok) throw new Error(result.error || 'Failed to update account status.');
 
       setMessage({ type: 'success', text: result.message });
+      await logAuditEvent(
+        deactivate ? 'account_deactivated' : 'account_reactivated',
+        'profile',
+        editingId,
+        `${deactivate ? 'Deactivated' : 'Reactivated'} account for ${editingEmployee?.full_name ?? 'unknown'}`
+      );
       resetForm();
       await fetchEmployees();
     } catch (err: any) {
@@ -827,6 +1035,33 @@ export default function SuperAdminDashboard() {
           >
             <span className="w-10 h-10 rounded-2xl bg-slate-100 flex items-center justify-center text-lg flex-shrink-0">🗄️</span>
             <span className="font-bold text-slate-900 text-xs">Database Backup</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={openAuditLogModal}
+            className="card-style !p-4 flex flex-col items-center justify-center gap-2 text-center hover:bg-slate-50 transition"
+          >
+            <span className="w-10 h-10 rounded-2xl bg-indigo-50 flex items-center justify-center text-lg flex-shrink-0">📜</span>
+            <span className="font-bold text-slate-900 text-xs">Audit Log</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={openHealthModal}
+            className="card-style !p-4 flex flex-col items-center justify-center gap-2 text-center hover:bg-slate-50 transition"
+          >
+            <span className="w-10 h-10 rounded-2xl bg-teal-50 flex items-center justify-center text-lg flex-shrink-0">💚</span>
+            <span className="font-bold text-slate-900 text-xs">System Health</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={openAppSettingsModal}
+            className="card-style !p-4 flex flex-col items-center justify-center gap-2 text-center hover:bg-slate-50 transition"
+          >
+            <span className="w-10 h-10 rounded-2xl bg-orange-50 flex items-center justify-center text-lg flex-shrink-0">⚙️</span>
+            <span className="font-bold text-slate-900 text-xs">App Settings</span>
           </button>
         </div>
       </div>
@@ -1277,6 +1512,145 @@ export default function SuperAdminDashboard() {
                   type="button"
                   onClick={() => setAttendancePage((p) => Math.min(attendanceTotalPages, p + 1))}
                   disabled={attendancePage === attendanceTotalPages}
+                  className="text-xs font-bold text-blue-600 disabled:text-slate-300 disabled:cursor-not-allowed"
+                >
+                  Next →
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* SYSTEM HEALTH MODAL */}
+      {healthModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm card-style shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2.5">
+                <span className="w-9 h-9 rounded-2xl bg-teal-50 flex items-center justify-center text-base flex-shrink-0">💚</span>
+                <h3 className="mb-0">System Health</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setHealthModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 transition"
+                aria-label="Close"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-2 mb-6">
+              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                <span className="text-slate-600 text-xs font-bold">🗄️ Last Backup</span>
+                <span className="text-slate-900 text-xs font-medium">
+                  {healthStatusLoading ? '...' : formatHealthTimestamp(lastBackupAt)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                <span className="text-slate-600 text-xs font-bold">🗃️ Last Archive</span>
+                <span className="text-slate-900 text-xs font-medium">
+                  {healthStatusLoading ? '...' : formatHealthTimestamp(lastArchiveAt)}
+                </span>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-slate-100">
+              <p className="label-branded mb-1">Email Delivery (SMTP)</p>
+              <p className="text-slate-400 text-xs mb-3">
+                Sends a real password reset link to your own account ({currentAdminEmail ?? '...'}) through the
+                configured SMTP -- if it arrives, sending is confirmed working end-to-end.
+              </p>
+              {testEmailResult && (
+                <div className={`p-3 rounded-xl text-xs font-bold mb-3 ${testEmailResult.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                  {testEmailResult.text}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={sendTestEmail}
+                disabled={testEmailLoading || !currentAdminEmail}
+                className="w-full btn-primary disabled:opacity-50"
+              >
+                {testEmailLoading ? (
+                  <span className="flex items-center justify-center gap-2"><Spinner size="sm" />Sending...</span>
+                ) : 'Send Test Email'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AUDIT LOG MODAL */}
+      {auditLogModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm card-style shadow-2xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between mb-4 flex-shrink-0">
+              <div>
+                <h3 className="mb-0">Audit Log</h3>
+                <p className="text-slate-400 text-xs mt-1">Admin & system actions, most recent first</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAuditLogModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 transition"
+                aria-label="Close"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 space-y-2">
+              {auditLogsLoading && (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <div key={`audit-skel-${i}`} className="p-3 bg-slate-50 rounded-2xl border border-slate-100 animate-pulse">
+                    <div className="h-3.5 w-2/3 bg-slate-200 rounded mb-2" />
+                    <div className="h-3 w-1/3 bg-slate-200 rounded" />
+                  </div>
+                ))
+              )}
+              {!auditLogsLoading && paginatedAuditLogs.map((log) => {
+                const meta = auditActionMeta(log.action);
+                return (
+                  <div key={log.id} className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                    <div className="flex items-start gap-2.5">
+                      <span className="w-8 h-8 rounded-xl bg-white border border-slate-100 flex items-center justify-center text-sm flex-shrink-0">{meta.icon}</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-bold text-slate-900 text-xs">{meta.label}</p>
+                        <p className="text-slate-500 text-xs mt-0.5">{log.summary}</p>
+                        <p className="text-slate-400 text-[10px] mt-1">
+                          {log.actor_name ?? 'Unknown'} · {new Date(log.created_at).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              {!auditLogsLoading && auditLogs.length === 0 && (
+                <p className="py-8 text-center text-slate-400 text-sm">No audit entries yet.</p>
+              )}
+            </div>
+
+            {auditLogs.length > PAGE_SIZE && (
+              <div className="flex items-center justify-between pt-4 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setAuditLogPage((p) => Math.max(1, p - 1))}
+                  disabled={auditLogPage === 1}
+                  className="text-xs font-bold text-blue-600 disabled:text-slate-300 disabled:cursor-not-allowed"
+                >
+                  ← Prev
+                </button>
+                <span className="text-slate-400 text-[10px] font-medium">Page {auditLogPage} of {auditLogTotalPages}</span>
+                <button
+                  type="button"
+                  onClick={() => setAuditLogPage((p) => Math.min(auditLogTotalPages, p + 1))}
+                  disabled={auditLogPage === auditLogTotalPages}
                   className="text-xs font-bold text-blue-600 disabled:text-slate-300 disabled:cursor-not-allowed"
                 >
                   Next →

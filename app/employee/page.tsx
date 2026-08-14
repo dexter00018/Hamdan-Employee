@@ -23,11 +23,59 @@ function EyeOffIcon() {
   );
 }
 
+function SunIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="5" />
+      <line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" />
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+      <line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" />
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+    </svg>
+  );
+}
+
+function MoonIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z" />
+    </svg>
+  );
+}
+
 export default function EmployeeDashboard() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [timeOutLoading, setTimeOutLoading] = useState(false);
   const [todayLog, setTodayLog] = useState<{ id: string; time_in: string | null; time_out: string | null; status: string | null } | null>(null);
+
+  // --- Dark Mode ---
+  // Persisted in localStorage (falls back to the OS/browser preference on
+  // first visit). Toggles a `dark` class on <html> itself (via
+  // document.documentElement) rather than on <main> -- your body
+  // background gradient in globals.css is set on the <body> tag, which
+  // is an ANCESTOR of <main>, not a descendant, so ".dark body { }"
+  // would never match if "dark" only lived on <main>. Putting it on
+  // <html> makes <body> (and everything else) a proper descendant, so
+  // the CSS override actually applies. The matching dark-theme colors
+  // for the custom classes (card-style, input-field, tag-*, btn-*,
+  // branding-box, etc.) live in the CSS snippet provided alongside this
+  // file -- paste it at the end of globals.css.
+  const [darkMode, setDarkMode] = useState(false);
+
+  useEffect(() => {
+    const stored = localStorage.getItem('theme');
+    if (stored === 'dark') {
+      setDarkMode(true);
+    } else if (!stored && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      setDarkMode(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', darkMode);
+    localStorage.setItem('theme', darkMode ? 'dark' : 'light');
+  }, [darkMode]);
 
   // 7PM time-out reminder -- an in-page toast, not a real push
   // notification, so it only appears while this tab is open. Uses a
@@ -254,6 +302,7 @@ export default function EmployeeDashboard() {
     fetchMyDisputes();
     fetchPayslips();
     fetchMyLeaves();
+    fetchCompanyHolidays();
     return () => clearInterval(timer);
   }, []);
 
@@ -560,6 +609,35 @@ export default function EmployeeDashboard() {
     setDirectoryLoading(false);
   };
 
+  // --- Company Calendar (Holidays) ---
+  // Read-only view of the holidays HR has set up (the same `holidays`
+  // table Super Admin manages). NOTE: like the Directory above, this
+  // selects rows the logged-in employee doesn't own, so `holidays` needs
+  // a SELECT policy allowing any authenticated user to read it, e.g.:
+  //   create policy "Employees can view holidays"
+  //   on holidays for select
+  //   to authenticated
+  //   using (true);
+  const [companyHolidays, setCompanyHolidays] = useState<{ id: string; holiday_date: string; name: string }[]>([]);
+  const [holidaysLoading, setHolidaysLoading] = useState(true);
+  const [calendarModalOpen, setCalendarModalOpen] = useState(false);
+
+  const fetchCompanyHolidays = async () => {
+    setHolidaysLoading(true);
+    const { data, error } = await supabase
+      .from('holidays')
+      .select('id, holiday_date, name')
+      .order('holiday_date', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching holidays:', error);
+      setHolidaysLoading(false);
+      return;
+    }
+    setCompanyHolidays(data || []);
+    setHolidaysLoading(false);
+  };
+
   const directoryInitials = (name: string | null) =>
     (name || '?')
       .split(' ')
@@ -631,6 +709,9 @@ export default function EmployeeDashboard() {
   const [leaveSaving, setLeaveSaving] = useState(false);
   const [leaveMsg, setLeaveMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [leaveResultToast, setLeaveResultToast] = useState<{ status: string; leave_type: string } | null>(null);
+  // Which leave request is currently expanded into the detail view inside
+  // the "My Leave Requests" modal (null = showing the list).
+  const [selectedMyLeaveDetail, setSelectedMyLeaveDetail] = useState<any>(null);
   const isRegular = governmentIds?.employment_status === 'Regular';
   // Flat 10 credits/year default -- matches the DB column default and
   // the fallback used server-side in settle_leave_day() when a
@@ -722,6 +803,9 @@ export default function EmployeeDashboard() {
   // go through the same request table; HR approves/rejects.
   const [myDisputes, setMyDisputes] = useState<any[]>([]);
   const [myDisputesModalOpen, setMyDisputesModalOpen] = useState(false);
+  // Which dispute is currently expanded into the detail view inside the
+  // "My Disputes" modal (null = showing the list).
+  const [selectedMyDisputeDetail, setSelectedMyDisputeDetail] = useState<any>(null);
   const [disputeModalOpen, setDisputeModalOpen] = useState(false);
   // Three-step flow:
   // "choice"  -> pick Time In or Time Out dispute (only shown when the
@@ -776,6 +860,20 @@ export default function EmployeeDashboard() {
 
   const hasPendingDispute = (dateStr: string, type: 'TimeIn' | 'TimeOut') =>
     myDisputes.some((d) => d.dispute_date === dateStr && d.status === 'Pending' && (d.dispute_type || 'TimeIn') === type);
+
+  // Human-friendly label + before/after times for a dispute, regardless
+  // of whether it's a TimeIn or TimeOut dispute -- shared by the "My
+  // Disputes" list and its detail view.
+  const disputeTypeLabel = (d: any) => {
+    const dType = d.dispute_type || 'TimeIn';
+    if (dType === 'TimeOut') return 'Missed time-out';
+    return d.attendance_log_id ? 'Late tag dispute' : 'Missed time-in';
+  };
+  const disputeOriginal = (d: any) => ((d.dispute_type || 'TimeIn') === 'TimeOut' ? d.original_time_out : d.original_time_in);
+  const disputeClaimed = (d: any) => ((d.dispute_type || 'TimeIn') === 'TimeOut' ? d.claimed_time_out : d.claimed_time_in);
+  const disputeFieldLabel = (d: any) => ((d.dispute_type || 'TimeIn') === 'TimeOut' ? 'Time-Out' : 'Time-In');
+  const formatDisputeTimePh = (iso: string) =>
+    new Date(iso).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' });
 
   // Whether the currently-open dispute modal was launched from a
   // specific row (Late tag / missed time-out link -- type is fixed) or
@@ -1017,6 +1115,87 @@ export default function EmployeeDashboard() {
     []
   );
 
+  // --- Days Until Payday widget ---
+  // Assumes the common semi-monthly PH schedule: paid on the 15th (for
+  // the 1-15 cutoff) and on the last calendar day of the month (for the
+  // 16-end cutoff). Adjust the candidate days below if the company's
+  // actual payout dates differ (e.g. a few days after each cutoff closes).
+  const paydayInfo = useMemo(() => {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).formatToParts(new Date()).reduce((acc: any, p) => { acc[p.type] = p.value; return acc; }, {});
+    const y = parseInt(parts.year, 10);
+    const m = parseInt(parts.month, 10); // 1-indexed
+    const d = parseInt(parts.day, 10);
+
+    const lastDayOfMonth = (yy: number, mm: number) => new Date(yy, mm, 0).getDate();
+
+    let ny = y, nm = m + 1;
+    if (nm > 12) { nm = 1; ny += 1; }
+
+    const candidates = [
+      { y, m, d: 15 },
+      { y, m, d: lastDayOfMonth(y, m) },
+      { y: ny, m: nm, d: 15 },
+    ];
+
+    const todayUTC = Date.UTC(y, m - 1, d);
+    const next = candidates
+      .map((c) => ({ ...c, diff: Math.round((Date.UTC(c.y, c.m - 1, c.d) - todayUTC) / 86400000) }))
+      .filter((c) => c.diff >= 0)
+      .sort((a, b) => a.diff - b.diff)[0];
+
+    const label = new Date(next.y, next.m - 1, next.d).toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+    return { daysLeft: next.diff, label };
+  }, []);
+
+  // --- Attendance Streak badge ---
+  // Counts consecutive work days (most recent first) that are neither
+  // "Late" nor "Absent" -- an approved Leave day doesn't break the streak,
+  // it's just skipped over.
+  const attendanceStreak = useMemo(() => {
+    const sorted = [...history]
+      .filter((l) => l.log_date && l.log_date <= todayManila)
+      .sort((a, b) => (a.log_date < b.log_date ? 1 : -1));
+    let streak = 0;
+    for (const log of sorted) {
+      const status = log.status?.toLowerCase() ?? '';
+      if (status === 'late' || status === 'absent') break;
+      if (status.includes('leave')) continue;
+      streak += 1;
+    }
+    return streak;
+  }, [history, todayManila]);
+
+  const streakMessage =
+    attendanceStreak === 0 ? 'Start your streak today!' :
+    attendanceStreak < 5 ? 'Nice start!' :
+    attendanceStreak < 10 ? 'Great job!' :
+    attendanceStreak < 20 ? 'Impressive!' : 'Outstanding!';
+
+  // Split holidays into upcoming (today included) and past, each sorted
+  // nearest-first, for the Company Calendar modal.
+  const { upcomingHolidays, pastHolidays } = useMemo(() => {
+    const upcoming = companyHolidays
+      .filter((h) => h.holiday_date >= todayManila)
+      .sort((a, b) => (a.holiday_date < b.holiday_date ? -1 : 1));
+    const past = companyHolidays
+      .filter((h) => h.holiday_date < todayManila)
+      .sort((a, b) => (a.holiday_date < b.holiday_date ? 1 : -1));
+    return { upcomingHolidays: upcoming, pastHolidays: past };
+  }, [companyHolidays, todayManila]);
+
+  const formatHolidayDate = (dateStr: string) => {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
+  const daysUntilHoliday = (dateStr: string) => {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const [ty, tm, td] = todayManila.split('-').map(Number);
+    return Math.round((Date.UTC(y, m - 1, d) - Date.UTC(ty, tm - 1, td)) / 86400000);
+  };
+
   // If the employee has filtered Attendance History to a specific
   // cutoff, the summary cards follow that same cutoff. Otherwise,
   // default to the current cutoff period.
@@ -1058,15 +1237,30 @@ export default function EmployeeDashboard() {
     // it must exclude 'Absent' and any Leave-type rows, which now also live in
     // attendance_logs. Status is compared case-insensitively since it can
     // also be hand-edited directly in Supabase (e.g. "late" instead of "Late").
-    const present = cutoffLogs.filter(l => l.status?.toLowerCase() !== 'absent' && !isLeaveStatus(l.status)).length;
-    const late = cutoffLogs.filter(l => l.status?.toLowerCase() === 'late').length;
-    const absent = cutoffLogs.filter(l => l.status?.toLowerCase() === 'absent').length;
-    const onTime = present - late;
-    const totalLateMinutes = cutoffLogs
-      .filter(l => l.status?.toLowerCase() === 'late' && l.time_in)
+    const presentLogs = cutoffLogs.filter(l => l.status?.toLowerCase() !== 'absent' && !isLeaveStatus(l.status));
+    const lateLogs = cutoffLogs.filter(l => l.status?.toLowerCase() === 'late');
+    const absentLogs = cutoffLogs.filter(l => l.status?.toLowerCase() === 'absent');
+    const onTime = presentLogs.length - lateLogs.length;
+    const totalLateMinutes = lateLogs
+      .filter(l => l.time_in)
       .reduce((sum, l) => sum + getMinutesLate(l.time_in), 0);
-    return { present, late, absent, onTime, totalLateMinutes };
+    // presentLogs/lateLogs/absentLogs carried along so the stat cards can
+    // list the exact dates behind each number when tapped.
+    return { present: presentLogs.length, late: lateLogs.length, absent: absentLogs.length, onTime, totalLateMinutes, presentLogs, lateLogs, absentLogs };
   }, [history, summaryCutoffKey]);
+
+  // Which stat card's detail list is currently open (null = none).
+  const [summaryDetailType, setSummaryDetailType] = useState<'present' | 'late' | 'absent' | null>(null);
+
+  const summaryDetailInfo = useMemo(() => {
+    if (!summaryDetailType) return null;
+    const map: Record<'present' | 'late' | 'absent', { title: string; accent: string; logs: any[]; emptyNote: string }> = {
+      present: { title: 'Present Days', accent: 'text-blue-600', logs: summary.presentLogs, emptyNote: "No present days on record for this cutoff yet." },
+      late: { title: 'Late Days', accent: 'text-orange-600', logs: summary.lateLogs, emptyNote: "No late days this cutoff -- keep it up!" },
+      absent: { title: 'Absent Days', accent: 'text-red-600', logs: summary.absentLogs, emptyNote: "No absences this cutoff -- perfect attendance!" },
+    };
+    return map[summaryDetailType];
+  }, [summaryDetailType, summary]);
 
   // --- History filtering ---
   const availableCutoffs = useMemo(() => {
@@ -1126,6 +1320,85 @@ export default function EmployeeDashboard() {
     return half === 'H1' ? `${monthName} 1-15, ${y}` : `${monthName} 16-31, ${y}`;
   };
 
+  // --- Export Attendance History ---
+  // Both exports respect whatever the employee currently has the history
+  // filtered to (monthFilter) via filteredHistory.
+  const exportFileLabel = () => {
+    const idPart = profile?.employee_id ? `-${profile.employee_id}` : '';
+    const periodPart = monthFilter ? `-${monthFilter.replace(':', '-')}` : '-all';
+    return `attendance${idPart}${periodPart}`;
+  };
+
+  const exportAttendanceCSV = () => {
+    const escapeCsv = (val: string) => `"${(val ?? '').replace(/"/g, '""')}"`;
+    const headers = ['Date', 'Day', 'Status', 'Time In', 'Time Out'];
+    const rows = filteredHistory.map((log) => {
+      const weekday = new Date(log.log_date).toLocaleDateString('en-US', { weekday: 'long' });
+      const timeIn = log.time_in ? new Date(log.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }) : '';
+      const timeOut = log.time_out ? new Date(log.time_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }) : '';
+      return [log.log_date, weekday, log.status ?? '', timeIn, timeOut];
+    });
+    const csv = [headers, ...rows].map((r) => r.map(escapeCsv).join(',')).join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${exportFileLabel()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Opens a print-formatted view in a new tab and triggers the browser's
+  // print dialog -- the employee can "Save as PDF" from there. Avoids
+  // needing a PDF-generation library as a project dependency.
+  const exportAttendancePDF = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert('Please allow pop-ups to export as PDF.');
+      return;
+    }
+    const rowsHtml = filteredHistory.map((log) => {
+      const weekday = new Date(log.log_date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+      const timeIn = log.time_in ? new Date(log.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }) : '--:--';
+      const timeOut = log.time_out ? new Date(log.time_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }) : '--:--';
+      return `<tr><td>${weekday}</td><td>${log.log_date}</td><td><span class="tag ${(log.status ?? '').toLowerCase()}">${log.status ?? ''}</span></td><td>${timeIn}</td><td>${timeOut}</td></tr>`;
+    }).join('');
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>${exportFileLabel()}</title>
+          <style>
+            * { box-sizing: border-box; }
+            body { font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; color: #1e293b; padding: 32px; }
+            h1 { font-size: 18px; margin: 0 0 2px; }
+            .sub { color: #64748b; font-size: 12px; margin: 0 0 20px; }
+            table { width: 100%; border-collapse: collapse; font-size: 12px; }
+            th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #e2e8f0; }
+            th { color: #64748b; text-transform: uppercase; font-size: 10px; letter-spacing: 0.05em; }
+            .tag { padding: 3px 8px; border-radius: 999px; font-weight: bold; font-size: 10px; text-transform: uppercase; }
+            .tag.present { background: #e4fbea; color: #0c7a34; }
+            .tag.late { background: #ffeee2; color: #c23f0e; }
+            .tag.absent { background: #ffe1e1; color: #b91c1c; }
+            .tag.sick.leave, .tag.vacation.leave, .tag.emergency.leave { background: #f3ecfd; color: #6d28d9; }
+            @media print { body { padding: 0; } }
+          </style>
+        </head>
+        <body>
+          <h1>${profile?.full_name || 'Employee'} -- Attendance History</h1>
+          <p class="sub">${profile?.employee_id ? `ID: ${profile.employee_id} · ` : ''}${monthFilter ? formatMonthLabel(monthFilter) : 'All records'} · Generated ${new Date().toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'long', day: 'numeric', year: 'numeric' })}</p>
+          <table>
+            <thead><tr><th>Day</th><th>Date</th><th>Status</th><th>Time In</th><th>Time Out</th></tr></thead>
+            <tbody>${rowsHtml || '<tr><td colspan="5">No records.</td></tr>'}</tbody>
+          </table>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => printWindow.print(), 300);
+  };
+
   // Formats "HH:MM" (24h) into a readable 12h time, e.g. "8:05 AM" --
   // used on the dispute confirmation screen.
   const formatTimeLocal = (hhmm: string) => {
@@ -1145,23 +1418,31 @@ export default function EmployeeDashboard() {
           </div>
           <div className="flex items-center gap-4">
             <div className="hidden lg:flex items-center gap-4">
-              <div className="text-center"><p className="stat-number text-xl text-blue-600 leading-none">{summary.present}</p><p className="label-branded mt-0.5 mb-0">Present</p></div>
+              <button type="button" onClick={() => setSummaryDetailType('present')} className="text-center hover:opacity-70 transition"><p className="stat-number text-xl text-[#15803d] dark:text-[#5ee28b] leading-none">{summary.present}</p><p className="label-branded mt-0.5 mb-0 dark:text-[#aab8ad]">Present</p></button>
               <div className="w-px h-8 bg-slate-200"/>
-              <div className="text-center"><p className="stat-number text-xl text-orange-600 leading-none">{summary.late}</p><p className="label-branded mt-0.5 mb-0">Late</p></div>
+              <button type="button" onClick={() => setSummaryDetailType('late')} className="text-center hover:opacity-70 transition"><p className="stat-number text-xl text-[#c2410c] dark:text-[#fb923c] leading-none">{summary.late}</p><p className="label-branded mt-0.5 mb-0 dark:text-[#aab8ad]">Late</p></button>
               <div className="w-px h-8 bg-slate-200"/>
-              <div className="text-center"><p className="stat-number text-xl text-red-600 leading-none">{summary.absent}</p><p className="label-branded mt-0.5 mb-0">Absent</p></div>
+              <button type="button" onClick={() => setSummaryDetailType('absent')} className="text-center hover:opacity-70 transition"><p className="stat-number text-xl text-[#b91c1c] dark:text-[#f87171] leading-none">{summary.absent}</p><p className="label-branded mt-0.5 mb-0 dark:text-[#aab8ad]">Absent</p></button>
             </div>
+            <button
+              type="button"
+              onClick={() => setDarkMode((d) => !d)}
+              className="text-slate-400 hover:text-slate-600 transition p-1.5 rounded-full hover:bg-slate-100 flex-shrink-0"
+              aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+            >
+              {darkMode ? <SunIcon /> : <MoonIcon />}
+            </button>
             <button onClick={() => supabase.auth.signOut().then(() => window.location.href = '/')} className="text-slate-500 font-medium text-xs hover:text-red-600 transition whitespace-nowrap">Log Out</button>
           </div>
         </header>
 
         {message && <div className={`p-3 rounded-xl text-xs font-bold ${message.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{message}</div>}
 
-        {/* Mobile summary cards */}
+        {/* Mobile summary cards -- tap any of these to see which dates were counted. */}
         <div className="grid grid-cols-3 gap-2 lg:hidden">
-          <div className="card-style !p-3 text-center"><p className="stat-number text-xl text-blue-600">{summary.present}</p><p className="label-branded mt-0.5">Present</p></div>
-          <div className="card-style !p-3 text-center"><p className="stat-number text-xl text-orange-600">{summary.late}</p><p className="label-branded mt-0.5">Late</p></div>
-          <div className="card-style !p-3 text-center"><p className="stat-number text-xl text-red-600">{summary.absent}</p><p className="label-branded mt-0.5">Absent</p></div>
+          <button type="button" onClick={() => setSummaryDetailType('present')} className="card-style !p-3 text-center hover:bg-slate-50 transition"><p className="stat-number text-xl text-[#15803d] dark:text-[#5ee28b]">{summary.present}</p><p className="label-branded mt-0.5 dark:text-[#aab8ad]">Present</p></button>
+          <button type="button" onClick={() => setSummaryDetailType('late')} className="card-style !p-3 text-center hover:bg-slate-50 transition"><p className="stat-number text-xl text-[#c2410c] dark:text-[#fb923c]">{summary.late}</p><p className="label-branded mt-0.5 dark:text-[#aab8ad]">Late</p></button>
+          <button type="button" onClick={() => setSummaryDetailType('absent')} className="card-style !p-3 text-center hover:bg-slate-50 transition"><p className="stat-number text-xl text-[#b91c1c] dark:text-[#f87171]">{summary.absent}</p><p className="label-branded mt-0.5 dark:text-[#aab8ad]">Absent</p></button>
         </div>
 
         {/* Main layout */}
@@ -1185,6 +1466,21 @@ export default function EmployeeDashboard() {
                 <p className="label-branded">Employee ID</p>
                 <p className="font-medium text-slate-700 text-sm">{profile?.employee_id || '---'}</p>
               </div>
+
+              {/* Attendance Streak badge -- consecutive work days without a
+                  Late or Absent tag (approved Leave doesn't break it). */}
+              {!initLoading && (
+                <div className="mt-3 pt-3 border-t border-slate-100">
+                  <div className="flex items-center gap-2.5 bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-100 rounded-2xl p-3">
+                    <div className="w-9 h-9 rounded-xl bg-white flex items-center justify-center flex-shrink-0 text-lg shadow-sm">🔥</div>
+                    <div className="min-w-0">
+                      <p className="font-extrabold text-slate-900 text-sm leading-none">{attendanceStreak}-day streak</p>
+                      <p className="text-orange-600 text-[10px] font-bold uppercase tracking-wide mt-1">{streakMessage}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <button type="button" onClick={() => setShowGovIdsSection((s) => !s)} className="mt-3 text-blue-600 text-xs font-bold hover:underline w-full text-left lg:text-center">
                 {showGovIdsSection ? 'Hide Details' : 'See More Details'}
               </button>
@@ -1250,6 +1546,16 @@ export default function EmployeeDashboard() {
                     <p className="text-slate-400 text-[10px]">{formatMonthLabel(summaryCutoffKey)}</p>
                   </div>
                 </div>
+                {/* Days Until Payday */}
+                <div className="flex items-center gap-3 card-style !p-3">
+                  <div className="w-10 h-10 rounded-full bg-green-50 flex items-center justify-center flex-shrink-0">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-green-600"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-900 text-xs">{paydayInfo.daysLeft === 0 ? 'Payday is today!' : `${paydayInfo.daysLeft} day${paydayInfo.daysLeft === 1 ? '' : 's'} until payday`}</p>
+                    <p className="text-slate-400 text-[10px]">{paydayInfo.label}</p>
+                  </div>
+                </div>
               </div>
             </div>
             {/* Announcements */}
@@ -1302,7 +1608,7 @@ export default function EmployeeDashboard() {
                   <p className="text-slate-400 text-[10px] truncate">{payslips.length > 0 ? `${payslips.length} available` : 'No payslips yet'}</p>
                 </div>
               </button>
-              <button type="button" onClick={() => { setMyDisputesModalOpen(true); fetchMyDisputes(); }} className="card-style !p-3 flex items-center gap-2 hover:bg-slate-50 transition text-left">
+              <button type="button" onClick={() => { setSelectedMyDisputeDetail(null); setMyDisputesModalOpen(true); fetchMyDisputes(); }} className="card-style !p-3 flex items-center gap-2 hover:bg-slate-50 transition text-left">
                 <div className="w-8 h-8 rounded-xl bg-rose-50 flex items-center justify-center flex-shrink-0">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-rose-600"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                 </div>
@@ -1318,6 +1624,19 @@ export default function EmployeeDashboard() {
                 <div className="min-w-0">
                   <p className="font-semibold text-slate-900 text-xs">Employee Directory</p>
                   <p className="text-slate-400 text-[10px] truncate">Look up a colleague</p>
+                </div>
+              </button>
+              <button type="button" onClick={() => { setCalendarModalOpen(true); fetchCompanyHolidays(); }} className="card-style !p-3 flex items-center gap-2 hover:bg-slate-50 transition text-left">
+                <div className="w-8 h-8 rounded-xl bg-purple-50 flex items-center justify-center flex-shrink-0">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-purple-600"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                </div>
+                <div className="min-w-0">
+                  <p className="font-semibold text-slate-900 text-xs">Company Calendar</p>
+                  <p className="text-slate-400 text-[10px] truncate">
+                    {!holidaysLoading && upcomingHolidays.length > 0
+                      ? `Next: ${upcomingHolidays[0].name}`
+                      : 'View holidays'}
+                  </p>
                 </div>
               </button>
             </div>
@@ -1347,17 +1666,7 @@ export default function EmployeeDashboard() {
 
               {attendanceHistoryOpen && (
                 <>
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-4 mb-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => openDisputeModal(null, '', 'TimeIn', false)}
-                        className="inline-flex items-center gap-1.5 bg-blue-600 text-white text-[11px] font-bold px-3.5 py-2 rounded-full hover:bg-blue-700 active:scale-95 transition whitespace-nowrap shadow-sm"
-                      >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                        Missed Time-In / Time-Out
-                      </button>
-                    </div>
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2 mt-4 mb-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <select className="input-field !py-1.5 !text-xs !min-h-0 w-auto" value={selectedYm} onChange={(e) => handleMonthChange(e.target.value)}>
                         <option value="">All months</option>
@@ -1384,6 +1693,27 @@ export default function EmployeeDashboard() {
                       {monthFilter && <button onClick={() => setMonthFilter('')} className="text-slate-400 text-xs font-bold hover:text-slate-600">Clear</button>}
                     </div>
                   </div>
+                  {filteredHistory.length > 0 && (
+                    <div className="flex items-center justify-end gap-2 mb-3">
+                      <span className="text-slate-400 text-[10px] font-bold uppercase tracking-wide mr-1">Export:</span>
+                      <button
+                        type="button"
+                        onClick={exportAttendanceCSV}
+                        className="inline-flex items-center gap-1 bg-slate-100 text-slate-600 text-[11px] font-bold px-3 py-1.5 rounded-full hover:bg-slate-200 transition"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        CSV
+                      </button>
+                      <button
+                        type="button"
+                        onClick={exportAttendancePDF}
+                        className="inline-flex items-center gap-1 bg-slate-100 text-slate-600 text-[11px] font-bold px-3 py-1.5 rounded-full hover:bg-slate-200 transition"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        PDF
+                      </button>
+                    </div>
+                  )}
                   <div className="space-y-2">
                     {initLoading && <LoadingRow label="Loading..." />}
                     {!initLoading && filteredHistory.length === 0 && <p className="text-slate-400 text-xs">No records{monthFilter ? ' for this cutoff' : ''}.</p>}
@@ -1451,6 +1781,69 @@ export default function EmployeeDashboard() {
           </div>
         </div>
       </div>
+
+      {/* Summary Stat Detail Modal -- lists the exact dates behind the
+          Present / Late / Absent number for the current cutoff. */}
+      {summaryDetailType && summaryDetailInfo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm card-style shadow-2xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between mb-1 flex-shrink-0">
+              <h3 className="mb-0">{summaryDetailInfo.title}</h3>
+              <button
+                type="button"
+                onClick={() => setSummaryDetailType(null)}
+                className="text-slate-400 hover:text-slate-600 transition"
+                aria-label="Close"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+            <p className="text-slate-400 text-xs mb-4 flex-shrink-0">{formatMonthLabel(summaryCutoffKey)}</p>
+
+            <div className="overflow-y-auto flex-1">
+              {summaryDetailInfo.logs.length === 0 ? (
+                <div className="text-center py-10 border-2 border-dashed border-slate-200 rounded-2xl">
+                  <p className="text-2xl mb-2">📋</p>
+                  <p className="text-slate-400 text-sm font-medium">{summaryDetailInfo.emptyNote}</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {summaryDetailInfo.logs
+                    .slice()
+                    .sort((a, b) => (a.log_date < b.log_date ? 1 : -1))
+                    .map((log) => (
+                      <div key={log.id} className="flex items-center justify-between gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                        <div className="min-w-0">
+                          <div className="font-medium text-slate-900 text-xs">{new Date(log.log_date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</div>
+                          <div className="text-slate-400 text-[10px]">{log.log_date}</div>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <span className={statusTagClass(log.status)}>{log.status}</span>
+                          {log.time_in && (
+                            <div className="text-slate-500 text-[10px] mt-1">
+                              {new Date(log.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}
+                              {log.time_out && <> – {new Date(log.time_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}</>}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setSummaryDetailType(null)}
+              className="mt-6 w-full py-3 rounded-full bg-[#edf4ef] text-[#405047] border border-[#dce7df] font-medium text-sm hover:bg-[#e1ece4] hover:text-[#253229] transition flex-shrink-0 dark:bg-[#223027] dark:text-[#dbe7de] dark:border-[#33443a] dark:hover:bg-[#2c3d32] dark:hover:text-[#f2f8f3]"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* New Announcement Toast (auto-dismisses after 6s) */}
       {showAnnouncementToast && (
@@ -1797,18 +2190,18 @@ export default function EmployeeDashboard() {
               ) : (
                 <div className="space-y-3">
                   {payslips.map((p) => (
-                    <div key={p.id} className="flex items-center justify-between gap-3 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <div key={p.id} className="flex items-center justify-between gap-3 p-4 bg-[#f8fbf8] rounded-xl border border-[#e0e9e1] dark:bg-[#142019] dark:border-[#25362b]">
                       <div className="min-w-0">
-                        <p className="font-semibold text-slate-900 text-sm truncate">{p.cutoff_label}</p>
-                        <p className="text-slate-400 text-xs mt-0.5 truncate">{p.file_name}</p>
-                        <p className="text-slate-300 text-[10px] font-medium uppercase tracking-widest mt-1">
+                        <p className="font-semibold text-[#1f2a23] dark:text-[#edf6ef] text-sm truncate">{p.cutoff_label}</p>
+                        <p className="text-[#5f6f63] dark:text-[#a9b9ad] text-xs mt-0.5 truncate">{p.file_name}</p>
+                        <p className="text-[#708073] dark:text-[#8fa596] text-[10px] font-semibold uppercase tracking-widest mt-1">
                           {new Date(p.uploaded_at).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' })}
                         </p>
                       </div>
                       <button
                         onClick={() => downloadPayslip(p)}
                         disabled={downloadingId === p.id}
-                        className="flex-shrink-0 flex items-center gap-1.5 bg-slate-900 text-white text-xs font-bold px-3 py-2 rounded-full hover:bg-slate-700 transition disabled:opacity-50"
+                        className="flex-shrink-0 flex items-center gap-1.5 bg-[#e8f1ea] text-[#1f2a23] border border-[#d2e0d5] text-xs font-bold px-3 py-2 rounded-full hover:bg-[#dce9df] hover:text-[#142019] transition disabled:opacity-50 dark:bg-[#e5eee7] dark:text-[#17211b] dark:border-[#c9d9cc] dark:hover:bg-[#f0f6f1] dark:hover:text-[#101812]"
                       >
                         {downloadingId === p.id ? (
                           <><Spinner size="sm" />Downloading...</>
@@ -1832,7 +2225,7 @@ export default function EmployeeDashboard() {
             <button
               type="button"
               onClick={() => setPayslipsModalOpen(false)}
-              className="mt-6 w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 transition flex-shrink-0"
+              className="mt-6 w-full py-3 rounded-full bg-[#e8f1ea] text-[#2b3a30] font-semibold text-sm hover:bg-[#dce9df] transition flex-shrink-0 dark:bg-[#26382c] dark:text-[#eaf3ec] dark:hover:bg-[#304438]"
             >
               Close
             </button>
@@ -1873,6 +2266,7 @@ export default function EmployeeDashboard() {
                 type="button"
                 onClick={() => {
                   setLeaveChoiceModalOpen(false);
+                  setSelectedMyLeaveDetail(null);
                   setMyLeavesModalOpen(true);
                   fetchMyLeaves();
                 }}
@@ -1897,15 +2291,15 @@ export default function EmployeeDashboard() {
         </div>
       )}
 
-      {/* My Leave Requests Modal */}
+      {/* My Leave Requests Modal -- tap a request to see its full details. */}
       {myLeavesModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
           <div className="w-full max-w-sm card-style shadow-2xl max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between mb-6 flex-shrink-0">
-              <h3 className="mb-0">My Leave Requests</h3>
+            <div className="flex items-center justify-between mb-4 flex-shrink-0">
+              <h3 className="mb-0">{selectedMyLeaveDetail ? 'Leave Details' : 'My Leave Requests'}</h3>
               <button
                 type="button"
-                onClick={() => setMyLeavesModalOpen(false)}
+                onClick={() => { setMyLeavesModalOpen(false); setSelectedMyLeaveDetail(null); }}
                 className="text-slate-400 hover:text-slate-600 transition"
                 aria-label="Close"
               >
@@ -1916,7 +2310,59 @@ export default function EmployeeDashboard() {
             </div>
 
             <div className="overflow-y-auto flex-1">
-              {myLeaves.length === 0 ? (
+              {selectedMyLeaveDetail ? (
+                <div className="space-y-3">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMyLeaveDetail(null)}
+                    className="text-blue-600 text-xs font-bold hover:underline flex items-center gap-1 mb-2"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                    Back to list
+                  </button>
+
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-bold text-slate-900 text-sm">{selectedMyLeaveDetail.leave_type} Leave</span>
+                    <span className={selectedMyLeaveDetail.status === 'Approved' ? 'tag-present' : selectedMyLeaveDetail.status === 'Rejected' ? 'tag-late' : 'tag-excused'}>{selectedMyLeaveDetail.status}</span>
+                  </div>
+
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-2">
+                    <div>
+                      <p className="label-branded mb-0.5">Dates</p>
+                      <p className="text-slate-700 text-xs">
+                        {selectedMyLeaveDetail.start_date === selectedMyLeaveDetail.end_date ? selectedMyLeaveDetail.start_date : `${selectedMyLeaveDetail.start_date} → ${selectedMyLeaveDetail.end_date}`}
+                        {' '}({countLeaveDays(selectedMyLeaveDetail.start_date, selectedMyLeaveDetail.end_date)}d)
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="label-branded mb-1">Your Reason</p>
+                    <p className="text-slate-600 text-xs bg-slate-50 rounded-xl border border-slate-100 p-3">{selectedMyLeaveDetail.reason || 'No reason provided.'}</p>
+                  </div>
+
+                  <div>
+                    <p className="label-branded mb-1">HR Response</p>
+                    <p className="text-slate-600 text-xs bg-slate-50 rounded-xl border border-slate-100 p-3">{selectedMyLeaveDetail.hr_notes || 'No notes were left.'}</p>
+                  </div>
+
+                  <div className="text-slate-400 text-[10px] pt-1">
+                    {selectedMyLeaveDetail.reviewed_at && (
+                      <p>Resolved: {new Date(selectedMyLeaveDetail.reviewed_at).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                    )}
+                    <p>Filed: {new Date(selectedMyLeaveDetail.created_at).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                  </div>
+
+                  {selectedMyLeaveDetail.status === 'Pending' && (
+                    <button
+                      onClick={() => { cancelLeave(selectedMyLeaveDetail.id); setSelectedMyLeaveDetail(null); }}
+                      className="w-full py-2.5 rounded-full bg-rose-50 text-rose-600 text-xs font-bold hover:bg-rose-100 transition"
+                    >
+                      Cancel This Request
+                    </button>
+                  )}
+                </div>
+              ) : myLeaves.length === 0 ? (
                 <div className="text-center py-10 border-2 border-dashed border-slate-200 rounded-2xl">
                   <p className="text-2xl mb-2">🗓️</p>
                   <p className="text-slate-400 text-sm font-medium">No leave requests yet</p>
@@ -1924,17 +2370,28 @@ export default function EmployeeDashboard() {
               ) : (
                 <div className="space-y-2">
                   {myLeaves.map((l) => (
-                    <div key={l.id} className="flex items-center justify-between gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                    <button
+                      key={l.id}
+                      type="button"
+                      onClick={() => setSelectedMyLeaveDetail(l)}
+                      className="w-full flex items-center justify-between gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100 hover:bg-slate-100 transition text-left"
+                    >
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-semibold text-slate-900 text-xs">{l.leave_type} Leave</span>
                           <span className={l.status === 'Approved' ? 'tag-present' : l.status === 'Rejected' ? 'tag-late' : 'tag-excused'}>{l.status}</span>
                         </div>
                         <div className="text-slate-400 text-[10px] mt-0.5">{l.start_date === l.end_date ? l.start_date : `${l.start_date} → ${l.end_date}`} · {countLeaveDays(l.start_date, l.end_date)}d</div>
-                        {l.hr_notes && <div className="text-blue-600 text-[10px] mt-0.5">HR: {l.hr_notes}</div>}
                       </div>
-                      {l.status === 'Pending' && <button onClick={() => cancelLeave(l.id)} className="text-rose-500 hover:text-rose-700 text-xs font-bold flex-shrink-0">Cancel</button>}
-                    </div>
+                      {l.status === 'Pending' && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); cancelLeave(l.id); }}
+                          className="text-rose-500 hover:text-rose-700 text-xs font-bold flex-shrink-0"
+                        >
+                          Cancel
+                        </button>
+                      )}
+                    </button>
                   ))}
                 </div>
               )}
@@ -1942,24 +2399,31 @@ export default function EmployeeDashboard() {
 
             <button
               type="button"
-              onClick={() => setMyLeavesModalOpen(false)}
+              onClick={() => {
+                if (selectedMyLeaveDetail) {
+                  setSelectedMyLeaveDetail(null);
+                } else {
+                  setMyLeavesModalOpen(false);
+                  setLeaveChoiceModalOpen(true);
+                }
+              }}
               className="mt-6 w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 transition flex-shrink-0"
             >
-              Close
+              ← Back
             </button>
           </div>
         </div>
       )}
 
-      {/* My Disputes Modal */}
+      {/* My Disputes Modal -- tap a dispute to see its full details. */}
       {myDisputesModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
           <div className="w-full max-w-sm card-style shadow-2xl max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between mb-6 flex-shrink-0">
-              <h3 className="mb-0">My Disputes</h3>
+            <div className="flex items-center justify-between mb-4 flex-shrink-0">
+              <h3 className="mb-0">{selectedMyDisputeDetail ? 'Dispute Details' : 'My Disputes'}</h3>
               <button
                 type="button"
-                onClick={() => setMyDisputesModalOpen(false)}
+                onClick={() => { setMyDisputesModalOpen(false); setSelectedMyDisputeDetail(null); }}
                 className="text-slate-400 hover:text-slate-600 transition"
                 aria-label="Close"
               >
@@ -1969,42 +2433,111 @@ export default function EmployeeDashboard() {
               </button>
             </div>
 
+            {/* Filing a new dispute lives here now, instead of cluttering
+                the Attendance History section -- opens the same choice
+                screen (Time In / Time Out) as disputing from a specific row. */}
+            {!selectedMyDisputeDetail && (
+              <button
+                type="button"
+                onClick={() => openDisputeModal(null, '', 'TimeIn', false)}
+                className="inline-flex items-center justify-center gap-1.5 w-full bg-blue-600 text-white text-xs font-bold px-3.5 py-2.5 rounded-full hover:bg-blue-700 active:scale-95 transition mb-4 flex-shrink-0 shadow-sm"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Report Missing Log
+              </button>
+            )}
+
             <div className="overflow-y-auto flex-1">
-              {myDisputes.length === 0 ? (
+              {selectedMyDisputeDetail ? (
+                <div className="space-y-3">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMyDisputeDetail(null)}
+                    className="text-blue-600 text-xs font-bold hover:underline flex items-center gap-1 mb-2"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                    Back to list
+                  </button>
+
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-bold text-slate-900 text-sm">{disputeTypeLabel(selectedMyDisputeDetail)}</span>
+                    <span className={selectedMyDisputeDetail.status === 'Approved' ? 'tag-present' : selectedMyDisputeDetail.status === 'Rejected' ? 'tag-late' : 'tag-excused'}>{selectedMyDisputeDetail.status}</span>
+                  </div>
+
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-2">
+                    <div>
+                      <p className="label-branded mb-0.5">Dispute Date</p>
+                      <p className="text-slate-700 text-xs">{selectedMyDisputeDetail.dispute_date}</p>
+                    </div>
+                    {disputeOriginal(selectedMyDisputeDetail) && (
+                      <div>
+                        <p className="label-branded mb-0.5">Original {disputeFieldLabel(selectedMyDisputeDetail)}</p>
+                        <p className="text-slate-700 text-xs">{formatDisputeTimePh(disputeOriginal(selectedMyDisputeDetail))}</p>
+                      </div>
+                    )}
+                    <div>
+                      <p className="label-branded mb-0.5">Claimed {disputeFieldLabel(selectedMyDisputeDetail)}</p>
+                      <p className="text-slate-700 text-xs">{disputeClaimed(selectedMyDisputeDetail) ? formatDisputeTimePh(disputeClaimed(selectedMyDisputeDetail)) : '—'}</p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="label-branded mb-1">Your Reason</p>
+                    <p className="text-slate-600 text-xs bg-slate-50 rounded-xl border border-slate-100 p-3">{selectedMyDisputeDetail.reason || 'No reason provided.'}</p>
+                  </div>
+
+                  <div>
+                    <p className="label-branded mb-1">HR Response</p>
+                    <p className="text-slate-600 text-xs bg-slate-50 rounded-xl border border-slate-100 p-3">{selectedMyDisputeDetail.hr_notes || 'No notes were left.'}</p>
+                  </div>
+
+                  <div className="text-slate-400 text-[10px] pt-1">
+                    {selectedMyDisputeDetail.reviewed_at && (
+                      <p>Resolved: {new Date(selectedMyDisputeDetail.reviewed_at).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                    )}
+                    <p>Filed: {new Date(selectedMyDisputeDetail.created_at).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                  </div>
+                </div>
+              ) : myDisputes.length === 0 ? (
                 <div className="text-center py-10 border-2 border-dashed border-slate-200 rounded-2xl">
                   <p className="text-2xl mb-2">⚠️</p>
                   <p className="text-slate-400 text-sm font-medium">No disputes yet</p>
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {myDisputes.map((d) => {
-                    const dType = d.dispute_type || 'TimeIn';
-                    const label = dType === 'TimeOut' ? 'Missed time-out' : d.attendance_log_id ? 'Late dispute' : 'Missed time-in';
-                    const original = dType === 'TimeOut' ? d.original_time_out : d.original_time_in;
-                    const claimed = dType === 'TimeOut' ? d.claimed_time_out : d.claimed_time_in;
-                    return (
-                      <div key={d.id} className="flex items-center justify-between gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100">
-                        <div className="min-w-0">
-                          <div className="font-medium text-slate-900 text-xs truncate">{label} — {d.dispute_date}</div>
-                          <div className="text-slate-400 text-[10px] mt-0.5">
-                            {original && <>{new Date(original).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })} → </>}
-                            {claimed && new Date(claimed).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}
-                          </div>
+                  {myDisputes.map((d) => (
+                    <button
+                      key={d.id}
+                      type="button"
+                      onClick={() => setSelectedMyDisputeDetail(d)}
+                      className="w-full flex items-center justify-between gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100 hover:bg-slate-100 transition text-left"
+                    >
+                      <div className="min-w-0">
+                        <div className="font-medium text-slate-900 text-xs truncate">{disputeTypeLabel(d)} — {d.dispute_date}</div>
+                        <div className="text-slate-400 text-[10px] mt-0.5">
+                          {disputeOriginal(d) && <>{formatDisputeTimePh(disputeOriginal(d))} → </>}
+                          {disputeClaimed(d) && formatDisputeTimePh(disputeClaimed(d))}
                         </div>
-                        <span className={d.status === 'Approved' ? 'tag-present' : d.status === 'Rejected' ? 'tag-late' : 'tag-excused'}>{d.status}</span>
                       </div>
-                    );
-                  })}
+                      <span className={d.status === 'Approved' ? 'tag-present' : d.status === 'Rejected' ? 'tag-late' : 'tag-excused'}>{d.status}</span>
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
 
             <button
               type="button"
-              onClick={() => setMyDisputesModalOpen(false)}
+              onClick={() => {
+                if (selectedMyDisputeDetail) {
+                  setSelectedMyDisputeDetail(null);
+                } else {
+                  setMyDisputesModalOpen(false);
+                }
+              }}
               className="mt-6 w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 transition flex-shrink-0"
             >
-              Close
+              {selectedMyDisputeDetail ? '← Back' : 'Close'}
             </button>
           </div>
         </div>
@@ -2093,6 +2626,91 @@ export default function EmployeeDashboard() {
         </div>
       )}
 
+      {/* Company Calendar Modal */}
+      {calendarModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm card-style shadow-2xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between mb-4 flex-shrink-0">
+              <h3 className="mb-0">Company Calendar</h3>
+              <button
+                type="button"
+                onClick={() => setCalendarModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 transition"
+                aria-label="Close"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1">
+              {holidaysLoading ? (
+                <LoadingRow label="Loading holidays..." />
+              ) : companyHolidays.length === 0 ? (
+                <div className="text-center py-10 border-2 border-dashed border-slate-200 rounded-2xl">
+                  <p className="text-2xl mb-2">🗓️</p>
+                  <p className="text-slate-400 text-sm font-medium">No holidays set up yet.</p>
+                </div>
+              ) : (
+                <>
+                  {/* Next holiday, highlighted */}
+                  {upcomingHolidays.length > 0 && (
+                    <div className="bg-purple-50 border border-purple-100 rounded-2xl p-3 mb-4">
+                      <p className="text-purple-600 text-[10px] font-bold uppercase tracking-widest mb-1">Next Holiday</p>
+                      <p className="font-extrabold text-slate-900 text-sm">{upcomingHolidays[0].name}</p>
+                      <p className="text-slate-500 text-xs mt-0.5">
+                        {formatHolidayDate(upcomingHolidays[0].holiday_date)}
+                        {' · '}
+                        {daysUntilHoliday(upcomingHolidays[0].holiday_date) === 0
+                          ? 'Today!'
+                          : `${daysUntilHoliday(upcomingHolidays[0].holiday_date)} day${daysUntilHoliday(upcomingHolidays[0].holiday_date) === 1 ? '' : 's'} away`}
+                      </p>
+                    </div>
+                  )}
+
+                  {upcomingHolidays.length > 0 && (
+                    <>
+                      <p className="label-branded mb-2">Upcoming</p>
+                      <div className="space-y-2 mb-4">
+                        {upcomingHolidays.map((h) => (
+                          <div key={h.id} className="flex items-center justify-between gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                            <span className="font-medium text-slate-900 text-xs">{h.name}</span>
+                            <span className="text-slate-400 text-[10px] flex-shrink-0">{formatHolidayDate(h.holiday_date)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+
+                  {pastHolidays.length > 0 && (
+                    <>
+                      <p className="label-branded mb-2">Past This Year</p>
+                      <div className="space-y-2">
+                        {pastHolidays.map((h) => (
+                          <div key={h.id} className="flex items-center justify-between gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100 opacity-60">
+                            <span className="font-medium text-slate-900 text-xs">{h.name}</span>
+                            <span className="text-slate-400 text-[10px] flex-shrink-0">{formatHolidayDate(h.holiday_date)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setCalendarModalOpen(false)}
+              className="mt-6 w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 transition flex-shrink-0"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Leave Request Modal */}
       {leaveModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
@@ -2135,7 +2753,7 @@ export default function EmployeeDashboard() {
                   key={t}
                   type="button"
                   onClick={() => setLeaveForm({ ...leaveForm, leave_type: t })}
-                  className={`py-2.5 rounded-full text-xs font-bold transition ${leaveForm.leave_type === t ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                  className={`py-2.5 rounded-full text-xs font-bold transition border ${leaveForm.leave_type === t ? 'bg-[#17211b] text-white border-[#17211b] dark:bg-[#e5eee7] dark:text-[#17211b] dark:border-[#c9d9cc]' : 'bg-[#eef3ef] text-[#526054] border-transparent hover:bg-[#e2ebe4] dark:bg-[#1f2c24] dark:text-[#c7d5ca] dark:hover:bg-[#29382f]'}`}
                 >
                   {t}
                 </button>
@@ -2185,7 +2803,13 @@ export default function EmployeeDashboard() {
             />
 
             <div className="flex gap-3">
-              <button type="button" className="flex-1 p-3 bg-slate-100 rounded-full font-medium text-sm" onClick={() => setLeaveModalOpen(false)}>Cancel</button>
+              <button
+                type="button"
+                className="flex-1 p-3 bg-slate-100 rounded-full font-medium text-sm"
+                onClick={() => { setLeaveModalOpen(false); setLeaveChoiceModalOpen(true); }}
+              >
+                ← Back
+              </button>
               <button
                 type="button"
                 className="flex-1 btn-primary disabled:opacity-50"

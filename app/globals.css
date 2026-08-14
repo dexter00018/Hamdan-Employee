@@ -8,7 +8,7 @@
   --color-slate-50: #f2f8f2;   /* page background */
   --color-slate-100: #e6f1e6;  /* subtle borders / hover bg */
   --color-slate-200: #d3e4d5;  /* borders */
-  --color-slate-400: #8b9c90;  /* muted text */
+  --color-slate-400: #5f6f63;  /* muted text - WCAG-friendly on light surfaces */
   --color-slate-600: #526054;  /* secondary text */
   --color-slate-700: #2b342c;  /* body text */
   --color-slate-900: #14181b;  /* headings / near-black ink cards */
@@ -25,13 +25,13 @@
 
   /* ---- Status: success (Present) ---- */
   --color-green-50: #e4fbea;
-  --color-green-600: #17a94a;
-  --color-green-700: #0c7a34;
+  --color-green-600: #15803d;
+  --color-green-700: #166534;
 
   /* ---- Status: warning (Late) ---- */
   --color-orange-50: #ffeee2;
-  --color-orange-600: #ff5a1f;
-  --color-orange-700: #c23f0e;
+  --color-orange-600: #c2410c;
+  --color-orange-700: #9a3412;
 
   /* ---- Status: info (Excused) / Employee role ---- */
   --color-sky-50: #e6f4ff;
@@ -42,6 +42,11 @@
   --color-purple-50: #f3ecfd;
   --color-purple-600: #8b5cf6;
   --color-purple-700: #6d28d9;
+
+  /* ---- Default red (Absent) ---- */
+  --color-red-50: #fee2e2;
+  --color-red-600: #b91c1c;
+  --color-red-700: #991b1b;
 
   /* ---- Danger ---- */
   --color-rose-50: #ffe7ec;
@@ -200,3 +205,241 @@
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-blue-600) 15%, transparent);
   }
 }
+
+
+
+/* =========================================================
+   ATTENDANCE STAT COLORS
+   Theme-aware colors for Present / Late / Absent summary stats.
+   Use .stat-present, .stat-late, .stat-absent and .stat-label
+   on the dashboard summary values/labels.
+   ========================================================= */
+
+:root {
+  --stat-present: #15803d;
+  --stat-late: #c2410c;
+  --stat-absent: #b91c1c;
+  --stat-label: #5f6f63;
+}
+
+.dark {
+  --stat-present: #4ade80;
+  --stat-late: #fb923c;
+  --stat-absent: #f87171;
+  --stat-label: #aab8ad;
+}
+
+.stat-present {
+  color: var(--stat-present);
+}
+
+.stat-late {
+  color: var(--stat-late);
+}
+
+.stat-absent {
+  color: var(--stat-absent);
+}
+
+.stat-label {
+  color: var(--stat-label);
+}
+
+/* If the existing page uses Tailwind status utilities directly,
+   these theme-aware overrides keep the current markup working. */
+.text-green-600 {
+  color: var(--stat-present);
+}
+
+.text-orange-600 {
+  color: var(--stat-late);
+}
+
+.text-red-600 {
+  color: var(--stat-absent);
+}
+
+.text-slate-400 {
+  color: var(--stat-label);
+}
+
+/* =========================================================
+   PAYSLIP DOWNLOAD BUTTON
+   Add class="download-btn" to the Download button.
+   Theme-aware and intentionally NOT disabled-looking.
+   ========================================================= */
+
+.download-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  background: #eef5ef;
+  color: #1f2a23;
+  border: 1px solid #d6e3d8;
+  font-weight: 600;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.download-btn:hover {
+  background: #e2ede4;
+  color: #142019;
+  border-color: #c6d8ca;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(20, 40, 27, 0.10);
+}
+
+.download-btn:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+.download-btn svg {
+  color: currentColor;
+  flex-shrink: 0;
+}
+
+.dark .download-btn {
+  background: #e5eee7;
+  color: #17211b;
+  border-color: #c9d9cc;
+}
+
+.dark .download-btn:hover {
+  background: #f0f6f1;
+  color: #101812;
+  border-color: #dce8df;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.24);
+}
+
+/* Keep an intentionally disabled button visually disabled only when the
+   actual disabled attribute is present. Enabled buttons must stay readable. */
+.download-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* =========================================================
+   DARK MODE -- Tailwind v4
+   Paste this block at the very END of app/globals.css.
+
+   No tailwind.config.js edit needed, no @custom-variant needed.
+   Why: your @theme block defines colors as CSS custom properties
+   (--color-slate-50, --color-blue-600, etc.), and Tailwind v4
+   compiles utilities like `bg-slate-50` to reference that same
+   variable (`background-color: var(--color-slate-50)`) instead of
+   a hardcoded hex. So simply re-declaring those variables inside
+   a `.dark { }` selector is enough -- every element using
+   bg-slate-50, text-slate-400, tag-present, card-style, etc.
+   anywhere in the app (including page.tsx, which you never need
+   to touch) picks up the new value automatically via normal CSS
+   cascade, the moment `<main>` gets the "dark" class.
+   ========================================================= */
+
+.dark {
+  color-scheme: dark;
+
+  /* ---- Neutrals: inverted mint scale -> dark ink scale ---- */
+  --color-slate-50: #0e1512;   /* page background (near-black, faint green tint to match brand) */
+  --color-slate-100: #1a231d;  /* card / input surfaces, hover bg */
+  --color-slate-200: #29352c;  /* borders */
+  --color-slate-400: #aab8ad;  /* muted text - readable on dark surfaces */
+  --color-slate-600: #c3d0c5;  /* secondary text */
+  --color-slate-700: #e3ece4;  /* body text */
+  --color-slate-900: #f4faf5;  /* headings (now near-white) */
+
+  /* ---- Primary: leaf green, brightened for dark backgrounds ---- */
+  --color-blue-50: #133322;
+  --color-blue-400: #7ad696;
+  --color-blue-600: #34d17a;
+
+  /* ---- Secondary accent: warm gold ---- */
+  --color-amber-50: #3a2c10;
+  --color-amber-500: #f4c463;
+  --color-amber-700: #f7d68a;
+
+  /* ---- Status: success (Present) ---- */
+  --color-green-50: #12301d;
+  --color-green-600: #4ade80;
+  --color-green-700: #86efac;
+
+  /* ---- Status: warning (Late) ---- */
+  --color-orange-50: #3a1c0c;
+  --color-orange-600: #fb923c;
+  --color-orange-700: #fdba74;
+
+  /* ---- Status: info (Excused) / Employee role ---- */
+  --color-sky-50: #0d2a45;
+  --color-sky-600: #3ea6ff;
+  --color-sky-700: #8fceff;
+
+  /* ---- Admin role ---- */
+  --color-purple-50: #2a1f45;
+  --color-purple-600: #a985fb;
+  --color-purple-700: #cdb6ff;
+
+  /* ---- Danger ---- */
+  --color-rose-50: #3a0f1a;
+  --color-rose-600: #fa6483;
+  --color-rose-700: #ffabbc;
+
+  /* ---- Default red (used by .tag-absent, not redefined in your
+     light theme either -- these are Tailwind's built-in red vars) ---- */
+  --color-red-50: #3f1515;
+  --color-red-700: #fca5a5;
+}
+
+/* ---------------------------------------------------------
+   The handful of rules below use a HARDCODED color (bg-white,
+   a literal hex gradient stop, a fixed rgba shadow) instead of
+   one of the --color-* variables above, so they need an explicit
+   .dark override to actually change. Everything else in your
+   @layer components / @layer utilities adapts automatically from
+   the variable overrides above and needs no further edits.
+   --------------------------------------------------------- */
+
+.dark body {
+  background: linear-gradient(160deg, var(--color-slate-50) 0%, #060a08 100%);
+}
+
+.dark .branding-box {
+  background: linear-gradient(135deg, #123822 0%, #2fbd6c 100%);
+  box-shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.6);
+}
+
+.dark .card-style {
+  background-color: var(--color-slate-100);
+  box-shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.55);
+}
+
+.dark .card-dark {
+  background: #05080a;
+}
+
+.dark .btn-primary {
+  background: var(--color-blue-600);
+}
+.dark .btn-primary:hover {
+  background: var(--color-blue-400);
+  box-shadow: 0 10px 24px -8px rgba(52, 209, 122, 0.35);
+}
+
+.dark .btn-danger:hover {
+  box-shadow: 0 10px 24px -8px rgba(250, 100, 131, 0.35);
+}
+
+.dark .input-field {
+  background-color: var(--color-slate-100);
+  color: var(--color-slate-700);
+}
+.dark .input-field:focus {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-blue-600) 20%, transparent);
+}
+
+/* Safety net: a few spots in page.tsx (avatar fallback circles, modal
+   close buttons, file-preview borders, etc.) use the literal bg-white /
+   border-white utilities directly instead of going through .card-style.
+   This catches those without having to hunt every occurrence. */
+.dark .bg-white { background-color: var(--color-slate-100) !important; }
