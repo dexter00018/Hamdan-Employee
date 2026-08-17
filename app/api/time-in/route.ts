@@ -2,8 +2,12 @@ import { NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
-const LATE_CUTOFF_HOUR = 9;
-const LATE_CUTOFF_MINUTE = 15;
+// Fallback values used only if app_settings is somehow unreachable or
+// missing rows -- keeps time-in from hard-failing over a settings read
+// hiccup, while normal operation always uses the configurable values
+// from the database (editable via Super Admin -> App Settings).
+const FALLBACK_LATE_CUTOFF_HOUR = 9;
+const FALLBACK_LATE_CUTOFF_MINUTE = 15;
 
 function getClientIp(request: Request): string | null {
   const forwardedFor = request.headers.get('x-forwarded-for');
@@ -59,6 +63,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 });
     }
 
+    // --- Step 2.5: Read the configurable late cutoff from app_settings
+    // (Super Admin -> App Settings). Falls back to the hardcoded
+    // defaults above only if the rows are missing/unreachable, so a
+    // settings-table hiccup never blocks someone from timing in. ---
+    const { data: settingsRows } = await supabaseServer
+      .from('app_settings')
+      .select('key, value')
+      .in('key', ['late_cutoff_hour', 'late_cutoff_minute']);
+
+    const settingsMap = Object.fromEntries((settingsRows || []).map((r) => [r.key, r.value]));
+    const lateCutoffHour = typeof settingsMap.late_cutoff_hour === 'number' ? settingsMap.late_cutoff_hour : FALLBACK_LATE_CUTOFF_HOUR;
+    const lateCutoffMinute = typeof settingsMap.late_cutoff_minute === 'number' ? settingsMap.late_cutoff_minute : FALLBACK_LATE_CUTOFF_MINUTE;
+
     // --- Step 3: Compute today's date and Present/Late status using
     // the SERVER clock in Manila time, not anything the client sends.
     // This closes the same "spoofed device clock" gap we fixed earlier
@@ -83,7 +100,7 @@ export async function POST(request: Request) {
     const hour = parseInt(manilaParts.hour, 10);
     const minute = parseInt(manilaParts.minute, 10);
     const status =
-      hour > LATE_CUTOFF_HOUR || (hour === LATE_CUTOFF_HOUR && minute > LATE_CUTOFF_MINUTE)
+      hour > lateCutoffHour || (hour === lateCutoffHour && minute > lateCutoffMinute)
         ? 'Late'
         : 'Present';
 

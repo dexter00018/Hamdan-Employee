@@ -43,11 +43,44 @@ function MoonIcon() {
   );
 }
 
+// Fallback values used only if app_settings hasn't loaded yet or a row
+// is missing -- normal operation always uses the configurable values
+// fetched from the database (editable via Super Admin -> App Settings).
+const FALLBACK_LATE_CUTOFF_HOUR = 9;
+const FALLBACK_LATE_CUTOFF_MINUTE = 15;
+const FALLBACK_LEAVE_CREDITS = 10;
+const FALLBACK_TIME_OUT_REMINDER_HOUR = 19;
+
 export default function EmployeeDashboard() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [timeOutLoading, setTimeOutLoading] = useState(false);
   const [todayLog, setTodayLog] = useState<{ id: string; time_in: string | null; time_out: string | null; status: string | null } | null>(null);
+
+  // App-wide configurable settings (late cutoff, leave credits default,
+  // time-out reminder hour) -- fetched once on load from app_settings,
+  // editable by Super Admin without needing a code change/redeploy.
+  // Falls back to the constants above until the fetch resolves.
+  const [lateCutoffHour, setLateCutoffHour] = useState(FALLBACK_LATE_CUTOFF_HOUR);
+  const [lateCutoffMinute, setLateCutoffMinute] = useState(FALLBACK_LATE_CUTOFF_MINUTE);
+  const [fallbackLeaveCredits, setFallbackLeaveCredits] = useState(FALLBACK_LEAVE_CREDITS);
+  const [timeOutReminderHour, setTimeOutReminderHour] = useState(FALLBACK_TIME_OUT_REMINDER_HOUR);
+
+  const fetchAppSettings = async () => {
+    const { data, error } = await supabase
+      .from('app_settings')
+      .select('key, value')
+      .in('key', ['late_cutoff_hour', 'late_cutoff_minute', 'default_leave_credits', 'time_out_reminder_hour']);
+    if (error) {
+      console.error('Error fetching app settings:', error);
+      return;
+    }
+    const map = Object.fromEntries((data || []).map((r) => [r.key, r.value]));
+    if (typeof map.late_cutoff_hour === 'number') setLateCutoffHour(map.late_cutoff_hour);
+    if (typeof map.late_cutoff_minute === 'number') setLateCutoffMinute(map.late_cutoff_minute);
+    if (typeof map.default_leave_credits === 'number') setFallbackLeaveCredits(map.default_leave_credits);
+    if (typeof map.time_out_reminder_hour === 'number') setTimeOutReminderHour(map.time_out_reminder_hour);
+  };
 
   // --- Dark Mode ---
   // Persisted in localStorage (falls back to the OS/browser preference on
@@ -267,7 +300,7 @@ export default function EmployeeDashboard() {
       );
 
       if (
-        manilaHour >= 19 &&
+        manilaHour >= timeOutReminderHour &&
         todayLogRef.current?.time_in &&
         !todayLogRef.current?.time_out &&
         !reminderDismissedRef.current
@@ -297,6 +330,7 @@ export default function EmployeeDashboard() {
       fetchLeaveCredits();
     };
     runStartupSweeps();
+    fetchAppSettings();
     fetchAnnouncement();
     checkOfficeNetwork();
     fetchMyDisputes();
@@ -526,7 +560,7 @@ export default function EmployeeDashboard() {
       new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', hour12: false }).format(now),
       10
     );
-    if (manilaHour < 19) {
+    if (manilaHour < timeOutReminderHour) {
       setShowEarlyTimeOutWarning(true);
     } else {
       handleTimeOut();
@@ -713,10 +747,11 @@ export default function EmployeeDashboard() {
   // the "My Leave Requests" modal (null = showing the list).
   const [selectedMyLeaveDetail, setSelectedMyLeaveDetail] = useState<any>(null);
   const isRegular = governmentIds?.employment_status === 'Regular';
-  // Flat 10 credits/year default -- matches the DB column default and
-  // the fallback used server-side in settle_leave_day() when a
-  // leave_credits row doesn't exist yet for the employee/year.
-  const remainingCredits = leaveCredits ? leaveCredits.total_credits - leaveCredits.used_credits : 10;
+  // Configurable default (Super Admin -> App Settings) -- matches the
+  // DB column default and the fallback used server-side in
+  // settle_leave_day() when a leave_credits row doesn't exist yet for
+  // the employee/year.
+  const remainingCredits = leaveCredits ? leaveCredits.total_credits - leaveCredits.used_credits : fallbackLeaveCredits;
 
   const fetchMyLeaves = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -923,9 +958,10 @@ export default function EmployeeDashboard() {
     setDisputeStep('form');
   };
 
-  // Same cutoffs used everywhere else in this file (9:15 AM late cutoff,
-  // 7:00 PM time-out cutoff) -- used here to decide whether each option
-  // on the "choice" screen is actually worth disputing.
+  // Same cutoffs used everywhere else in this file (configurable late
+  // cutoff, configurable time-out cutoff -- Super Admin -> App
+  // Settings) -- used here to decide whether each option on the
+  // "choice" screen is actually worth disputing.
   const isTimeInOnTime = (timeInIso: string) => {
     const parts = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Asia/Manila',
@@ -934,7 +970,7 @@ export default function EmployeeDashboard() {
       hour12: false,
     }).formatToParts(new Date(timeInIso)).reduce((acc: any, p) => { acc[p.type] = p.value; return acc; }, {});
     const minutesSinceMidnight = parseInt(parts.hour, 10) * 60 + parseInt(parts.minute, 10);
-    return minutesSinceMidnight < 9 * 60 + 15; // before 9:15 AM
+    return minutesSinceMidnight < lateCutoffHour * 60 + lateCutoffMinute;
   };
 
   const isTimeOutComplete = (timeOutIso: string) => {
@@ -942,7 +978,7 @@ export default function EmployeeDashboard() {
       new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', hour12: false }).format(new Date(timeOutIso)),
       10
     );
-    return manilaHour >= 19; // 7:00 PM onwards
+    return manilaHour >= timeOutReminderHour;
   };
 
   // Whether each dispute type is actually worth offering on the "choice"
@@ -969,7 +1005,7 @@ export default function EmployeeDashboard() {
         : { eligible: true, reason: '' };
 
     return { timeIn, timeOut };
-  }, [disputeForm.date, history]);
+  }, [disputeForm.date, history, lateCutoffHour, lateCutoffMinute, timeOutReminderHour]);
 
   // Validates the form and, if everything checks out, moves to the
   // highlighted review/confirm screen instead of submitting right away.
@@ -1201,10 +1237,10 @@ export default function EmployeeDashboard() {
   // default to the current cutoff period.
   const summaryCutoffKey = monthFilter || currentCutoffKey;
 
-  // Minutes late for a single Late log, derived from the 9:15 AM grace
-  // cutoff (same threshold app/api/time-in/route.ts uses to decide
-  // Present vs Late), since we don't store an exact minutes-late value
-  // anywhere.
+  // Minutes late for a single Late log, derived from the configurable
+  // late cutoff (Super Admin -> App Settings) -- same threshold
+  // app/api/time-in/route.ts uses to decide Present vs Late, since we
+  // don't store an exact minutes-late value anywhere.
   const getMinutesLate = (timeInIso: string) => {
     const parts = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Asia/Manila',
@@ -1215,7 +1251,7 @@ export default function EmployeeDashboard() {
       .formatToParts(new Date(timeInIso))
       .reduce((acc: any, p) => { acc[p.type] = p.value; return acc; }, {});
     const minutesSinceMidnight = parseInt(parts.hour, 10) * 60 + parseInt(parts.minute, 10);
-    const cutoffMinutes = 9 * 60 + 15; // 9:15 AM
+    const cutoffMinutes = lateCutoffHour * 60 + lateCutoffMinute;
     return Math.max(0, minutesSinceMidnight - cutoffMinutes);
   };
 
@@ -1224,6 +1260,12 @@ export default function EmployeeDashboard() {
     const h = Math.floor(mins / 60);
     const m = mins % 60;
     return h === 0 ? `${m} min` : `${h}h ${m}m`;
+  };
+
+  const formatLateCutoffLabel = () => {
+    const period = lateCutoffHour >= 12 ? 'PM' : 'AM';
+    const hour12 = lateCutoffHour % 12 === 0 ? 12 : lateCutoffHour % 12;
+    return `${hour12}:${String(lateCutoffMinute).padStart(2, '0')} ${period}`;
   };
 
   // "Leave" here now covers any type-specific status ("Sick Leave",
@@ -1247,7 +1289,7 @@ export default function EmployeeDashboard() {
     // presentLogs/lateLogs/absentLogs carried along so the stat cards can
     // list the exact dates behind each number when tapped.
     return { present: presentLogs.length, late: lateLogs.length, absent: absentLogs.length, onTime, totalLateMinutes, presentLogs, lateLogs, absentLogs };
-  }, [history, summaryCutoffKey]);
+  }, [history, summaryCutoffKey, lateCutoffHour, lateCutoffMinute]);
 
   // Which stat card's detail list is currently open (null = none).
   const [summaryDetailType, setSummaryDetailType] = useState<'present' | 'late' | 'absent' | null>(null);
@@ -1510,7 +1552,7 @@ export default function EmployeeDashboard() {
               <div className="card-style !p-4 text-center">
                 <h1 className="stat-number text-blue-600 text-3xl md:text-4xl lg:text-5xl tracking-tight normal-case">{time || '--:--:--'}</h1>
                 <p className="mt-1 text-slate-400 font-medium uppercase text-[9px] tracking-widest">{date}</p>
-                <p className="mt-1 text-[10px] text-slate-400">Late cutoff: 9:15 AM (PH Time)</p>
+                <p className="mt-1 text-[10px] text-slate-400">Late cutoff: {formatLateCutoffLabel()} (PH Time)</p>
               </div>
               <div className="flex flex-col gap-2 justify-center">
                 {!todayLog ? (
@@ -2729,7 +2771,7 @@ export default function EmployeeDashboard() {
                   Leave Credits ({new Date().getFullYear()})
                 </p>
                 <p className={`text-sm font-extrabold ${remainingCredits <= 3 ? 'text-orange-700' : 'text-green-700'}`}>
-                  {remainingCredits} / {leaveCredits?.total_credits ?? 10} remaining
+                  {remainingCredits} / {leaveCredits?.total_credits ?? fallbackLeaveCredits} remaining
                 </p>
               </div>
             )}

@@ -25,8 +25,10 @@ type Profile = {
 };
 
 // Must match app/employee/page.tsx and app/api/time-in/route.ts.
-const LATE_CUTOFF_HOUR = 9;
-const LATE_CUTOFF_MINUTE = 15;
+// Fallback values only -- normal operation uses the configurable values
+// fetched from app_settings (editable via Super Admin -> App Settings).
+const FALLBACK_LATE_CUTOFF_HOUR = 9;
+const FALLBACK_LATE_CUTOFF_MINUTE = 15;
 
 export default function HRDashboard() {
   const router = useRouter();
@@ -60,6 +62,27 @@ export default function HRDashboard() {
   const [avatarUploading, setAvatarUploading] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const MAX_AVATAR_MB = 5;
+
+  // App-wide configurable settings (late cutoff) -- fetched once on
+  // load from app_settings, editable by Super Admin without needing a
+  // code change/redeploy. Falls back to the module-level constants
+  // above until the fetch resolves.
+  const [lateCutoffHour, setLateCutoffHour] = useState(FALLBACK_LATE_CUTOFF_HOUR);
+  const [lateCutoffMinute, setLateCutoffMinute] = useState(FALLBACK_LATE_CUTOFF_MINUTE);
+
+  const fetchAppSettings = async () => {
+    const { data, error } = await supabase
+      .from('app_settings')
+      .select('key, value')
+      .in('key', ['late_cutoff_hour', 'late_cutoff_minute']);
+    if (error) {
+      console.error('Error fetching app settings:', error);
+      return;
+    }
+    const map = Object.fromEntries((data || []).map((r) => [r.key, r.value]));
+    if (typeof map.late_cutoff_hour === 'number') setLateCutoffHour(map.late_cutoff_hour);
+    if (typeof map.late_cutoff_minute === 'number') setLateCutoffMinute(map.late_cutoff_minute);
+  };
 
   const handleAvatarChange = (file: File | null) => {
     if (!file) return;
@@ -146,6 +169,7 @@ export default function HRDashboard() {
       fetchLeaveRequests();
     };
     runStartupSweeps();
+    fetchAppSettings();
     fetchAnnouncement();
     fetchDisputes();
   }, []);
@@ -404,7 +428,7 @@ export default function HRDashboard() {
     }, {});
     const hour = parseInt(parts.hour, 10);
     const minute = parseInt(parts.minute, 10);
-    const isLate = hour > LATE_CUTOFF_HOUR || (hour === LATE_CUTOFF_HOUR && minute > LATE_CUTOFF_MINUTE);
+    const isLate = hour > lateCutoffHour || (hour === lateCutoffHour && minute > lateCutoffMinute);
     return isLate ? 'Late' : 'Present';
   };
 
@@ -641,11 +665,12 @@ export default function HRDashboard() {
     employeesPage * PAGE_SIZE
   );
 
-  // Minutes late for a single Late log, derived from the 9:15 AM grace
-  // cutoff (same threshold app/api/time-in/route.ts uses to decide
-  // Present vs Late), since we don't store an exact minutes-late value
-  // anywhere. Status is compared case-insensitively since it can also be
-  // hand-edited directly in Supabase (e.g. "late" instead of "Late").
+  // Minutes late for a single Late log, derived from the configurable
+  // late cutoff (Super Admin -> App Settings) -- same threshold
+  // app/api/time-in/route.ts uses to decide Present vs Late, since we
+  // don't store an exact minutes-late value anywhere. Status is
+  // compared case-insensitively since it can also be hand-edited
+  // directly in Supabase (e.g. "late" instead of "Late").
   const getMinutesLate = (timeInIso: string) => {
     const parts = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Asia/Manila',
@@ -656,7 +681,7 @@ export default function HRDashboard() {
       .formatToParts(new Date(timeInIso))
       .reduce((acc: any, p) => { acc[p.type] = p.value; return acc; }, {});
     const minutesSinceMidnight = parseInt(parts.hour, 10) * 60 + parseInt(parts.minute, 10);
-    const cutoffMinutes = LATE_CUTOFF_HOUR * 60 + LATE_CUTOFF_MINUTE;
+    const cutoffMinutes = lateCutoffHour * 60 + lateCutoffMinute;
     return Math.max(0, minutesSinceMidnight - cutoffMinutes);
   };
 
@@ -675,7 +700,7 @@ export default function HRDashboard() {
       filteredAttendance
         .filter((log) => log.status?.toLowerCase() === 'late' && log.time_in)
         .reduce((sum, log) => sum + getMinutesLate(log.time_in as string), 0),
-    [filteredAttendance]
+    [filteredAttendance, lateCutoffHour, lateCutoffMinute]
   );
 
   // Cutoff options generated from whatever months actually appear in
