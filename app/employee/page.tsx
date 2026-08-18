@@ -724,7 +724,7 @@ export default function EmployeeDashboard() {
 
   // --- Payslips modal ---
   const [payslipsModalOpen, setPayslipsModalOpen] = useState(false);
-  const [payslips, setPayslips] = useState<{ id: string; cutoff_label: string; cutoff_period: string; file_name: string; file_path: string; uploaded_at: string; acknowledged_at: string | null }[]>([]);
+  const [payslips, setPayslips] = useState<{ id: string; cutoff_label: string; cutoff_period: string; file_name: string; file_path: string; uploaded_at: string; published_at: string | null; acknowledged_at: string | null }[]>([]);
   const [payslipsLoading, setPayslipsLoading] = useState(true);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [acknowledgingPayslipId, setAcknowledgingPayslipId] = useState<string | null>(null);
@@ -735,8 +735,9 @@ export default function EmployeeDashboard() {
     if (!user) { setPayslipsLoading(false); return; }
     const { data, error } = await supabase
       .from('payslips')
-      .select('id, cutoff_label, cutoff_period, file_name, file_path, uploaded_at, acknowledged_at')
+      .select('id, cutoff_label, cutoff_period, file_name, file_path, uploaded_at, published_at, acknowledged_at')
       .eq('user_id', user.id)
+      .eq('published', true)
       .order('uploaded_at', { ascending: false });
     if (error) console.error('Error fetching payslips:', error);
     setPayslips((data || []) as typeof payslips);
@@ -966,7 +967,14 @@ export default function EmployeeDashboard() {
 
   const cancelLeave = async (leaveId: string) => {
     if (!confirm('Cancel this leave request?')) return;
-    const { error } = await supabase.from('leave_requests').delete().eq('id', leaveId);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { alert('You are not logged in.'); return; }
+    const { error } = await supabase
+      .from('leave_requests')
+      .delete()
+      .eq('id', leaveId)
+      .eq('user_id', user.id)
+      .eq('status', 'Pending');
     if (error) { alert('Failed to cancel: ' + error.message); return; }
     await fetchMyLeaves();
   };
@@ -1023,6 +1031,7 @@ export default function EmployeeDashboard() {
     type: 'TimeIn',
   });
   const [disputeSaving, setDisputeSaving] = useState(false);
+  const [cancelingDisputeId, setCancelingDisputeId] = useState<string | null>(null);
   const [disputeMsg, setDisputeMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const fetchMyDisputes = async () => {
@@ -1038,6 +1047,22 @@ export default function EmployeeDashboard() {
       return;
     }
     setMyDisputes(data || []);
+  };
+
+  const cancelDispute = async (disputeId: string) => {
+    if (!confirm('Cancel this pending attendance dispute?')) return;
+    setCancelingDisputeId(disputeId);
+    try {
+      const { error } = await supabase.rpc('cancel_my_attendance_dispute', { p_dispute_id: disputeId });
+      if (error) throw error;
+      setMyDisputes((current) => current.filter((dispute) => dispute.id !== disputeId));
+      setSelectedMyDisputeDetail(null);
+      await fetchMyDisputes();
+    } catch (error: any) {
+      alert('Failed to cancel dispute: ' + (error?.message || 'Please try again.'));
+    } finally {
+      setCancelingDisputeId(null);
+    }
   };
 
   // Opens the dispute modal. If a log already exists for that day
@@ -1324,40 +1349,6 @@ export default function EmployeeDashboard() {
     .sort((a, b) => a.start_date.localeCompare(b.start_date))
     .slice(0, 3);
 
-  // --- Days Until Payday widget ---
-  // Assumes the common semi-monthly PH schedule: paid on the 15th (for
-  // the 1-15 cutoff) and on the last calendar day of the month (for the
-  // 16-end cutoff). Adjust the candidate days below if the company's
-  // actual payout dates differ (e.g. a few days after each cutoff closes).
-  const paydayInfo = useMemo(() => {
-    const parts = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
-    }).formatToParts(new Date()).reduce((acc: any, p) => { acc[p.type] = p.value; return acc; }, {});
-    const y = parseInt(parts.year, 10);
-    const m = parseInt(parts.month, 10); // 1-indexed
-    const d = parseInt(parts.day, 10);
-
-    const lastDayOfMonth = (yy: number, mm: number) => new Date(yy, mm, 0).getDate();
-
-    let ny = y, nm = m + 1;
-    if (nm > 12) { nm = 1; ny += 1; }
-
-    const candidates = [
-      { y, m, d: 15 },
-      { y, m, d: lastDayOfMonth(y, m) },
-      { y: ny, m: nm, d: 15 },
-    ];
-
-    const todayUTC = Date.UTC(y, m - 1, d);
-    const next = candidates
-      .map((c) => ({ ...c, diff: Math.round((Date.UTC(c.y, c.m - 1, c.d) - todayUTC) / 86400000) }))
-      .filter((c) => c.diff >= 0)
-      .sort((a, b) => a.diff - b.diff)[0];
-
-    const label = new Date(next.y, next.m - 1, next.d).toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
-    return { daysLeft: next.diff, label };
-  }, []);
-
   // --- Attendance Streak badge ---
   // Counts consecutive work days (most recent first) that are neither
   // "Late" nor "Absent" -- an approved Leave day doesn't break the streak,
@@ -1638,7 +1629,7 @@ export default function EmployeeDashboard() {
         id: `payslip:${payslip.id}`,
         title: 'New payslip available',
         message: payslip.cutoff_label,
-        date: payslip.uploaded_at,
+        date: payslip.published_at || payslip.uploaded_at,
         target: 'payslip',
       }));
     supportRequests
@@ -1808,6 +1799,50 @@ export default function EmployeeDashboard() {
 
   return (
     <main className="min-h-screen p-3 sm:p-4 md:p-6 lg:p-8">
+      <style jsx global>{`
+        .dark { color-scheme: dark; }
+        .dark body { background-color: #08110c; color: #edf6ef; }
+        .dark .card-style { background: #111c15 !important; border-color: #26372c !important; color: #edf6ef; }
+        .dark .branding-box { background: #142219 !important; border-color: #2b3d31 !important; color: #f4faf5; }
+        .dark .input-field { background: #0d1711 !important; border-color: #34483a !important; color: #f1f7f2 !important; }
+        .dark .input-field::placeholder { color: #8da092 !important; opacity: 1; }
+        .dark input, .dark select, .dark textarea { color-scheme: dark; }
+        .dark .text-slate-900, .dark .text-slate-800 { color: #f1f7f2 !important; }
+        .dark .text-slate-700, .dark .text-slate-600 { color: #d1ddd4 !important; }
+        .dark .text-slate-500 { color: #afbeb3 !important; }
+        .dark .text-slate-400 { color: #99aa9e !important; }
+        .dark .text-slate-300 { color: #7f9285 !important; }
+        .dark .bg-white { background-color: #17241b !important; }
+        .dark .bg-slate-50 { background-color: #142019 !important; }
+        .dark .bg-slate-100 { background-color: #1c2a21 !important; }
+        .dark .bg-slate-200 { background-color: #2b3b30 !important; }
+        .dark .border-slate-100 { border-color: #293b2f !important; }
+        .dark .border-slate-200 { border-color: #34483a !important; }
+        .dark .hover\\:bg-slate-50:hover { background-color: #1a2920 !important; }
+        .dark .hover\\:bg-slate-100:hover { background-color: #223329 !important; }
+        .dark .hover\\:bg-slate-200:hover { background-color: #2b4033 !important; }
+        .dark .bg-green-50 { background-color: rgba(20, 83, 45, .35) !important; }
+        .dark .border-green-100 { border-color: #287044 !important; }
+        .dark .text-green-800, .dark .text-green-700 { color: #bbf7d0 !important; }
+        .dark .text-green-600 { color: #86efac !important; }
+        .dark .bg-blue-50, .dark .bg-sky-50 { background-color: rgba(30, 64, 175, .30) !important; }
+        .dark .border-blue-100, .dark .border-sky-100 { border-color: #315b9b !important; }
+        .dark .text-blue-800, .dark .text-blue-700, .dark .text-blue-600, .dark .text-sky-700, .dark .text-sky-600 { color: #93c5fd !important; }
+        .dark .bg-amber-50, .dark .bg-orange-50 { background-color: rgba(120, 53, 15, .34) !important; }
+        .dark .border-amber-100, .dark .border-orange-100 { border-color: #9a5b22 !important; }
+        .dark .text-amber-800, .dark .text-amber-700, .dark .text-amber-600, .dark .text-orange-700, .dark .text-orange-600 { color: #fcd34d !important; }
+        .dark .bg-red-50, .dark .bg-rose-50 { background-color: rgba(127, 29, 29, .34) !important; }
+        .dark .border-red-100, .dark .border-rose-100 { border-color: #9f3f4b !important; }
+        .dark .text-red-800, .dark .text-red-700, .dark .text-red-600, .dark .text-red-500, .dark .text-rose-800, .dark .text-rose-700, .dark .text-rose-600, .dark .text-rose-500 { color: #fda4af !important; }
+        .dark .bg-purple-50, .dark .bg-violet-50 { background-color: rgba(88, 28, 135, .32) !important; }
+        .dark .border-purple-100, .dark .border-violet-100 { border-color: #7045a0 !important; }
+        .dark .text-purple-700, .dark .text-purple-600, .dark .text-violet-800, .dark .text-violet-600 { color: #d8b4fe !important; }
+        .dark .bg-teal-50 { background-color: rgba(19, 78, 74, .38) !important; }
+        .dark .border-teal-100 { border-color: #317873 !important; }
+        .dark .text-teal-700, .dark .text-teal-600 { color: #99f6e4 !important; }
+        .dark .tag-present, .dark .tag-late, .dark .tag-absent, .dark .tag-leave, .dark .tag-excused { border: 1px solid currentColor; }
+        .dark button:disabled { opacity: .55; }
+      `}</style>
       <div className="max-w-7xl mx-auto space-y-3 sm:space-y-4 md:space-y-5">
 
         {/* Header */}
@@ -1973,16 +2008,6 @@ export default function EmployeeDashboard() {
                     <p className="text-slate-400 text-[10px]">{formatMonthLabel(summaryCutoffKey)}</p>
                   </div>
                 </div>
-                {/* Days Until Payday */}
-                <div className="flex items-center gap-3 card-style !p-3">
-                  <div className="w-10 h-10 rounded-full bg-green-50 flex items-center justify-center flex-shrink-0">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-green-600"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
-                  </div>
-                  <div>
-                    <p className="font-semibold text-slate-900 text-xs">{paydayInfo.daysLeft === 0 ? 'Payday is today!' : `${paydayInfo.daysLeft} day${paydayInfo.daysLeft === 1 ? '' : 's'} until payday`}</p>
-                    <p className="text-slate-400 text-[10px]">{paydayInfo.label}</p>
-                  </div>
-                </div>
               </div>
             </div>
 
@@ -2053,7 +2078,7 @@ export default function EmployeeDashboard() {
                 <div className="flex items-start gap-3">
                   <div className="flex-shrink-0 w-8 h-8 rounded-xl bg-green-500 flex items-center justify-center text-sm">📣</div>
                   <div className="flex-1 min-w-0">
-                    <span className="inline-block bg-green-500 text-slate-900 text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full mb-2">Announcement</span>
+                    <span className="inline-block bg-green-500 text-slate-950 text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full mb-2">Announcement</span>
                     <p className="text-white text-sm font-medium whitespace-pre-wrap leading-relaxed">{announcement}</p>
                     {announcementImageUrl && (
                       // eslint-disable-next-line @next/next/no-img-element -- external Supabase Storage URL, not a static asset
@@ -2074,7 +2099,7 @@ export default function EmployeeDashboard() {
             )}
 
             {/* Quick Actions */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
               <button type="button" onClick={() => setLeaveChoiceModalOpen(true)} className="card-style !p-3 flex items-center gap-2 hover:bg-slate-50 transition text-left">
                 <div className="w-8 h-8 rounded-xl bg-green-50 flex items-center justify-center flex-shrink-0">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-green-600"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
@@ -2735,7 +2760,7 @@ export default function EmployeeDashboard() {
                         <button
                           onClick={() => downloadPayslip(p)}
                           disabled={downloadingId === p.id}
-                          className="flex items-center justify-center gap-1.5 bg-[#e8f1ea] text-[#1f2a23] border border-[#d2e0d5] text-[10px] font-bold px-3 py-2 rounded-full hover:bg-[#dce9df] transition disabled:opacity-50"
+                          className="flex items-center justify-center gap-1.5 bg-[#e8f1ea] text-[#1f2a23] border border-[#d2e0d5] text-[10px] font-bold px-3 py-2 rounded-full hover:bg-[#dce9df] transition disabled:opacity-50 dark:bg-[#26382c] dark:text-[#eaf3ec] dark:border-[#3a5040] dark:hover:bg-[#304438]"
                         >
                           {downloadingId === p.id ? <><Spinner size="sm" />Downloading...</> : 'Download'}
                         </button>
@@ -2904,28 +2929,24 @@ export default function EmployeeDashboard() {
               ) : (
                 <div className="space-y-2">
                   {myLeaves.map((l) => (
-                    <button
-                      key={l.id}
-                      type="button"
-                      onClick={() => setSelectedMyLeaveDetail(l)}
-                      className="w-full flex items-center justify-between gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100 hover:bg-slate-100 transition text-left"
-                    >
-                      <div className="min-w-0">
+                    <div key={l.id} className="w-full flex items-center gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100 hover:bg-slate-100 transition">
+                      <button type="button" onClick={() => setSelectedMyLeaveDetail(l)} className="min-w-0 flex-1 text-left">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-semibold text-slate-900 text-xs">{l.leave_type} Leave</span>
                           <span className={l.status === 'Approved' ? 'tag-present' : l.status === 'Rejected' ? 'tag-late' : 'tag-excused'}>{l.status}</span>
                         </div>
                         <div className="text-slate-400 text-[10px] mt-0.5">{l.start_date === l.end_date ? l.start_date : `${l.start_date} → ${l.end_date}`} · {countLeaveDays(l.start_date, l.end_date)}d</div>
-                      </div>
+                      </button>
                       {l.status === 'Pending' && (
                         <button
-                          onClick={(e) => { e.stopPropagation(); cancelLeave(l.id); }}
+                          type="button"
+                          onClick={() => cancelLeave(l.id)}
                           className="text-rose-500 hover:text-rose-700 text-xs font-bold flex-shrink-0"
                         >
                           Cancel
                         </button>
                       )}
-                    </button>
+                    </div>
                   ))}
                 </div>
               )}
@@ -3031,6 +3052,17 @@ export default function EmployeeDashboard() {
                     )}
                     <p>Filed: {new Date(selectedMyDisputeDetail.created_at).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
                   </div>
+
+                  {selectedMyDisputeDetail.status === 'Pending' && (
+                    <button
+                      type="button"
+                      onClick={() => cancelDispute(selectedMyDisputeDetail.id)}
+                      disabled={cancelingDisputeId === selectedMyDisputeDetail.id}
+                      className="w-full py-2.5 rounded-full bg-rose-50 text-rose-600 text-xs font-bold hover:bg-rose-100 transition disabled:opacity-50"
+                    >
+                      {cancelingDisputeId === selectedMyDisputeDetail.id ? 'Cancelling...' : 'Cancel This Dispute'}
+                    </button>
+                  )}
                 </div>
               ) : myDisputes.length === 0 ? (
                 <div className="text-center py-10 border-2 border-dashed border-slate-200 rounded-2xl">
@@ -3610,3 +3642,4 @@ export default function EmployeeDashboard() {
     </main>
   );
 }
+

@@ -105,7 +105,10 @@ export default function SuperAdminDashboard() {
     late_cutoff_minute: number;
     default_leave_credits: number;
     time_out_reminder_hour: number;
-  }>({ late_cutoff_hour: 9, late_cutoff_minute: 15, default_leave_credits: 10, time_out_reminder_hour: 19 });
+    support_response_target_hours: number;
+    payslip_ack_reminder_days: number;
+    dashboard_refresh_seconds: number;
+  }>({ late_cutoff_hour: 9, late_cutoff_minute: 15, default_leave_credits: 10, time_out_reminder_hour: 19, support_response_target_hours: 24, payslip_ack_reminder_days: 3, dashboard_refresh_seconds: 60 });
   const [appSettingsLoading, setAppSettingsLoading] = useState(false);
   const [appSettingsSaving, setAppSettingsSaving] = useState(false);
   const [appSettingsMsg, setAppSettingsMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -240,7 +243,7 @@ export default function SuperAdminDashboard() {
     const { data, error } = await supabase
       .from('app_settings')
       .select('key, value')
-      .in('key', ['late_cutoff_hour', 'late_cutoff_minute', 'default_leave_credits', 'time_out_reminder_hour']);
+      .in('key', ['late_cutoff_hour', 'late_cutoff_minute', 'default_leave_credits', 'time_out_reminder_hour', 'support_response_target_hours', 'payslip_ack_reminder_days', 'dashboard_refresh_seconds']);
     if (error) {
       console.error('Error fetching app settings:', error);
       setAppSettingsMsg({ type: 'error', text: error.message });
@@ -253,6 +256,9 @@ export default function SuperAdminDashboard() {
       late_cutoff_minute: typeof map.late_cutoff_minute === 'number' ? map.late_cutoff_minute : 15,
       default_leave_credits: typeof map.default_leave_credits === 'number' ? map.default_leave_credits : 10,
       time_out_reminder_hour: typeof map.time_out_reminder_hour === 'number' ? map.time_out_reminder_hour : 19,
+      support_response_target_hours: typeof map.support_response_target_hours === 'number' ? map.support_response_target_hours : 24,
+      payslip_ack_reminder_days: typeof map.payslip_ack_reminder_days === 'number' ? map.payslip_ack_reminder_days : 3,
+      dashboard_refresh_seconds: typeof map.dashboard_refresh_seconds === 'number' ? map.dashboard_refresh_seconds : 60,
     });
     setAppSettingsLoading(false);
   };
@@ -267,12 +273,14 @@ export default function SuperAdminDashboard() {
         { key: 'late_cutoff_minute', value: appSettings.late_cutoff_minute },
         { key: 'default_leave_credits', value: appSettings.default_leave_credits },
         { key: 'time_out_reminder_hour', value: appSettings.time_out_reminder_hour },
+        { key: 'support_response_target_hours', value: appSettings.support_response_target_hours },
+        { key: 'payslip_ack_reminder_days', value: appSettings.payslip_ack_reminder_days },
+        { key: 'dashboard_refresh_seconds', value: appSettings.dashboard_refresh_seconds },
       ];
       for (const row of rows) {
         const { error } = await supabase
           .from('app_settings')
-          .update({ value: row.value, updated_at: new Date().toISOString(), updated_by: user?.id ?? null })
-          .eq('key', row.key);
+          .upsert({ key: row.key, value: row.value, updated_at: new Date().toISOString(), updated_by: user?.id ?? null }, { onConflict: 'key' });
         if (error) throw error;
       }
       setAppSettingsMsg({ type: 'success', text: 'Settings saved. Takes effect immediately for new time-ins and dashboard loads.' });
@@ -280,7 +288,7 @@ export default function SuperAdminDashboard() {
         'app_settings_updated',
         'system',
         null,
-        `Updated app settings: late cutoff ${appSettings.late_cutoff_hour}:${String(appSettings.late_cutoff_minute).padStart(2, '0')}, default leave credits ${appSettings.default_leave_credits}, time-out reminder ${appSettings.time_out_reminder_hour}:00`
+        `Updated app settings: late cutoff ${appSettings.late_cutoff_hour}:${String(appSettings.late_cutoff_minute).padStart(2, '0')}, leave credits ${appSettings.default_leave_credits}, support target ${appSettings.support_response_target_hours}h, payslip reminder ${appSettings.payslip_ack_reminder_days}d, refresh ${appSettings.dashboard_refresh_seconds}s`
       );
     } catch (err: any) {
       console.error('Error saving app settings:', err);
@@ -926,6 +934,7 @@ export default function SuperAdminDashboard() {
   const totalAccounts = employees.length;
   const totalAdmins = employees.filter((e) => e.role === 'admin').length;
   const totalEmployeesCount = employees.filter((e) => e.role === 'employee').length;
+  const incompleteProfilesCount = employees.filter((e) => e.role === 'employee' && (!e.full_name || !e.employee_id || !e.designation || !e.avatar_url || !e.employee_email)).length;
 
   return (
     <main className="min-h-screen p-3 sm:p-4 md:p-6 lg:p-8">
@@ -963,7 +972,7 @@ export default function SuperAdminDashboard() {
         )}
 
         {/* QUICK STATS */}
-        <div className="grid grid-cols-3 gap-3 md:gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
           <div className="card-dark flex flex-col items-center justify-center !p-4 md:!p-6 text-center">
             <p className="stat-number text-2xl md:text-3xl text-white">{totalAccounts}</p>
             <p className="text-white/60 text-[10px] font-bold uppercase tracking-widest mt-1">Total Accounts</p>
@@ -976,92 +985,95 @@ export default function SuperAdminDashboard() {
             <p className="stat-number text-2xl md:text-3xl text-purple-600">{totalAdmins}</p>
             <p className="label-branded mt-1">HR Admins</p>
           </div>
+          <button type="button" onClick={openUserAccountsModal} className="card-style flex flex-col items-center justify-center !p-4 md:!p-6 text-center hover:bg-slate-50 transition">
+            <p className={`stat-number text-2xl md:text-3xl ${incompleteProfilesCount ? 'text-orange-600' : 'text-emerald-600'}`}>{incompleteProfilesCount}</p>
+            <p className="label-branded mt-1">Incomplete Profiles</p>
+          </button>
         </div>
 
         {/* ACTION GRID -- every management area is a compact icon button
             that opens its own modal, instead of an always-expanded or
             accordion-style card. Keeps the dashboard short and tidy. */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
           <button
             type="button"
             onClick={openCreateAccountModal}
-            className="card-style !p-4 flex flex-col items-center justify-center gap-2 text-center hover:bg-slate-50 transition"
+            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
           >
             <span className="w-10 h-10 rounded-2xl bg-sky-50 flex items-center justify-center text-lg flex-shrink-0">➕</span>
-            <span className="font-bold text-slate-900 text-xs">Create New Account</span>
+            <span><span className="block font-bold text-slate-900 text-xs">Create New Account</span><span className="block text-slate-400 text-[10px] mt-0.5">Employee or HR access</span></span>
           </button>
 
           <button
             type="button"
             onClick={() => { setResetEmail(''); setResetPasswordMsg(null); setResetPasswordModalOpen(true); }}
-            className="card-style !p-4 flex flex-col items-center justify-center gap-2 text-center hover:bg-slate-50 transition"
+            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
           >
             <span className="w-10 h-10 rounded-2xl bg-amber-50 flex items-center justify-center text-lg flex-shrink-0">🔑</span>
-            <span className="font-bold text-slate-900 text-xs">Reset Password</span>
+            <span><span className="block font-bold text-slate-900 text-xs">Reset Password</span><span className="block text-slate-400 text-[10px] mt-0.5">Send a secure reset link</span></span>
           </button>
 
           <button
             type="button"
             onClick={openUserAccountsModal}
-            className="card-style !p-4 flex flex-col items-center justify-center gap-2 text-center hover:bg-slate-50 transition"
+            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
           >
             <span className="w-10 h-10 rounded-2xl bg-blue-50 flex items-center justify-center text-lg flex-shrink-0">👥</span>
-            <span className="font-bold text-slate-900 text-xs">User Accounts</span>
-            <span className="text-slate-400 text-[10px] -mt-1">{totalAccounts} total</span>
+            <span><span className="block font-bold text-slate-900 text-xs">User Accounts</span><span className="block text-slate-400 text-[10px] mt-0.5">{totalAccounts} total accounts</span></span>
           </button>
 
           <button
             type="button"
             onClick={openAttendanceRecordsModal}
-            className="card-style !p-4 flex flex-col items-center justify-center gap-2 text-center hover:bg-slate-50 transition"
+            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
           >
             <span className="w-10 h-10 rounded-2xl bg-emerald-50 flex items-center justify-center text-lg flex-shrink-0">📋</span>
-            <span className="font-bold text-slate-900 text-xs">Attendance Records</span>
+            <span><span className="block font-bold text-slate-900 text-xs">Attendance Records</span><span className="block text-slate-400 text-[10px] mt-0.5">Review and correct logs</span></span>
           </button>
 
           <button
             type="button"
             onClick={() => setArchivalModalOpen(true)}
-            className="card-style !p-4 flex flex-col items-center justify-center gap-2 text-center hover:bg-slate-50 transition"
+            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
           >
             <span className="w-10 h-10 rounded-2xl bg-slate-100 flex items-center justify-center text-lg flex-shrink-0">🗃️</span>
-            <span className="font-bold text-slate-900 text-xs">Data Archival</span>
+            <span><span className="block font-bold text-slate-900 text-xs">Data Archival</span><span className="block text-slate-400 text-[10px] mt-0.5">Move records older than a year</span></span>
           </button>
 
           <button
             type="button"
             onClick={() => setBackupModalOpen(true)}
-            className="card-style !p-4 flex flex-col items-center justify-center gap-2 text-center hover:bg-slate-50 transition"
+            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
           >
             <span className="w-10 h-10 rounded-2xl bg-slate-100 flex items-center justify-center text-lg flex-shrink-0">🗄️</span>
-            <span className="font-bold text-slate-900 text-xs">Database Backup</span>
+            <span><span className="block font-bold text-slate-900 text-xs">Database Backup</span><span className="block text-slate-400 text-[10px] mt-0.5">Create an off-site copy</span></span>
           </button>
 
           <button
             type="button"
             onClick={openAuditLogModal}
-            className="card-style !p-4 flex flex-col items-center justify-center gap-2 text-center hover:bg-slate-50 transition"
+            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
           >
             <span className="w-10 h-10 rounded-2xl bg-indigo-50 flex items-center justify-center text-lg flex-shrink-0">📜</span>
-            <span className="font-bold text-slate-900 text-xs">Audit Log</span>
+            <span><span className="block font-bold text-slate-900 text-xs">Audit Log</span><span className="block text-slate-400 text-[10px] mt-0.5">Administrative activity trail</span></span>
           </button>
 
           <button
             type="button"
             onClick={openHealthModal}
-            className="card-style !p-4 flex flex-col items-center justify-center gap-2 text-center hover:bg-slate-50 transition"
+            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
           >
             <span className="w-10 h-10 rounded-2xl bg-teal-50 flex items-center justify-center text-lg flex-shrink-0">💚</span>
-            <span className="font-bold text-slate-900 text-xs">System Health</span>
+            <span><span className="block font-bold text-slate-900 text-xs">System Health</span><span className="block text-slate-400 text-[10px] mt-0.5">Backup, archive, and email checks</span></span>
           </button>
 
           <button
             type="button"
             onClick={openAppSettingsModal}
-            className="card-style !p-4 flex flex-col items-center justify-center gap-2 text-center hover:bg-slate-50 transition"
+            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
           >
             <span className="w-10 h-10 rounded-2xl bg-orange-50 flex items-center justify-center text-lg flex-shrink-0">⚙️</span>
-            <span className="font-bold text-slate-900 text-xs">App Settings</span>
+            <span><span className="block font-bold text-slate-900 text-xs">App Settings</span><span className="block text-slate-400 text-[10px] mt-0.5">Shared Employee and HR rules</span></span>
           </button>
         </div>
       </div>
@@ -1604,6 +1616,23 @@ export default function SuperAdminDashboard() {
                       <option key={h} value={h}>{h.toString().padStart(2, '0')}:00</option>
                     ))}
                   </select>
+                </div>
+
+                <div className="pt-4 border-t border-slate-100">
+                  <p className="label-branded mb-1">Employee Service Settings</p>
+                  <p className="text-slate-400 text-[11px] mb-4">Shared controls for the Employee and HR modules.</p>
+
+                  <label className="label-branded">Help Desk Response Target (hours)</label>
+                  <p className="text-slate-400 text-[11px] mb-2">Target time for HR to respond to a newly submitted employee request.</p>
+                  <input type="number" min={1} max={168} className="input-field mb-4" value={appSettings.support_response_target_hours} onChange={(e) => setAppSettings((s) => ({ ...s, support_response_target_hours: Math.max(1, parseInt(e.target.value, 10) || 1) }))} />
+
+                  <label className="label-branded">Payslip Acknowledgment Reminder (days)</label>
+                  <p className="text-slate-400 text-[11px] mb-2">How many days after publishing before an unacknowledged payslip is considered overdue.</p>
+                  <input type="number" min={1} max={30} className="input-field mb-4" value={appSettings.payslip_ack_reminder_days} onChange={(e) => setAppSettings((s) => ({ ...s, payslip_ack_reminder_days: Math.max(1, parseInt(e.target.value, 10) || 1) }))} />
+
+                  <label className="label-branded">Dashboard Auto-Refresh (seconds)</label>
+                  <p className="text-slate-400 text-[11px] mb-2">Recommended live-data refresh interval. Minimum 30 seconds to avoid excessive queries.</p>
+                  <input type="number" min={30} max={600} step={10} className="input-field" value={appSettings.dashboard_refresh_seconds} onChange={(e) => setAppSettings((s) => ({ ...s, dashboard_refresh_seconds: Math.min(600, Math.max(30, parseInt(e.target.value, 10) || 60)) }))} />
                 </div>
 
                 <button

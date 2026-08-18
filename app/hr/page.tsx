@@ -561,9 +561,123 @@ export default function HRDashboard() {
   );
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(null);
   const [attendanceInsightsOpen, setAttendanceInsightsOpen] = useState(true);
+  const [dailyOverviewModal, setDailyOverviewModal] = useState<null | 'present' | 'late' | 'leave' | 'notTimedIn'>(null);
+  const [attendanceInsightModal, setAttendanceInsightModal] = useState<null | 'attendance' | 'late' | 'absent' | 'leave'>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [filtersHydrated, setFiltersHydrated] = useState(false);
+
+  // Employee Help Desk management
+  const [hrSupportModalOpen, setHrSupportModalOpen] = useState(false);
+  const [hrSupportRequests, setHrSupportRequests] = useState<any[]>([]);
+  const [hrSupportLoading, setHrSupportLoading] = useState(false);
+  const [hrSupportSavingId, setHrSupportSavingId] = useState<string | null>(null);
+  const [hrSupportDrafts, setHrSupportDrafts] = useState<Record<string, { status: string; hr_notes: string }>>({});
+
+  const fetchHrSupportRequests = async () => {
+    setHrSupportLoading(true);
+    const { data, error } = await supabase
+      .from('employee_support_requests')
+      .select('id, user_id, category, subject, description, status, hr_notes, created_at, updated_at')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching employee support requests:', error);
+      setHrSupportRequests([]);
+      setHrSupportDrafts({});
+      setHrSupportLoading(false);
+      return;
+    }
+
+    const requests = data || [];
+    const employeeIds = [...new Set(requests.map((request: any) => request.user_id).filter(Boolean))];
+    let employeeById: Record<string, { full_name: string | null; employee_id: string | null }> = {};
+
+    if (employeeIds.length > 0) {
+      const { data: employees, error: employeesError } = await supabase
+        .from('profiles')
+        .select('id, full_name, employee_id')
+        .in('id', employeeIds);
+
+      if (employeesError) {
+        console.error('Error fetching Help Desk employee profiles:', employeesError);
+      } else {
+        employeeById = Object.fromEntries(
+          (employees || []).map((employee: any) => [employee.id, {
+            full_name: employee.full_name,
+            employee_id: employee.employee_id,
+          }])
+        );
+      }
+    }
+
+    const rows = requests.map((request: any) => ({
+      ...request,
+      employee: employeeById[request.user_id] || null,
+    }));
+    setHrSupportRequests(rows);
+    setHrSupportDrafts(Object.fromEntries(rows.map((request: any) => [request.id, { status: request.status, hr_notes: request.hr_notes || '' }])));
+    setHrSupportLoading(false);
+  };
+
+  const saveHrSupportRequest = async (requestId: string) => {
+    const draft = hrSupportDrafts[requestId];
+    if (!draft) return;
+    setHrSupportSavingId(requestId);
+    const { error } = await supabase.from('employee_support_requests').update({ status: draft.status, hr_notes: draft.hr_notes.trim() || null }).eq('id', requestId);
+    if (error) alert('Failed to update request: ' + error.message);
+    else await fetchHrSupportRequests();
+    setHrSupportSavingId(null);
+  };
+
+  // Employee Documents publishing
+  const [hrDocumentsModalOpen, setHrDocumentsModalOpen] = useState(false);
+  const [hrDocuments, setHrDocuments] = useState<any[]>([]);
+  const [hrDocumentsLoading, setHrDocumentsLoading] = useState(false);
+  const [hrDocumentSaving, setHrDocumentSaving] = useState(false);
+  const [hrDocumentTitle, setHrDocumentTitle] = useState('');
+  const [hrDocumentCategory, setHrDocumentCategory] = useState('Company Policy');
+  const [hrDocumentFile, setHrDocumentFile] = useState<File | null>(null);
+  const hrDocumentFileRef = useRef<HTMLInputElement>(null);
+
+  const fetchHrDocuments = async () => {
+    setHrDocumentsLoading(true);
+    const { data, error } = await supabase.from('employee_documents').select('id, title, category, file_name, file_path, is_active, published_at').order('published_at', { ascending: false });
+    if (error) console.error('Error fetching employee documents:', error);
+    setHrDocuments(data || []);
+    setHrDocumentsLoading(false);
+  };
+
+  const uploadHrDocument = async () => {
+    if (!hrDocumentTitle.trim() || !hrDocumentFile) { alert('Enter a title and choose a file.'); return; }
+    setHrDocumentSaving(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('You are not logged in.');
+      const safeName = hrDocumentFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const filePath = `${Date.now()}_${safeName}`;
+      const { error: uploadError } = await supabase.storage.from('employee-documents').upload(filePath, hrDocumentFile, { upsert: false });
+      if (uploadError) throw uploadError;
+      const { error: insertError } = await supabase.from('employee_documents').insert({ title: hrDocumentTitle.trim(), category: hrDocumentCategory, file_name: hrDocumentFile.name, file_path: filePath, created_by: user.id, is_active: true });
+      if (insertError) { await supabase.storage.from('employee-documents').remove([filePath]); throw insertError; }
+      setHrDocumentTitle(''); setHrDocumentFile(null); if (hrDocumentFileRef.current) hrDocumentFileRef.current.value = '';
+      await fetchHrDocuments();
+    } catch (error: any) { alert('Failed to publish document: ' + (error?.message || 'Please try again.')); }
+    finally { setHrDocumentSaving(false); }
+  };
+
+  const toggleHrDocument = async (document: any) => {
+    const { error } = await supabase.from('employee_documents').update({ is_active: !document.is_active }).eq('id', document.id);
+    if (error) alert('Failed to update document: ' + error.message); else await fetchHrDocuments();
+  };
+
+  const deleteHrDocument = async (document: any) => {
+    if (!confirm(`Delete ${document.title}?`)) return;
+    const { error: storageError } = await supabase.storage.from('employee-documents').remove([document.file_path]);
+    if (storageError) { alert('Failed to delete file: ' + storageError.message); return; }
+    const { error } = await supabase.from('employee_documents').delete().eq('id', document.id);
+    if (error) alert('Failed to delete document record: ' + error.message); else await fetchHrDocuments();
+  };
 
   useEffect(() => {
     try {
@@ -587,7 +701,7 @@ export default function HRDashboard() {
   }, [filtersHydrated, searchTerm, selectedDate, cutoffFilter]);
 
   useEffect(() => {
-    const moduleModalOpen = announcementOpen || holidaysOpen || employeesListOpen || leaveCalendarOpen || !!quickViewProfile;
+    const moduleModalOpen = announcementOpen || holidaysOpen || employeesListOpen || leaveCalendarOpen || hrSupportModalOpen || hrDocumentsModalOpen || !!quickViewProfile || !!dailyOverviewModal || !!attendanceInsightModal;
     if (!moduleModalOpen) return;
 
     const previousOverflow = document.body.style.overflow;
@@ -599,13 +713,17 @@ export default function HRDashboard() {
       if (employeesListOpen) setEmployeesListOpen(false);
       if (leaveCalendarOpen) setLeaveCalendarOpen(false);
       if (quickViewProfile) setQuickViewProfile(null);
+      if (dailyOverviewModal) setDailyOverviewModal(null);
+      if (attendanceInsightModal) setAttendanceInsightModal(null);
+      if (hrSupportModalOpen && !hrSupportSavingId) setHrSupportModalOpen(false);
+      if (hrDocumentsModalOpen && !hrDocumentSaving) setHrDocumentsModalOpen(false);
     };
     window.addEventListener('keydown', closeOnEscape);
     return () => {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener('keydown', closeOnEscape);
     };
-  }, [announcementOpen, announcementSaving, holidaysOpen, holidaySaving, employeesListOpen, leaveCalendarOpen, quickViewProfile]);
+  }, [announcementOpen, announcementSaving, holidaysOpen, holidaySaving, employeesListOpen, leaveCalendarOpen, hrSupportModalOpen, hrDocumentsModalOpen, hrSupportSavingId, hrDocumentSaving, quickViewProfile, dailyOverviewModal, attendanceInsightModal]);
 
   useEffect(() => {
     const runStartupSweeps = async () => {
@@ -631,6 +749,8 @@ export default function HRDashboard() {
     fetchLeaveCreditsOverview();
     setHolidaysFetched(true);
     fetchHolidays();
+    fetchHrSupportRequests();
+    fetchHrDocuments();
   }, []);
 
   const refreshAllData = async () => {
@@ -1269,6 +1389,7 @@ export default function HRDashboard() {
 
   // Opens the Payslips modal for the selected profile
   const openPayslipsModal = (p: Profile) => {
+    setSelectedProfile(p);
     setPayslipFile(null);
     setPayslipCutoff('');
     setPayslipMsg(null);
@@ -1539,7 +1660,7 @@ export default function HRDashboard() {
     () => attendance.filter((log) => log.time_in && toManilaDateString(log.time_in) === todayManila),
     [attendance, todayManila]
   );
-  const presentTodayCount = todaysLogs.length;
+  const presentTodayCount = todaysLogs.filter((log) => log.status?.toLowerCase() === 'present').length;
   const lateTodayCount = todaysLogs.filter((l) => l.status?.toLowerCase() === 'late').length;
   const lowLeaveCreditsCount = leaveCreditsData.filter((employee) => {
     if (employee.employment_status !== 'Regular') return false;
@@ -1677,6 +1798,49 @@ export default function HRDashboard() {
 
   const pendingDisputesCount = disputes.filter((dispute) => dispute.status === 'Pending').length;
   const pendingLeaveCount = leaveRequests.filter((leave) => leave.status === 'Pending').length;
+  const openHrSupportCount = hrSupportRequests.filter((request) => request.status !== 'Resolved').length;
+  const activeHrDocumentsCount = hrDocuments.filter((document) => document.is_active).length;
+
+  const attendanceInsightMeta = attendanceInsightModal ? {
+    attendance: { title: 'Attendance Records This Month', description: `Worked records used in the ${attendanceInsights.current.attendanceRate}% attendance rate.`, tone: 'text-emerald-600', empty: 'No worked attendance records this month.' },
+    late: { title: 'Late Records This Month', description: 'All current-month attendance records tagged Late.', tone: 'text-orange-600', empty: 'No late records this month.' },
+    absent: { title: 'Absent Records This Month', description: 'All current-month attendance records tagged Absent.', tone: 'text-rose-600', empty: 'No absent records this month.' },
+    leave: { title: 'Leave Records This Month', description: 'All current-month settled leave-day attendance records.', tone: 'text-blue-600', empty: 'No leave records this month.' },
+  }[attendanceInsightModal] : null;
+
+  const attendanceInsightRecords = attendanceInsightModal === 'attendance'
+    ? attendanceInsights.current.logs.filter((log) => {
+        const status = log.status?.toLowerCase() ?? '';
+        return status !== 'absent' && !status.includes('leave');
+      })
+    : attendanceInsightModal === 'late'
+      ? attendanceInsights.current.logs.filter((log) => log.status?.toLowerCase() === 'late')
+      : attendanceInsightModal === 'absent'
+        ? attendanceInsights.current.logs.filter((log) => log.status?.toLowerCase() === 'absent')
+        : attendanceInsightModal === 'leave'
+          ? attendanceInsights.current.logs.filter((log) => log.status?.toLowerCase().includes('leave'))
+          : [];
+
+  const approvedLeavesToday = leaveRequests.filter(
+    (leave) => leave.status === 'Approved' && leave.start_date <= todayManila && leave.end_date >= todayManila
+  );
+
+  const dailyOverviewMeta = dailyOverviewModal ? {
+    present: { title: 'Present Today', description: 'All employees who have timed in today.', tone: 'text-emerald-600', empty: 'No employees have timed in today.' },
+    late: { title: 'Late Today', description: 'Employees tagged Late for today.', tone: 'text-orange-600', empty: 'No late records today.' },
+    leave: { title: 'On Leave Today', description: 'Approved leave requests covering today.', tone: 'text-blue-600', empty: 'No employees are on approved leave today.' },
+    notTimedIn: { title: 'Not Timed In Today', description: 'Employees with no time-in and no approved leave today.', tone: 'text-amber-600', empty: 'Everyone expected today has already timed in.' },
+  }[dailyOverviewModal] : null;
+
+  const dailyOverviewRecords = dailyOverviewModal === 'present'
+    ? todaysLogs.filter((log) => log.status?.toLowerCase() === 'present')
+    : dailyOverviewModal === 'late'
+      ? todaysLogs.filter((log) => log.status?.toLowerCase() === 'late')
+      : dailyOverviewModal === 'leave'
+        ? approvedLeavesToday
+        : dailyOverviewModal === 'notTimedIn'
+          ? notYetTimedInToday
+          : [];
 
   const getLeaveBalance = (userId?: string) => {
     const employee = leaveCreditsData.find((entry) => entry.id === userId);
@@ -1752,37 +1916,37 @@ export default function HRDashboard() {
         </div>
 
         {/* Daily attendance overview */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+        <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
           {[
-            { label: 'Present', value: presentTodayCount, tone: 'text-emerald-600', icon: <CheckCircle2 size={15}/> },
-            { label: 'Late', value: lateTodayCount, tone: 'text-orange-600', icon: <Clock3 size={15}/> },
-            { label: 'On Leave', value: onLeaveTodayCount, tone: 'text-blue-600', icon: <CalendarClock size={15}/> },
-            { label: 'Not Timed In', value: notYetTimedInToday.length, tone: 'text-amber-600', icon: <AlertTriangle size={15}/> },
+            { key: 'present' as const, label: 'Present', value: presentTodayCount, tone: 'text-emerald-600', icon: <CheckCircle2 size={14}/> },
+            { key: 'late' as const, label: 'Late', value: lateTodayCount, tone: 'text-orange-600', icon: <Clock3 size={14}/> },
+            { key: 'leave' as const, label: 'On Leave', value: onLeaveTodayCount, tone: 'text-blue-600', icon: <CalendarClock size={14}/> },
+            { key: 'notTimedIn' as const, label: 'Not Timed In', value: notYetTimedInToday.length, tone: 'text-amber-600', icon: <AlertTriangle size={14}/> },
           ].map((stat) => (
-            <div key={stat.label} className="card-style !p-3 flex items-center gap-2.5 min-w-0">
-              <span className={`${stat.tone} flex-shrink-0`}>{stat.icon}</span>
-              <span className="min-w-0"><span className={`stat-number block text-lg leading-none ${stat.tone}`}>{stat.value}</span><span className="block text-slate-400 text-[9px] font-bold uppercase tracking-wide mt-1 truncate">{stat.label}</span></span>
-            </div>
+            <button type="button" key={stat.key} onClick={() => setDailyOverviewModal(stat.key)} className="card-style !p-2 sm:!p-2.5 flex items-center justify-center sm:justify-start gap-1.5 sm:gap-2 min-w-0 min-h-[52px] hover:bg-slate-50 hover:-translate-y-0.5 transition text-left" aria-label={`View ${stat.label} records`}>
+              <span className={`${stat.tone} hidden sm:flex flex-shrink-0`}>{stat.icon}</span>
+              <span className="min-w-0"><span className={`stat-number block text-base sm:text-lg leading-none ${stat.tone}`}>{stat.value}</span><span className="block text-slate-500 text-[7px] sm:text-[8px] font-extrabold uppercase tracking-tight sm:tracking-wide mt-1 leading-tight whitespace-normal">{stat.label}</span></span>
+            </button>
           ))}
         </div>
 
         {/* MODULES -- compact icon buttons that open their own modal,
             same pattern as the Super Admin dashboard, so these don't
             add another full-width accordion section to scroll past. */}
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
           <button
             type="button"
             onClick={openLeaveCreditsModal}
-            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
+            className="card-style !p-3 flex items-center gap-2.5 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[66px]"
           >
-            <span className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center flex-shrink-0"><CalendarClock size={18} strokeWidth={2.4}/></span>
+            <span className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center flex-shrink-0"><CalendarClock size={17} strokeWidth={2.4}/></span>
             <span className="min-w-0"><span className="block font-bold text-slate-900 text-xs">Leave Credits</span><span className={`block text-[10px] mt-0.5 truncate ${lowLeaveCreditsCount > 0 ? 'text-orange-600 font-bold' : 'text-slate-400'}`}>{leaveCreditsLoading ? 'Checking balances...' : lowLeaveCreditsCount > 0 ? `${lowLeaveCreditsCount} low balance${lowLeaveCreditsCount === 1 ? '' : 's'}` : 'Balances healthy'}</span></span>
           </button>
 
           <button
             type="button"
             onClick={() => { setExportModalOpen(true); setExportMsg(null); if (!exportCutoff) setExportCutoff(availableCutoffs[0] || ''); }}
-            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
+            className="card-style !p-3 flex items-center gap-2.5 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[66px]"
           >
             <span className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center flex-shrink-0"><FileDown size={18} strokeWidth={2.4}/></span>
             <span className="min-w-0"><span className="block font-bold text-slate-900 text-xs">Export Reports</span><span className="block text-slate-400 text-[10px] mt-0.5">CSV &amp; PDF</span></span>
@@ -1791,7 +1955,7 @@ export default function HRDashboard() {
           <button
             type="button"
             onClick={() => setAnnouncementOpen(true)}
-            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
+            className="card-style !p-3 flex items-center gap-2.5 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[66px]"
           >
             <span className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0"><Megaphone size={18} strokeWidth={2.4}/></span>
             <span className="min-w-0"><span className="block font-bold text-slate-900 text-xs">Announcements</span><span className="block text-slate-400 text-[10px] mt-0.5 truncate">{announcementModuleLabel}</span></span>
@@ -1800,7 +1964,7 @@ export default function HRDashboard() {
           <button
             type="button"
             onClick={() => { if (!holidaysOpen) toggleHolidays(); }}
-            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
+            className="card-style !p-3 flex items-center gap-2.5 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[66px]"
           >
             <span className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center flex-shrink-0"><CalendarRange size={18} strokeWidth={2.4}/></span>
             <span className="min-w-0"><span className="block font-bold text-slate-900 text-xs">Holidays</span><span className="block text-slate-400 text-[10px] mt-0.5">{holidaysLoading ? 'Checking calendar...' : `${upcomingHolidaysCount} upcoming`}</span></span>
@@ -1808,8 +1972,8 @@ export default function HRDashboard() {
 
           <button
             type="button"
-            onClick={() => setEmployeesListOpen(true)}
-            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
+            onClick={() => { setEmployeesPage(1); setEmployeesListOpen(true); }}
+            className="card-style !p-3 flex items-center gap-2.5 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[66px]"
           >
             <span className="w-10 h-10 rounded-2xl bg-violet-50 text-violet-600 flex items-center justify-center flex-shrink-0"><UsersRound size={18} strokeWidth={2.4}/></span>
             <span className="min-w-0"><span className="block font-bold text-slate-900 text-xs">Employees</span><span className="block text-slate-400 text-[10px] mt-0.5">{profiles.length} total</span></span>
@@ -1818,10 +1982,20 @@ export default function HRDashboard() {
           <button
             type="button"
             onClick={() => { setSelectedCalendarDate(null); setLeaveCalendarOpen(true); }}
-            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
+            className="card-style !p-3 flex items-center gap-2.5 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[66px]"
           >
             <span className="w-10 h-10 rounded-2xl bg-cyan-50 text-cyan-600 flex items-center justify-center flex-shrink-0"><CalendarRange size={18} strokeWidth={2.4}/></span>
             <span className="min-w-0"><span className="block font-bold text-slate-900 text-xs">Leave Calendar</span><span className="block text-slate-400 text-[10px] mt-0.5">Approved leaves &amp; holidays</span></span>
+          </button>
+
+          <button type="button" onClick={() => { setHrSupportModalOpen(true); fetchHrSupportRequests(); }} className="card-style !p-3 flex items-center gap-2.5 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[66px]">
+            <span className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center flex-shrink-0 text-base">🎫</span>
+            <span className="min-w-0"><span className="block font-bold text-slate-900 text-xs">Help Desk Requests</span><span className={`block text-[10px] mt-0.5 ${openHrSupportCount ? 'text-orange-600 font-bold' : 'text-slate-400'}`}>{openHrSupportCount ? `${openHrSupportCount} open` : 'No open requests'}</span></span>
+          </button>
+
+          <button type="button" onClick={() => { setHrDocumentsModalOpen(true); fetchHrDocuments(); }} className="card-style !p-3 flex items-center gap-2.5 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[66px]">
+            <span className="w-10 h-10 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center flex-shrink-0 text-base">📚</span>
+            <span className="min-w-0"><span className="block font-bold text-slate-900 text-xs">Employee Documents</span><span className="block text-slate-400 text-[10px] mt-0.5">{activeHrDocumentsCount} published</span></span>
           </button>
         </div>
 
@@ -1833,27 +2007,22 @@ export default function HRDashboard() {
               <p className="text-slate-400 text-[10px] mt-0.5">Items that may need HR attention today</p>
             </div>
             <span className="text-[10px] font-bold text-slate-500 bg-slate-100 rounded-full px-2.5 py-1">
-              {pendingDisputesCount + pendingLeaveCount + lowLeaveCreditsCount} open
+              {pendingDisputesCount + pendingLeaveCount + lowLeaveCreditsCount + openHrSupportCount} open
             </span>
           </div>
-          {pendingDisputesCount + pendingLeaveCount + lowLeaveCreditsCount === 0 ? (
-            <div className="flex items-center justify-center gap-2 py-5 rounded-2xl border-2 border-dashed border-emerald-100 bg-emerald-50/50 text-emerald-700">
-              <CheckCircle2 size={17}/><span className="text-xs font-bold">All caught up — no pending HR actions.</span>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
               {[
                 { label: 'Pending Disputes', count: pendingDisputesCount, tone: 'text-blue-600 bg-blue-50', action: () => scrollToDashboardSection('attendance-disputes') },
                 { label: 'Leave Requests', count: pendingLeaveCount, tone: 'text-violet-600 bg-violet-50', action: () => scrollToDashboardSection('leave-requests') },
                 { label: 'Low Leave Credits', count: lowLeaveCreditsCount, tone: 'text-orange-600 bg-orange-50', action: openLeaveCreditsModal },
+                { label: 'Help Desk Requests', count: openHrSupportCount, tone: 'text-indigo-600 bg-indigo-50', action: () => { setHrSupportModalOpen(true); fetchHrSupportRequests(); } },
               ].map((item) => (
-                <button key={item.label} type="button" onClick={item.action} className="p-3 rounded-2xl border border-slate-100 bg-slate-50 hover:bg-slate-100 transition text-left">
-                  <span className={`inline-flex min-w-7 h-7 items-center justify-center rounded-full px-2 text-xs font-extrabold ${item.tone}`}>{item.count}</span>
-                  <span className="block text-slate-700 text-[10px] font-bold mt-2">{item.label}</span>
+                <button key={item.label} type="button" onClick={item.action} className="p-2.5 rounded-xl border border-slate-100 bg-slate-50 hover:bg-white hover:-translate-y-0.5 transition text-left flex items-center gap-2.5 min-h-[48px]">
+                  <span className={`inline-flex min-w-7 h-7 items-center justify-center rounded-full px-2 text-xs font-extrabold flex-shrink-0 ${item.tone}`}>{item.count}</span>
+                  <span className="text-slate-700 text-[10px] font-bold leading-tight">{item.label}</span>
                 </button>
               ))}
             </div>
-          )}
         </section>
 
         {/* Attendance insights moved near the top for faster daily review. */}
@@ -1864,54 +2033,100 @@ export default function HRDashboard() {
           </button>
           {attendanceInsightsOpen && (
             <div className="pt-4">
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
+              <div className="grid grid-cols-4 gap-1.5 sm:gap-2 mb-3">
                 {[
-                  { label: 'Attendance Rate', value: `${attendanceInsights.current.attendanceRate}%`, tone: 'text-emerald-600' },
-                  { label: 'Late Records', value: attendanceInsights.current.late, tone: 'text-orange-600' },
-                  { label: 'Absent Records', value: attendanceInsights.current.absent, tone: 'text-rose-600' },
-                  { label: 'Leave Days', value: attendanceInsights.current.leave, tone: 'text-blue-600' },
-                ].map((item) => <div key={item.label} className="p-3 rounded-xl bg-slate-50 border border-slate-100"><p className={`stat-number text-xl ${item.tone}`}>{item.value}</p><p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mt-1">{item.label}</p></div>)}
+                  { key: 'attendance' as const, label: 'Attendance Rate', value: `${attendanceInsights.current.attendanceRate}%`, tone: 'text-emerald-600' },
+                  { key: 'late' as const, label: 'Late Records', value: attendanceInsights.current.late, tone: 'text-orange-600' },
+                  { key: 'absent' as const, label: 'Absent Records', value: attendanceInsights.current.absent, tone: 'text-rose-600' },
+                  { key: 'leave' as const, label: 'Leave Days', value: attendanceInsights.current.leave, tone: 'text-blue-600' },
+                ].map((item) => <button type="button" key={item.key} onClick={() => setAttendanceInsightModal(item.key)} className="p-2 sm:p-2.5 min-h-[54px] rounded-xl bg-slate-50 border border-slate-100 hover:bg-white hover:-translate-y-0.5 transition text-left" aria-label={`View ${item.label}`}><p className={`stat-number text-base sm:text-lg leading-none ${item.tone}`}>{item.value}</p><p className="text-[7px] sm:text-[8px] leading-tight font-extrabold uppercase tracking-tight sm:tracking-wide text-slate-500 mt-1 whitespace-normal">{item.label}</p></button>)}
               </div>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                <div className="p-3 rounded-2xl border border-slate-100 bg-slate-50">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
+                <button type="button" onClick={() => setAttendanceInsightModal('attendance')} className="w-full p-3 rounded-2xl border border-slate-100 bg-slate-50 hover:bg-white hover:-translate-y-0.5 transition text-left">
                   <p className="text-xs font-bold text-slate-800 mb-2">Compared with previous month</p>
                   {[['Late', attendanceInsights.current.late, attendanceInsights.previous.late], ['Absent', attendanceInsights.current.absent, attendanceInsights.previous.absent], ['Worked', attendanceInsights.current.worked, attendanceInsights.previous.worked]].map(([label, current, previous]) => { const delta = Number(current) - Number(previous); return <div key={String(label)} className="flex items-center justify-between text-xs py-1"><span className="text-slate-500">{label}</span><span className="font-bold text-slate-800">{current} <small className="text-slate-400 ml-1">{delta === 0 ? '—' : `${delta > 0 ? '+' : ''}${delta}`}</small></span></div>; })}
-                </div>
-                <div className="p-3 rounded-2xl border border-slate-100 bg-slate-50">
+                </button>
+                <button type="button" onClick={() => setAttendanceInsightModal('late')} className="w-full p-3 rounded-2xl border border-slate-100 bg-slate-50 hover:bg-white hover:-translate-y-0.5 transition text-left">
                   <p className="text-xs font-bold text-slate-800 mb-2">Most late this month</p>
-                  {attendanceInsights.topLateEmployees.length === 0 ? <p className="text-xs text-slate-400">No late records this month.</p> : attendanceInsights.topLateEmployees.map(([name, count]) => <div key={name} className="flex items-center justify-between text-xs py-1"><span className="font-semibold text-slate-600 truncate">{name}</span><span className="font-bold text-orange-600">{count}</span></div>)}
-                </div>
+                  {attendanceInsights.topLateEmployees.length === 0 ? <span className="text-xs text-slate-400">No late records this month.</span> : <span className="grid grid-cols-1 sm:grid-cols-2 gap-x-4">{attendanceInsights.topLateEmployees.map(([name, count]) => <span key={name} className="flex items-center justify-between text-xs py-1 min-w-0"><span className="font-semibold text-slate-600 truncate">{name}</span><span className="font-bold text-orange-600 ml-2">{count}</span></span>)}</span>}
+                </button>
               </div>
             </div>
           )}
         </section>
 
-        {/* Not Yet Timed In Today -- live view, not a permanent Absent tag */}
-        {notYetTimedInToday.length > 0 && (
-        <section id="not-yet-timed-in" className="card-style !p-4 scroll-mt-4">
-          <h3 className="mb-0 text-sm">
-            Not Yet Timed In Today
-            <span className="block text-[10px] font-medium text-red-600 normal-case tracking-normal mt-0.5">
-              {notYetTimedInToday.length} employee{notYetTimedInToday.length === 1 ? '' : 's'} — auto-updates as they time in
-            </span>
-          </h3>
-
-          <div className="mt-4 space-y-1.5">
-            {notYetTimedInToday.map((p) => (
-              <div key={p.id} className="flex items-center justify-between gap-2 p-2.5 bg-slate-50 rounded-xl border border-slate-100">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-7 h-7 rounded-full bg-blue-50 text-blue-600 font-bold text-[9px] flex items-center justify-center flex-shrink-0">{initials(p.full_name)}</div>
-                  <span className="font-bold text-slate-900 text-xs truncate">{p.full_name}</span>
-                </div>
-                {onApprovedLeaveToday.has(p.id) ? (
-                  <span className="tag-leave flex-shrink-0">Leave</span>
+        {/* CURRENT-MONTH ATTENDANCE INSIGHT RECORDS MODAL */}
+        {attendanceInsightModal && attendanceInsightMeta && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/20 backdrop-blur-sm p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setAttendanceInsightModal(null); }}>
+            <section className="w-full max-w-md card-style shadow-2xl max-h-[85vh] flex flex-col !p-4 sm:!p-5" onMouseDown={(event) => event.stopPropagation()}>
+              <div className="flex items-start justify-between gap-3 mb-4 flex-shrink-0">
+                <div><h3 className={`mb-0 text-sm ${attendanceInsightMeta.tone}`}>{attendanceInsightMeta.title}</h3><p className="text-slate-400 text-[10px] mt-1">{attendanceInsightMeta.description}</p></div>
+                <button type="button" onClick={() => setAttendanceInsightModal(null)} className="text-slate-400 hover:text-slate-600 transition" aria-label="Close insight records"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+              </div>
+              <div className="overflow-y-auto flex-1 pr-1">
+                {attendanceInsightRecords.length === 0 ? (
+                  <div className="py-10 px-4 rounded-2xl border-2 border-dashed border-slate-100 bg-slate-50/60 text-center"><CheckCircle2 size={22} className="mx-auto text-slate-300 mb-2"/><p className="text-slate-500 text-xs font-bold">{attendanceInsightMeta.empty}</p></div>
                 ) : (
-                  <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-1 text-[9px] font-extrabold uppercase tracking-wider text-amber-700 flex-shrink-0">Not Timed In</span>
+                  <div className="space-y-2">
+                    {attendanceInsightRecords.map((record) => (
+                      <div key={record.id} className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-100">
+                        <span className={`w-9 h-9 rounded-full flex items-center justify-center text-[10px] font-extrabold flex-shrink-0 ${attendanceInsightMeta.tone} bg-white`}>{initials(record.profiles?.full_name || null)}</span>
+                        <span className="min-w-0 flex-1"><span className="block text-xs font-bold text-slate-900 truncate">{record.profiles?.full_name || 'Unknown employee'}</span><span className="block text-[10px] text-slate-400 mt-0.5">{record.log_date} · {record.status || 'Present'}{record.time_in ? ` · ${new Date(record.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}` : ''}</span></span>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
-            ))}
+              <button type="button" onClick={() => setAttendanceInsightModal(null)} className="mt-4 w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 transition flex-shrink-0">Close</button>
+            </section>
           </div>
-        </section>
+        )}
+
+        {/* DAILY OVERVIEW RECORDS MODAL */}
+        {dailyOverviewModal && dailyOverviewMeta && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/20 backdrop-blur-sm p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setDailyOverviewModal(null); }}>
+            <section className="w-full max-w-md card-style shadow-2xl max-h-[85vh] flex flex-col !p-4 sm:!p-5" onMouseDown={(event) => event.stopPropagation()}>
+              <div className="flex items-start justify-between gap-3 mb-4 flex-shrink-0">
+                <div>
+                  <h3 className={`mb-0 text-sm ${dailyOverviewMeta.tone}`}>{dailyOverviewMeta.title}</h3>
+                  <p className="text-slate-400 text-[10px] mt-1">{dailyOverviewMeta.description}</p>
+                </div>
+                <button type="button" onClick={() => setDailyOverviewModal(null)} className="text-slate-400 hover:text-slate-600 transition" aria-label="Close daily records">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              </div>
+
+              <div className="overflow-y-auto flex-1 pr-1">
+                {dailyOverviewRecords.length === 0 ? (
+                  <div className="py-10 px-4 rounded-2xl border-2 border-dashed border-slate-100 bg-slate-50/60 text-center">
+                    <CheckCircle2 size={22} className="mx-auto text-slate-300 mb-2"/>
+                    <p className="text-slate-500 text-xs font-bold">{dailyOverviewMeta.empty}</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {dailyOverviewRecords.map((record: any) => {
+                      const isAttendance = dailyOverviewModal === 'present' || dailyOverviewModal === 'late';
+                      const isLeave = dailyOverviewModal === 'leave';
+                      const name = isAttendance ? record.profiles?.full_name : isLeave ? record.employee?.full_name : record.full_name;
+                      const detail = isAttendance
+                        ? `${record.time_in ? new Date(record.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }) : 'No time'} · ${record.status || 'Present'}`
+                        : isLeave
+                          ? `${record.leave_type} · ${record.start_date === record.end_date ? record.start_date : `${record.start_date} → ${record.end_date}`}`
+                          : `${record.employee_id || 'No employee ID'} · ${record.designation || 'No designation'}`;
+                      return (
+                        <div key={record.id} className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-100">
+                          <span className={`w-9 h-9 rounded-full flex items-center justify-center text-[10px] font-extrabold flex-shrink-0 ${dailyOverviewModal === 'late' ? 'bg-orange-50 text-orange-600' : dailyOverviewModal === 'leave' ? 'bg-blue-50 text-blue-600' : dailyOverviewModal === 'notTimedIn' ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>{initials(name || null)}</span>
+                          <span className="min-w-0"><span className="block text-xs font-bold text-slate-900 truncate">{name || 'Unknown employee'}</span><span className="block text-[10px] text-slate-400 mt-0.5 truncate">{detail}</span></span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <button type="button" onClick={() => setDailyOverviewModal(null)} className="mt-4 w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 transition flex-shrink-0">Close</button>
+            </section>
+          </div>
         )}
 
         {/* EMPLOYEE QUICK VIEW MODAL */}
@@ -2317,7 +2532,7 @@ export default function HRDashboard() {
               {loadingData && profiles.length === 0 && <LoadingRow label="Loading employees..." />}
               {!loadingData && profiles.length === 0 && <p className="text-slate-400 text-xs">No employees found.</p>}
               {paginatedProfiles.map((p) => (
-                <button key={p.id} onClick={() => openProfileChoice(p)} className="w-full flex items-center gap-2.5 text-left p-3 rounded-2xl hover:bg-slate-50 border border-slate-100 transition">
+                <button key={p.id} onClick={() => openProfileChoice(p)} className="w-full flex items-center gap-2.5 text-left p-2.5 rounded-xl hover:bg-slate-50 border border-slate-100 transition">
                   <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-50 text-blue-600 font-bold text-[10px] flex items-center justify-center overflow-hidden">
                     {p.avatar_url ? (
                       // eslint-disable-next-line @next/next/no-img-element -- external Supabase Storage URL, not a static asset
@@ -2978,6 +3193,54 @@ export default function HRDashboard() {
           </div>
         </div>
       )}
+      {/* HELP DESK REQUESTS MANAGEMENT MODAL */}
+      {hrSupportModalOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/20 backdrop-blur-sm p-4" onMouseDown={(e) => { if (e.target === e.currentTarget && !hrSupportSavingId) setHrSupportModalOpen(false); }}>
+          <section className="w-full max-w-2xl card-style shadow-2xl max-h-[90vh] flex flex-col !p-4 sm:!p-5" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3 mb-4 flex-shrink-0">
+              <div><h3 className="mb-0 text-sm">Help Desk / HR Requests</h3><p className="text-slate-400 text-[10px] mt-1">Review employee concerns, update status, and send an HR response.</p></div>
+              <button type="button" onClick={() => setHrSupportModalOpen(false)} disabled={!!hrSupportSavingId} className="text-slate-400 hover:text-slate-600 disabled:opacity-50" aria-label="Close help desk">✕</button>
+            </div>
+            <div className="overflow-y-auto flex-1 pr-1">
+              {hrSupportLoading ? <LoadingRow label="Loading employee requests..." /> : hrSupportRequests.length === 0 ? (
+                <div className="py-10 text-center rounded-2xl border-2 border-dashed border-slate-100"><p className="text-slate-400 text-sm">No Help Desk requests yet.</p></div>
+              ) : <div className="space-y-3">{hrSupportRequests.map((request) => {
+                const draft = hrSupportDrafts[request.id] || { status: request.status, hr_notes: request.hr_notes || '' };
+                return <div key={request.id} className="p-3 rounded-2xl bg-slate-50 border border-slate-100">
+                  <div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="font-bold text-slate-900 text-xs">{request.employee?.full_name || 'Unknown employee'}</p><p className="text-slate-400 text-[10px]">{request.employee?.employee_id || 'No ID'} · {request.category} · {new Date(request.created_at).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' })}</p></div><span className={request.status === 'Resolved' ? 'tag-present' : request.status === 'In Progress' ? 'tag-excused' : 'tag-late'}>{request.status}</span></div>
+                  <p className="font-semibold text-slate-800 text-xs mt-3">{request.subject}</p><p className="text-slate-600 text-xs mt-1 whitespace-pre-wrap">{request.description}</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-[150px_1fr_auto] gap-2 mt-3 items-end">
+                    <div><label className="label-branded">Status</label><select className="input-field !py-2 !text-xs" value={draft.status} onChange={(e) => setHrSupportDrafts((current) => ({ ...current, [request.id]: { ...draft, status: e.target.value } }))}><option>Submitted</option><option>In Progress</option><option>Resolved</option></select></div>
+                    <div><label className="label-branded">HR Response</label><input className="input-field !py-2 !text-xs" value={draft.hr_notes} placeholder="Response shown to employee..." onChange={(e) => setHrSupportDrafts((current) => ({ ...current, [request.id]: { ...draft, hr_notes: e.target.value } }))}/></div>
+                    <button type="button" onClick={() => saveHrSupportRequest(request.id)} disabled={hrSupportSavingId === request.id} className="btn-primary !py-2.5 !px-4 text-xs disabled:opacity-50">{hrSupportSavingId === request.id ? 'Saving...' : 'Save'}</button>
+                  </div>
+                </div>;
+              })}</div>}
+            </div>
+            <button type="button" onClick={() => setHrSupportModalOpen(false)} disabled={!!hrSupportSavingId} className="mt-4 w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 disabled:opacity-50">Close</button>
+          </section>
+        </div>
+      )}
+
+      {/* EMPLOYEE DOCUMENTS MANAGEMENT MODAL */}
+      {hrDocumentsModalOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/20 backdrop-blur-sm p-4" onMouseDown={(e) => { if (e.target === e.currentTarget && !hrDocumentSaving) setHrDocumentsModalOpen(false); }}>
+          <section className="w-full max-w-2xl card-style shadow-2xl max-h-[90vh] flex flex-col !p-4 sm:!p-5" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3 mb-4 flex-shrink-0"><div><h3 className="mb-0 text-sm">Employee Documents</h3><p className="text-slate-400 text-[10px] mt-1">Publish policies, memorandums, handbooks, and forms to every employee.</p></div><button type="button" onClick={() => setHrDocumentsModalOpen(false)} disabled={hrDocumentSaving} className="text-slate-400 hover:text-slate-600 disabled:opacity-50" aria-label="Close documents">✕</button></div>
+            <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100 mb-4 flex-shrink-0">
+              <p className="label-branded mb-2">Publish New Document</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2"><input className="input-field !py-2 !text-xs" value={hrDocumentTitle} onChange={(e) => setHrDocumentTitle(e.target.value)} placeholder="Document title"/><select className="input-field !py-2 !text-xs" value={hrDocumentCategory} onChange={(e) => setHrDocumentCategory(e.target.value)}><option>Employee Handbook</option><option>Company Policy</option><option>Memorandum</option><option>Form</option><option>Other</option></select></div>
+              <input ref={hrDocumentFileRef} type="file" className="input-field !py-2 !text-xs mt-2" onChange={(e) => setHrDocumentFile(e.target.files?.[0] || null)}/>
+              <button type="button" onClick={uploadHrDocument} disabled={hrDocumentSaving || !hrDocumentTitle.trim() || !hrDocumentFile} className="btn-primary w-full mt-2 disabled:opacity-50">{hrDocumentSaving ? 'Publishing...' : 'Publish to Employees'}</button>
+            </div>
+            <div className="overflow-y-auto flex-1 pr-1">
+              {hrDocumentsLoading ? <LoadingRow label="Loading documents..." /> : hrDocuments.length === 0 ? <div className="py-10 text-center rounded-2xl border-2 border-dashed border-slate-100"><p className="text-slate-400 text-sm">No employee documents published yet.</p></div> : <div className="space-y-2">{hrDocuments.map((document) => <div key={document.id} className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-100"><div className="min-w-0"><p className="font-bold text-slate-900 text-xs truncate">{document.title}</p><p className="text-slate-400 text-[10px] truncate">{document.category} · {document.file_name}</p><span className={`inline-block mt-1 text-[9px] font-bold uppercase ${document.is_active ? 'text-emerald-600' : 'text-slate-400'}`}>{document.is_active ? 'Published' : 'Hidden'}</span></div><div className="flex items-center gap-2 flex-shrink-0"><button type="button" onClick={() => toggleHrDocument(document)} className="text-blue-600 text-[10px] font-bold">{document.is_active ? 'Hide' : 'Publish'}</button><button type="button" onClick={() => deleteHrDocument(document)} className="text-rose-600 text-[10px] font-bold">Delete</button></div></div>)}</div>}
+            </div>
+            <button type="button" onClick={() => setHrDocumentsModalOpen(false)} disabled={hrDocumentSaving} className="mt-4 w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 disabled:opacity-50">Close</button>
+          </section>
+        </div>
+      )}
+
       {/* LEAVE CREDITS OVERVIEW MODAL -- read-only monitoring, no manual
           adjustment. Sorted so Regular employees running lowest on
           credits surface first. */}
