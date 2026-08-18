@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { CalendarClock, FileDown, Megaphone, PartyPopper, UsersRound } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import Spinner, { LoadingRow } from '@/components/Spinner';
 
@@ -12,7 +13,7 @@ type AttendanceLog = {
   time_in: string | null;
   time_out: string | null;
   status: string | null;
-  profiles?: { full_name: string | null };
+  profiles?: { full_name: string | null; employee_id?: string | null };
 };
 
 type Profile = {
@@ -43,7 +44,7 @@ export default function HRDashboard() {
   const [selectedDate, setSelectedDate] = useState(() =>
     new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())
   );
-  // Cutoff period filter (1-15 / 16-31) -- when set, this takes over
+  // Cutoff period filter (1-15 / 16-end of month) -- when set, this takes over
   // from selectedDate for payroll-period review instead of a single day.
   const [cutoffFilter, setCutoffFilter] = useState('');
 
@@ -63,18 +64,19 @@ export default function HRDashboard() {
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const MAX_AVATAR_MB = 5;
 
-  // App-wide configurable settings (late cutoff) -- fetched once on
-  // load from app_settings, editable by Super Admin without needing a
-  // code change/redeploy. Falls back to the module-level constants
-  // above until the fetch resolves.
+  // App-wide configurable settings (late cutoff, default leave credits)
+  // -- fetched once on load from app_settings, editable by Super Admin
+  // without needing a code change/redeploy. Falls back to the
+  // module-level constants above until the fetch resolves.
   const [lateCutoffHour, setLateCutoffHour] = useState(FALLBACK_LATE_CUTOFF_HOUR);
   const [lateCutoffMinute, setLateCutoffMinute] = useState(FALLBACK_LATE_CUTOFF_MINUTE);
+  const [fallbackLeaveCredits, setFallbackLeaveCredits] = useState(10);
 
   const fetchAppSettings = async () => {
     const { data, error } = await supabase
       .from('app_settings')
       .select('key, value')
-      .in('key', ['late_cutoff_hour', 'late_cutoff_minute']);
+      .in('key', ['late_cutoff_hour', 'late_cutoff_minute', 'default_leave_credits']);
     if (error) {
       console.error('Error fetching app settings:', error);
       return;
@@ -82,6 +84,406 @@ export default function HRDashboard() {
     const map = Object.fromEntries((data || []).map((r) => [r.key, r.value]));
     if (typeof map.late_cutoff_hour === 'number') setLateCutoffHour(map.late_cutoff_hour);
     if (typeof map.late_cutoff_minute === 'number') setLateCutoffMinute(map.late_cutoff_minute);
+    if (typeof map.default_leave_credits === 'number') setFallbackLeaveCredits(map.default_leave_credits);
+  };
+
+  // --- Leave Credits Overview (read-only monitoring, no manual edit) ---
+  // Pulls profiles + employee_government_ids + leave_credits separately
+  // and merges client-side, since not every employee has a leave_credits
+  // row yet (only created lazily by settle_leave_day() the first time
+  // they actually use a credit) or a government_ids row (HR hasn't set
+  // Employment Status yet).
+  const [leaveCreditsModalOpen, setLeaveCreditsModalOpen] = useState(false);
+  const [leaveCreditsLoading, setLeaveCreditsLoading] = useState(false);
+  const [leaveCreditsFetched, setLeaveCreditsFetched] = useState(false);
+  const [leaveCreditsData, setLeaveCreditsData] = useState<{
+    id: string;
+    full_name: string | null;
+    employee_id: string | null;
+    employment_status: string | null;
+    total_credits: number | null;
+    used_credits: number | null;
+  }[]>([]);
+
+  const fetchLeaveCreditsOverview = async () => {
+    setLeaveCreditsLoading(true);
+    const year = new Date().getFullYear();
+    const [profRes, govRes, creditsRes] = await Promise.all([
+      supabase.from('profiles').select('id, full_name, employee_id').eq('role', 'employee').order('full_name'),
+      supabase.from('employee_government_ids').select('user_id, employment_status'),
+      supabase.from('leave_credits').select('user_id, total_credits, used_credits').eq('year', year),
+    ]);
+
+    if (profRes.error) console.error('Error fetching profiles for leave credits:', profRes.error);
+    if (govRes.error) console.error('Error fetching government IDs for leave credits:', govRes.error);
+    if (creditsRes.error) console.error('Error fetching leave credits:', creditsRes.error);
+
+    const govMap = new Map((govRes.data || []).map((g: any) => [g.user_id, g.employment_status]));
+    const creditsMap = new Map((creditsRes.data || []).map((c: any) => [c.user_id, c]));
+
+    const merged = (profRes.data || []).map((p: any) => {
+      const credits = creditsMap.get(p.id);
+      return {
+        id: p.id,
+        full_name: p.full_name,
+        employee_id: p.employee_id,
+        employment_status: govMap.get(p.id) ?? null,
+        total_credits: credits?.total_credits ?? null,
+        used_credits: credits?.used_credits ?? null,
+      };
+    });
+
+    setLeaveCreditsData(merged);
+    setLeaveCreditsLoading(false);
+  };
+
+  const openLeaveCreditsModal = () => {
+    setLeaveCreditsModalOpen(true);
+    if (!leaveCreditsFetched) {
+      setLeaveCreditsFetched(true);
+      fetchLeaveCreditsOverview();
+    }
+  };
+
+  // Sorted so Regular employees running low on credits surface first --
+  // the whole point of a monitoring view is to catch that at a glance.
+  const sortedLeaveCreditsData = useMemo(() => {
+    return [...leaveCreditsData].sort((a, b) => {
+      const aRemaining = a.employment_status === 'Regular' ? (a.total_credits ?? fallbackLeaveCredits) - (a.used_credits ?? 0) : Infinity;
+      const bRemaining = b.employment_status === 'Regular' ? (b.total_credits ?? fallbackLeaveCredits) - (b.used_credits ?? 0) : Infinity;
+      if (aRemaining !== bRemaining) return aRemaining - bRemaining;
+      return (a.full_name ?? '').localeCompare(b.full_name ?? '');
+    });
+  }, [leaveCreditsData, fallbackLeaveCredits]);
+
+  // --- Export Reports (CSV + print-ready PDF) ---
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportCutoff, setExportCutoff] = useState('');
+  const [rawExportMonth, setRawExportMonth] = useState(() =>
+    new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit' })
+      .format(new Date())
+      .slice(0, 7)
+  );
+  const [rawExportPeriod, setRawExportPeriod] = useState<'MONTH' | 'H1' | 'H2'>('MONTH');
+  const [exportingType, setExportingType] = useState<string | null>(null);
+  const [exportMsg, setExportMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    if (!exportModalOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !exportingType) setExportModalOpen(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [exportModalOpen, exportingType]);
+
+  const escapeCsv = (val: string) => `"${(val ?? '').replace(/"/g, '""')}"`;
+
+  const downloadCsv = (filename: string, headers: string[], rows: (string | number)[][]) => {
+    const csv = [headers, ...rows].map((r) => r.map((v) => escapeCsv(String(v))).join(',')).join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Opens a clean, branded print document. Choosing "Save as PDF" in the
+  // browser print dialog creates the PDF without adding another npm package,
+  // so this updated HR page remains a one-file copy/paste replacement.
+  const printReportAsPdf = (
+    title: string,
+    periodLabel: string,
+    headers: string[],
+    rows: (string | number)[][]
+  ) => {
+    const escapeHtml = (value: string | number) => String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+
+    const reportWindow = window.open('', '_blank');
+    if (!reportWindow) {
+      throw new Error('The PDF window was blocked. Please allow pop-ups for this site and try again.');
+    }
+    reportWindow.opener = null;
+
+    const generatedAt = new Date().toLocaleString('en-US', {
+      timeZone: 'Asia/Manila',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+    reportWindow.document.write(`<!doctype html>
+      <html><head><title>${escapeHtml(title)}</title><meta charset="utf-8" />
+      <style>
+        @page { size: landscape; margin: 12mm; }
+        * { box-sizing: border-box; }
+        body { margin: 0; color: #0f172a; font: 10px Arial, sans-serif; }
+        .header { border-bottom: 3px solid #0f172a; padding-bottom: 10px; margin-bottom: 14px; }
+        .brand { font-size: 18px; font-weight: 800; letter-spacing: .08em; }
+        h1 { margin: 5px 0 3px; font-size: 15px; }
+        .meta { color: #64748b; line-height: 1.5; }
+        table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+        thead { display: table-header-group; }
+        tr { page-break-inside: avoid; }
+        th { background: #0f172a; color: white; text-align: left; font-size: 8px; text-transform: uppercase; letter-spacing: .04em; }
+        th, td { border: 1px solid #cbd5e1; padding: 6px; vertical-align: top; overflow-wrap: anywhere; }
+        tbody tr:nth-child(even) { background: #f8fafc; }
+        .footer { margin-top: 10px; color: #64748b; font-size: 8px; text-align: right; }
+        @media print { .no-print { display: none !important; } }
+      </style></head><body>
+        <div class="header">
+          <div class="brand">HAMDAN ENGINEERING</div>
+          <h1>${escapeHtml(title)}</h1>
+          <div class="meta">Period: ${escapeHtml(periodLabel)}<br/>Generated: ${escapeHtml(generatedAt)} (Philippine time)<br/>Records: ${rows.length}</div>
+        </div>
+        <table><thead><tr>${headers.map((h) => `<th>${escapeHtml(h)}</th>`).join('')}</tr></thead>
+        <tbody>${rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table>
+        <div class="footer">Hamdan Engineering · ${escapeHtml(title)}</div>
+        <script>window.addEventListener('load',function(){setTimeout(function(){window.print();},250);});<\/script>
+      </body></html>`);
+    reportWindow.document.close();
+  };
+
+  const buildPayrollSummaryRows = () => {
+    if (!exportCutoff) throw new Error('Please select a cutoff period first.');
+    const cutoffLogs = attendance.filter((log) => log.log_date && matchesCutoff(log.log_date, exportCutoff));
+    const byEmployee = new Map<string, { name: string; empId: string; present: number; late: number; lateMinutes: number; absent: number; leave: number }>();
+
+    for (const p of profiles) {
+      byEmployee.set(p.id, { name: p.full_name || 'Unknown', empId: p.employee_id || '-', present: 0, late: 0, lateMinutes: 0, absent: 0, leave: 0 });
+    }
+    for (const log of cutoffLogs) {
+      const entry = byEmployee.get(log.user_id);
+      if (!entry) continue;
+      const status = log.status?.toLowerCase() ?? '';
+      if (status === 'absent') { entry.absent++; continue; }
+      if (status.includes('leave')) { entry.leave++; continue; }
+      entry.present++;
+      if (status === 'late' && log.time_in) {
+        entry.late++;
+        entry.lateMinutes += getMinutesLate(log.time_in);
+      }
+    }
+    return Array.from(byEmployee.values())
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((e) => [e.empId, e.name, e.present, e.late, e.lateMinutes, e.absent, e.leave]);
+  };
+
+  // Payroll Summary per Cutoff -- aggregates the already-loaded
+  // `attendance` array (all logs, fetched on dashboard load) by
+  // employee for whichever cutoff is selected in the export modal.
+  const exportPayrollSummaryCSV = () => {
+    setExportingType('payroll-csv');
+    setExportMsg(null);
+    try {
+      const rows = buildPayrollSummaryRows();
+      downloadCsv(
+        `payroll-summary-${exportCutoff.replace(':', '_')}.csv`,
+        ['Employee ID', 'Name', 'Present Days', 'Late Days', 'Total Late Minutes', 'Absent Days', 'Leave Days'],
+        rows
+      );
+      setExportMsg({ type: 'success', text: `Payroll summary for ${formatCutoffLabel(exportCutoff)} downloaded.` });
+    } catch (err: any) {
+      setExportMsg({ type: 'error', text: err?.message ?? 'Failed to export payroll summary.' });
+    } finally {
+      setExportingType(null);
+    }
+  };
+
+  const exportPayrollSummaryPDF = () => {
+    setExportingType('payroll-pdf');
+    setExportMsg(null);
+    try {
+      const rows = buildPayrollSummaryRows();
+      printReportAsPdf(
+        'Payroll Summary',
+        formatCutoffLabel(exportCutoff),
+        ['Employee ID', 'Name', 'Present Days', 'Late Days', 'Late Minutes', 'Absent Days', 'Leave Days'],
+        rows
+      );
+      setExportMsg({ type: 'success', text: 'Payroll Summary opened. Choose “Save as PDF” in the print dialog.' });
+    } catch (err: any) {
+      setExportMsg({ type: 'error', text: err?.message ?? 'Failed to create payroll PDF.' });
+    } finally {
+      setExportingType(null);
+    }
+  };
+
+  const getEmployeeMasterListRows = async () => {
+    const { data: govData, error: govError } = await supabase
+      .from('employee_government_ids')
+      .select('user_id, sss_number, philhealth_number, pagibig_number, tin_number, hired_date, employment_status');
+    if (govError) throw govError;
+
+    const govMap = new Map((govData || []).map((g: any) => [g.user_id, g]));
+    return profiles
+      .slice()
+      .sort((a, b) => (a.full_name ?? '').localeCompare(b.full_name ?? ''))
+      .map((p) => {
+        const g = govMap.get(p.id) as any;
+        return [p.employee_id || '-', p.full_name || 'Unknown', p.designation || '-', p.employee_email || '-', g?.employment_status || '-', g?.hired_date || '-', g?.sss_number || '-', g?.philhealth_number || '-', g?.pagibig_number || '-', g?.tin_number || '-'];
+      });
+  };
+
+  // Employee Master List -- needs a fresh government-IDs fetch since
+  // that table isn't loaded in bulk anywhere else in this dashboard.
+  const exportEmployeeMasterListCSV = async () => {
+    setExportingType('master-csv');
+    setExportMsg(null);
+    try {
+      const rows = await getEmployeeMasterListRows();
+
+      downloadCsv(
+        'employee-master-list.csv',
+        ['Employee ID', 'Full Name', 'Designation', 'Email', 'Employment Status', 'Hired Date', 'SSS', 'PhilHealth', 'Pag-IBIG', 'TIN'],
+        rows
+      );
+      setExportMsg({ type: 'success', text: 'Employee master list downloaded.' });
+    } catch (err: any) {
+      console.error('Error exporting employee master list:', err);
+      setExportMsg({ type: 'error', text: err?.message ?? 'Failed to export employee master list.' });
+    } finally {
+      setExportingType(null);
+    }
+  };
+
+  const exportEmployeeMasterListPDF = async () => {
+    setExportingType('master-pdf');
+    setExportMsg(null);
+    try {
+      const rows = await getEmployeeMasterListRows();
+      printReportAsPdf(
+        'Employee Master List',
+        'All active employee profiles',
+        ['Employee ID', 'Full Name', 'Designation', 'Email', 'Employment Status', 'Hired Date', 'SSS', 'PhilHealth', 'Pag-IBIG', 'TIN'],
+        rows
+      );
+      setExportMsg({ type: 'success', text: 'Employee Master List opened. Choose “Save as PDF” in the print dialog.' });
+    } catch (err: any) {
+      console.error('Error exporting employee master list PDF:', err);
+      setExportMsg({ type: 'error', text: err?.message ?? 'Failed to create employee master list PDF.' });
+    } finally {
+      setExportingType(null);
+    }
+  };
+
+  const getRawExportRange = () => {
+    if (!/^\d{4}-\d{2}$/.test(rawExportMonth)) throw new Error('Please select a valid month.');
+    const [year, month] = rawExportMonth.split('-').map(Number);
+    const finalDay = new Date(year, month, 0).getDate();
+    const startDay = rawExportPeriod === 'H2' ? 16 : 1;
+    const endDay = rawExportPeriod === 'H1' ? 15 : finalDay;
+    const start = `${rawExportMonth}-${String(startDay).padStart(2, '0')}`;
+    const end = `${rawExportMonth}-${String(endDay).padStart(2, '0')}`;
+    const monthLabel = new Date(year, month - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    const label = rawExportPeriod === 'MONTH'
+      ? monthLabel
+      : rawExportPeriod === 'H1'
+        ? `${monthLabel.replace(` ${year}`, '')} 1–15, ${year}`
+        : `${monthLabel.replace(` ${year}`, '')} 16–${finalDay}, ${year}`;
+    const suffix = rawExportPeriod === 'MONTH' ? 'whole-month' : rawExportPeriod.toLowerCase();
+    return { start, end, label, suffix };
+  };
+
+  const rawExportPreviewCount = useMemo(() => {
+    try {
+      const { start, end } = getRawExportRange();
+      return attendance.filter((log) => !!log.log_date && log.log_date >= start && log.log_date <= end).length;
+    } catch {
+      return 0;
+    }
+  }, [attendance, rawExportMonth, rawExportPeriod]);
+
+  const fetchRawAttendanceRows = async () => {
+    const range = getRawExportRange();
+    const { data, error } = await supabase
+      .from('attendance_logs')
+      .select('id, user_id, log_date, time_in, time_out, status, profiles!inner(full_name, employee_id, role)')
+      .eq('profiles.role', 'employee')
+      .gte('log_date', range.start)
+      .lte('log_date', range.end)
+      .order('log_date', { ascending: true })
+      .order('time_in', { ascending: true, nullsFirst: false });
+    if (error) throw error;
+
+    const logs = ((data || []) as unknown as AttendanceLog[]).sort((a, b) => {
+      const dateCompare = (a.log_date || '').localeCompare(b.log_date || '');
+      if (dateCompare !== 0) return dateCompare;
+      return (a.profiles?.full_name || '').localeCompare(b.profiles?.full_name || '');
+    });
+    const formatTime = (iso: string | null) => iso
+      ? new Date(iso).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      : '-';
+    const rows = logs.map((log) => {
+      const isLate = log.status?.toLowerCase() === 'late' && !!log.time_in;
+      return [
+        log.log_date || '-',
+        log.profiles?.full_name || 'Unknown',
+        log.profiles?.employee_id || profiles.find((p) => p.id === log.user_id)?.employee_id || '-',
+        formatTime(log.time_in),
+        formatTime(log.time_out),
+        log.status || '-',
+        isLate ? formatLateDuration(getMinutesLate(log.time_in as string)) : '-',
+      ];
+    });
+    return { ...range, rows };
+  };
+
+  // Raw Attendance Log has an independent whole-month / cutoff filter.
+  // It fetches the complete selected range, not only the visible page.
+  const exportRawAttendanceCSV = async () => {
+    setExportingType('raw-csv');
+    setExportMsg(null);
+    try {
+      const { rows, label, suffix } = await fetchRawAttendanceRows();
+      if (rows.length === 0) throw new Error(`No attendance records found for ${label}.`);
+      downloadCsv(
+        `raw-attendance-${rawExportMonth}-${suffix}.csv`,
+        ['Date', 'Employee', 'Employee ID', 'Time In', 'Time Out', 'Status', 'Late Duration'],
+        rows
+      );
+      setExportMsg({ type: 'success', text: `Raw attendance CSV downloaded (${rows.length} records for ${label}).` });
+    } catch (err: any) {
+      console.error('Error exporting raw attendance CSV:', err);
+      setExportMsg({ type: 'error', text: err?.message ?? 'Failed to export raw attendance CSV.' });
+    } finally {
+      setExportingType(null);
+    }
+  };
+
+  const exportRawAttendancePDF = async () => {
+    setExportingType('raw-pdf');
+    setExportMsg(null);
+    try {
+      const { rows, label } = await fetchRawAttendanceRows();
+      if (rows.length === 0) throw new Error(`No attendance records found for ${label}.`);
+      printReportAsPdf(
+        'Raw Attendance Log',
+        label,
+        ['Date', 'Employee', 'Employee ID', 'Time In', 'Time Out', 'Status', 'Late Duration'],
+        rows
+      );
+      setExportMsg({ type: 'success', text: `Raw attendance report opened (${rows.length} records). Choose “Save as PDF” in the print dialog.` });
+    } catch (err: any) {
+      console.error('Error exporting raw attendance PDF:', err);
+      setExportMsg({ type: 'error', text: err?.message ?? 'Failed to create raw attendance PDF.' });
+    } finally {
+      setExportingType(null);
+    }
   };
 
   const handleAvatarChange = (file: File | null) => {
@@ -153,6 +555,25 @@ export default function HRDashboard() {
   const [holidayMsg, setHolidayMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
+    const moduleModalOpen = announcementOpen || holidaysOpen || employeesListOpen;
+    if (!moduleModalOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (announcementOpen && !announcementSaving) setAnnouncementOpen(false);
+      if (holidaysOpen && !holidaySaving) setHolidaysOpen(false);
+      if (employeesListOpen) setEmployeesListOpen(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [announcementOpen, announcementSaving, holidaysOpen, holidaySaving, employeesListOpen]);
+
+  useEffect(() => {
     const runStartupSweeps = async () => {
       // Catch-up sweeps, run once per dashboard load, before pulling any
       // attendance/leave data -- so anything they generate (a fresh
@@ -172,6 +593,10 @@ export default function HRDashboard() {
     fetchAppSettings();
     fetchAnnouncement();
     fetchDisputes();
+    setLeaveCreditsFetched(true);
+    fetchLeaveCreditsOverview();
+    setHolidaysFetched(true);
+    fetchHolidays();
   }, []);
 
   const refreshAllData = async () => {
@@ -722,7 +1147,8 @@ export default function HRDashboard() {
     const [ym, half] = key.split(':');
     const [y, m] = ym.split('-').map(Number);
     const monthName = new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long' });
-    return half === 'H1' ? `${monthName} 1-15, ${y}` : `${monthName} 16-31, ${y}`;
+    const finalDay = new Date(y, m, 0).getDate();
+    return half === 'H1' ? `${monthName} 1-15, ${y}` : `${monthName} 16-${finalDay}, ${y}`;
   };
 
   // Just the distinct months (no H1/H2 duplication) for a shorter month
@@ -997,8 +1423,9 @@ export default function HRDashboard() {
       const y = d.getFullYear();
       const m = String(d.getMonth() + 1).padStart(2, '0');
       const monthName = d.toLocaleDateString('en-US', { month: 'long' });
+      const finalDay = new Date(y, d.getMonth() + 1, 0).getDate();
       options.push({ value: `${y}-${m}:H1`, label: `${monthName} 1-15, ${y}` });
-      options.push({ value: `${y}-${m}:H2`, label: `${monthName} 16-31, ${y}` });
+      options.push({ value: `${y}-${m}:H2`, label: `${monthName} 16-${finalDay}, ${y}` });
     }
     return options.reverse();
   };
@@ -1075,6 +1502,15 @@ export default function HRDashboard() {
   );
   const presentTodayCount = todaysLogs.length;
   const lateTodayCount = todaysLogs.filter((l) => l.status?.toLowerCase() === 'late').length;
+  const lowLeaveCreditsCount = leaveCreditsData.filter((employee) => {
+    if (employee.employment_status !== 'Regular') return false;
+    const total = employee.total_credits ?? fallbackLeaveCredits;
+    return total - (employee.used_credits ?? 0) <= 3;
+  }).length;
+  const upcomingHolidaysCount = holidays.filter((holiday) => holiday.holiday_date >= todayManila).length;
+  const announcementModuleLabel = announcementUpdatedAt
+    ? `Updated ${new Date(announcementUpdatedAt).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric' })}`
+    : 'Create an announcement';
 
   // Employees with no time-in yet today. This is intentionally a live,
   // frontend-only view -- it does NOT create a real 'Absent' attendance_logs
@@ -1141,10 +1577,10 @@ export default function HRDashboard() {
           </div>
           <div className="flex items-center gap-4">
             <div className="hidden lg:flex items-center gap-4">
-              <div className="text-center"><p className="stat-number text-xl text-white leading-none">{profiles.length}</p><p className="text-white/60 text-[9px] font-bold uppercase tracking-widest mt-0.5">Employees</p></div>
-              <div className="w-px h-8 bg-white/20"/>
+              <div className="text-center"><p className="stat-number text-xl text-slate-900 leading-none">{profiles.length}</p><p className="text-slate-600 text-[9px] font-bold uppercase tracking-widest mt-0.5">Employees</p></div>
+              <div className="w-px h-8 bg-slate-900/10"/>
               <div className="text-center"><p className="stat-number text-xl text-green-600 leading-none">{presentTodayCount}</p><p className="label-branded mt-0.5 mb-0">Present</p></div>
-              <div className="w-px h-8 bg-white/20"/>
+              <div className="w-px h-8 bg-slate-900/10"/>
               <div className="text-center"><p className="stat-number text-xl text-orange-600 leading-none">{lateTodayCount}</p><p className="label-branded mt-0.5 mb-0">Late</p></div>
             </div>
             <button onClick={() => supabase.auth.signOut().then(() => router.push('/'))} className="text-slate-500 font-medium text-xs hover:text-red-600 transition whitespace-nowrap">Sign out</button>
@@ -1160,11 +1596,61 @@ export default function HRDashboard() {
           <div className="card-style flex flex-col items-center justify-center !p-3 text-center"><p className="stat-number text-xl text-orange-600">{lateTodayCount}</p><p className="label-branded mt-0.5">Late</p></div>
         </div>
 
+        {/* MODULES -- compact icon buttons that open their own modal,
+            same pattern as the Super Admin dashboard, so these don't
+            add another full-width accordion section to scroll past. */}
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <button
+            type="button"
+            onClick={openLeaveCreditsModal}
+            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
+          >
+            <span className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center flex-shrink-0"><CalendarClock size={18} strokeWidth={2.4}/></span>
+            <span className="min-w-0"><span className="block font-bold text-slate-900 text-xs">Leave Credits</span><span className={`block text-[10px] mt-0.5 truncate ${lowLeaveCreditsCount > 0 ? 'text-orange-600 font-bold' : 'text-slate-400'}`}>{leaveCreditsLoading ? 'Checking balances...' : lowLeaveCreditsCount > 0 ? `${lowLeaveCreditsCount} low balance${lowLeaveCreditsCount === 1 ? '' : 's'}` : 'Balances healthy'}</span></span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => { setExportModalOpen(true); setExportMsg(null); if (!exportCutoff) setExportCutoff(availableCutoffs[0] || ''); }}
+            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
+          >
+            <span className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center flex-shrink-0"><FileDown size={18} strokeWidth={2.4}/></span>
+            <span className="min-w-0"><span className="block font-bold text-slate-900 text-xs">Export Reports</span><span className="block text-slate-400 text-[10px] mt-0.5">CSV &amp; PDF</span></span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setAnnouncementOpen(true)}
+            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
+          >
+            <span className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0"><Megaphone size={18} strokeWidth={2.4}/></span>
+            <span className="min-w-0"><span className="block font-bold text-slate-900 text-xs">Announcements</span><span className="block text-slate-400 text-[10px] mt-0.5 truncate">{announcementModuleLabel}</span></span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => { if (!holidaysOpen) toggleHolidays(); }}
+            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
+          >
+            <span className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center flex-shrink-0"><PartyPopper size={18} strokeWidth={2.4}/></span>
+            <span className="min-w-0"><span className="block font-bold text-slate-900 text-xs">Holidays</span><span className="block text-slate-400 text-[10px] mt-0.5">{holidaysLoading ? 'Checking calendar...' : `${upcomingHolidaysCount} upcoming`}</span></span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setEmployeesListOpen(true)}
+            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
+          >
+            <span className="w-10 h-10 rounded-2xl bg-violet-50 text-violet-600 flex items-center justify-center flex-shrink-0"><UsersRound size={18} strokeWidth={2.4}/></span>
+            <span className="min-w-0"><span className="block font-bold text-slate-900 text-xs">Employees</span><span className="block text-slate-400 text-[10px] mt-0.5">{profiles.length} total</span></span>
+          </button>
+        </div>
+
         {/* Not Yet Timed In Today -- live view, not a permanent Absent tag */}
         {notYetTimedInToday.length > 0 && (
         <section className="card-style !p-4">
           <h3 className="mb-0 text-sm">
-            Not Yet Timed In Today
+            Not Timed In
             <span className="block text-[10px] font-medium text-red-600 normal-case tracking-normal mt-0.5">
               {notYetTimedInToday.length} employee{notYetTimedInToday.length === 1 ? '' : 's'} — auto-updates as they time in
             </span>
@@ -1180,7 +1666,7 @@ export default function HRDashboard() {
                 {onApprovedLeaveToday.has(p.id) ? (
                   <span className="tag-leave flex-shrink-0">Leave</span>
                 ) : (
-                  <span className="tag-absent flex-shrink-0">Absent</span>
+                  <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-1 text-[9px] font-extrabold uppercase tracking-wider text-amber-700 flex-shrink-0">Not Timed In</span>
                 )}
               </div>
             ))}
@@ -1188,31 +1674,37 @@ export default function HRDashboard() {
         </section>
         )}
 
-        {/* Announcements */}
-        <section className="card-style !p-4">
-          <button
-            type="button"
-            onClick={() => setAnnouncementOpen((v) => !v)}
-            className="w-full flex items-center justify-between gap-2"
-          >
-            <h3 className="mb-0 text-sm">
+        {/* ANNOUNCEMENTS MODULE MODAL */}
+        {announcementOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4"
+          onMouseDown={(e) => { if (e.target === e.currentTarget && !announcementSaving) setAnnouncementOpen(false); }}
+        >
+        <section className="w-full max-w-2xl card-style shadow-2xl max-h-[90vh] flex flex-col !p-4 sm:!p-5" onMouseDown={(e) => e.stopPropagation()}>
+          <div className="flex items-center justify-between gap-2 mb-4 flex-shrink-0">
+            <div className="flex items-center gap-2.5">
+              <span className="w-9 h-9 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center"><Megaphone size={17} strokeWidth={2.4}/></span>
+              <h3 className="mb-0 text-sm">
               Announcements
               {announcementUpdatedAt && (
                 <span className="block text-[10px] font-medium text-slate-400 normal-case tracking-normal mt-0.5">
                   Last: {new Date(announcementUpdatedAt).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                 </span>
               )}
-            </h3>
-            <svg
-              width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-              className={`text-slate-400 flex-shrink-0 transition-transform ${announcementOpen ? 'rotate-180' : ''}`}
+              </h3>
+            </div>
+            <button
+              type="button"
+              onClick={() => setAnnouncementOpen(false)}
+              disabled={announcementSaving}
+              className="text-slate-400 hover:text-slate-600 transition disabled:opacity-50"
+              aria-label="Close announcements"
             >
-              <polyline points="6 9 12 15 18 9"/>
-            </svg>
-          </button>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
 
-          {announcementOpen && (
-          <div className="mt-4">
+          <div className="overflow-y-auto flex-1 pr-1">
           {announcementMsg && <div className={`p-2.5 rounded-xl text-xs font-bold mb-3 ${announcementMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>{announcementMsg.text}</div>}
           <div className="min-h-[137px]">
           {announcementLoading ? <LoadingRow label="Loading..." /> : (
@@ -1259,32 +1751,47 @@ export default function HRDashboard() {
           )}
           </div>
           </div>
-          )}
-        </section>
-
-        {/* Holidays / Non-working Days */}
-        <section className="card-style !p-4">
           <button
             type="button"
-            onClick={toggleHolidays}
-            className="w-full flex items-center justify-between gap-2 text-left"
+            onClick={() => setAnnouncementOpen(false)}
+            disabled={announcementSaving}
+            className="mt-4 w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 transition disabled:opacity-50 flex-shrink-0"
           >
-            <h3 className="mb-0 text-sm">
+            Close
+          </button>
+        </section>
+        </div>
+        )}
+
+        {/* HOLIDAYS MODULE MODAL */}
+        {holidaysOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4"
+          onMouseDown={(e) => { if (e.target === e.currentTarget && !holidaySaving) setHolidaysOpen(false); }}
+        >
+        <section className="w-full max-w-2xl card-style shadow-2xl max-h-[90vh] flex flex-col !p-4 sm:!p-5" onMouseDown={(e) => e.stopPropagation()}>
+          <div className="flex items-center justify-between gap-2 mb-4 flex-shrink-0">
+            <div className="flex items-center gap-2.5">
+              <span className="w-9 h-9 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center"><PartyPopper size={17} strokeWidth={2.4}/></span>
+              <h3 className="mb-0 text-sm">
               Holidays
               <span className="block text-[10px] font-medium text-slate-400 normal-case tracking-normal mt-0.5">
                 Dates employees won&apos;t be auto-marked Absent
               </span>
-            </h3>
-            <svg
-              width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-              className={`text-slate-400 flex-shrink-0 transition-transform ${holidaysOpen ? 'rotate-180' : ''}`}
+              </h3>
+            </div>
+            <button
+              type="button"
+              onClick={() => setHolidaysOpen(false)}
+              disabled={holidaySaving}
+              className="text-slate-400 hover:text-slate-600 transition disabled:opacity-50"
+              aria-label="Close holidays"
             >
-              <polyline points="6 9 12 15 18 9"/>
-            </svg>
-          </button>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
 
-          {holidaysOpen && (
-          <div className="mt-4">
+          <div className="overflow-y-auto flex-1 pr-1">
             {holidayMsg && <div className={`p-2.5 rounded-xl text-xs font-bold mb-3 ${holidayMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>{holidayMsg.text}</div>}
 
             <div className="flex flex-col sm:flex-row gap-2 mb-4">
@@ -1327,8 +1834,17 @@ export default function HRDashboard() {
               ))}
             </div>
           </div>
-          )}
+          <button
+            type="button"
+            onClick={() => setHolidaysOpen(false)}
+            disabled={holidaySaving}
+            className="mt-4 w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 transition disabled:opacity-50 flex-shrink-0"
+          >
+            Close
+          </button>
         </section>
+        </div>
+        )}
 
         {/* Disputes + Leave — side by side on desktop */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 md:gap-5">
@@ -1345,7 +1861,14 @@ export default function HRDashboard() {
                 ? <p className="text-slate-400 text-xs mb-4">No pending disputes.</p>
                 : <div className="space-y-2 mb-4">
                     {disputes.filter((d) => d.status === 'Pending').map((d) => (
-                      <div key={d.id} className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                      <div
+                        key={d.id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => { setSelectedDisputeDetail(d); setDisputesHistoryModalOpen(true); }}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedDisputeDetail(d); setDisputesHistoryModalOpen(true); } }}
+                        className="p-3 bg-slate-50 rounded-xl border border-slate-100 cursor-pointer hover:bg-slate-100 hover:border-slate-200 transition focus:outline-none focus:ring-2 focus:ring-blue-200"
+                      >
                         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
                           <div className="min-w-0">
                             <p className="font-bold text-slate-900 text-xs">{d.employee?.full_name ?? 'Unknown'}</p>
@@ -1355,8 +1878,8 @@ export default function HRDashboard() {
                             {d.reason && <p className="text-slate-400 text-[10px] italic mt-0.5">&ldquo;{d.reason}&rdquo;</p>}
                           </div>
                           <div className="flex gap-1.5 flex-shrink-0">
-                            <button onClick={() => approveDispute(d)} disabled={disputeActionLoadingId === d.id} className="text-xs font-bold bg-green-600 text-white px-3 py-1.5 rounded-full hover:bg-green-700 transition disabled:opacity-50">{disputeActionLoadingId === d.id ? '...' : 'Approve'}</button>
-                            <button onClick={() => rejectDispute(d)} disabled={disputeActionLoadingId === d.id} className="text-xs font-bold bg-slate-200 text-slate-700 px-3 py-1.5 rounded-full hover:bg-slate-300 transition disabled:opacity-50">Reject</button>
+                            <button onClick={(e) => { e.stopPropagation(); approveDispute(d); }} disabled={disputeActionLoadingId === d.id} className="text-xs font-bold bg-green-600 text-white px-3 py-1.5 rounded-full hover:bg-green-700 transition disabled:opacity-50">{disputeActionLoadingId === d.id ? '...' : 'Approve'}</button>
+                            <button onClick={(e) => { e.stopPropagation(); rejectDispute(d); }} disabled={disputeActionLoadingId === d.id} className="text-xs font-bold bg-slate-200 text-slate-700 px-3 py-1.5 rounded-full hover:bg-slate-300 transition disabled:opacity-50">Reject</button>
                           </div>
                         </div>
                       </div>
@@ -1389,17 +1912,24 @@ export default function HRDashboard() {
                 ? <p className="text-slate-400 text-xs mb-4">No pending leave requests.</p>
                 : <div className="space-y-2 mb-4">
                     {leaveRequests.filter((l) => l.status === 'Pending').map((l) => (
-                      <div key={l.id} className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                      <div
+                        key={l.id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => { setSelectedLeaveDetail(l); setLeaveHistoryModalOpen(true); }}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedLeaveDetail(l); setLeaveHistoryModalOpen(true); } }}
+                        className="p-3 bg-slate-50 rounded-xl border border-slate-100 cursor-pointer hover:bg-slate-100 hover:border-slate-200 transition focus:outline-none focus:ring-2 focus:ring-blue-200"
+                      >
                         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
                           <div className="min-w-0">
                             <p className="font-bold text-slate-900 text-xs">{l.employee?.full_name ?? 'Unknown'}</p>
                             <p className="text-slate-500 text-xs mt-0.5"><span className="font-semibold">{l.leave_type}</span> · {l.start_date === l.end_date ? l.start_date : `${l.start_date} → ${l.end_date}`} · {countLeaveDays(l.start_date, l.end_date)}d</p>
                             {l.reason && <p className="text-slate-400 text-[10px] italic mt-0.5">&ldquo;{l.reason}&rdquo;</p>}
-                            <input type="text" className="input-field !py-1.5 !text-xs !min-h-0 mt-1.5" placeholder="HR notes (optional)..." value={leaveHrNotes[l.id] ?? ''} onChange={(e) => setLeaveHrNotes((prev) => ({ ...prev, [l.id]: e.target.value }))} />
+                            <input type="text" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()} className="input-field !py-1.5 !text-xs !min-h-0 mt-1.5" placeholder="HR notes (optional)..." value={leaveHrNotes[l.id] ?? ''} onChange={(e) => setLeaveHrNotes((prev) => ({ ...prev, [l.id]: e.target.value }))} />
                           </div>
                           <div className="flex gap-1.5 flex-shrink-0">
-                            <button onClick={() => approveLeave(l)} disabled={leaveActionLoadingId === l.id} className="text-xs font-bold bg-green-600 text-white px-3 py-1.5 rounded-full hover:bg-green-700 transition disabled:opacity-50">{leaveActionLoadingId === l.id ? '...' : 'Approve'}</button>
-                            <button onClick={() => rejectLeave(l)} disabled={leaveActionLoadingId === l.id} className="text-xs font-bold bg-slate-200 text-slate-700 px-3 py-1.5 rounded-full hover:bg-slate-300 transition disabled:opacity-50">Reject</button>
+                            <button onClick={(e) => { e.stopPropagation(); approveLeave(l); }} disabled={leaveActionLoadingId === l.id} className="text-xs font-bold bg-green-600 text-white px-3 py-1.5 rounded-full hover:bg-green-700 transition disabled:opacity-50">{leaveActionLoadingId === l.id ? '...' : 'Approve'}</button>
+                            <button onClick={(e) => { e.stopPropagation(); rejectLeave(l); }} disabled={leaveActionLoadingId === l.id} className="text-xs font-bold bg-slate-200 text-slate-700 px-3 py-1.5 rounded-full hover:bg-slate-300 transition disabled:opacity-50">Reject</button>
                           </div>
                         </div>
                       </div>
@@ -1422,29 +1952,34 @@ export default function HRDashboard() {
 
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 sm:gap-4 md:gap-5">
-          {/* Employee Sidebar */}
-          <section className="card-style !p-4 lg:col-span-1">
-            <button
-              type="button"
-              onClick={() => setEmployeesListOpen((v) => !v)}
-              className="w-full flex items-center justify-between gap-2 mb-3"
-            >
-              <h3 className="mb-0 text-sm">
+        <div>
+          {/* EMPLOYEES MODULE MODAL */}
+          {employeesListOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4"
+            onMouseDown={(e) => { if (e.target === e.currentTarget) setEmployeesListOpen(false); }}
+          >
+          <section className="w-full max-w-lg card-style shadow-2xl max-h-[90vh] flex flex-col !p-4 sm:!p-5" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-2 mb-4 flex-shrink-0">
+              <div className="flex items-center gap-2.5">
+                <span className="w-9 h-9 rounded-2xl bg-violet-50 text-violet-600 flex items-center justify-center"><UsersRound size={17} strokeWidth={2.4}/></span>
+                <h3 className="mb-0 text-sm">
                 Employees
                 <span className="block text-[10px] font-medium text-slate-400 normal-case tracking-normal mt-0.5">
                   {profiles.length} total
                 </span>
-              </h3>
-              <svg
-                width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                className={`text-slate-400 flex-shrink-0 transition-transform ${employeesListOpen ? 'rotate-180' : ''}`}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEmployeesListOpen(false)}
+                className="text-slate-400 hover:text-slate-600 transition"
+                aria-label="Close employees"
               >
-                <polyline points="6 9 12 15 18 9"/>
-              </svg>
-            </button>
-            {employeesListOpen && (
-            <div className="space-y-2 min-h-[220px]">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <div className="space-y-2 min-h-[220px] overflow-y-auto flex-1 pr-1">
               {loadingData && profiles.length === 0 && <LoadingRow label="Loading employees..." />}
               {!loadingData && profiles.length === 0 && <p className="text-slate-400 text-xs">No employees found.</p>}
               {paginatedProfiles.map((p) => (
@@ -1485,11 +2020,19 @@ export default function HRDashboard() {
                 </div>
               )}
             </div>
-            )}
+            <button
+              type="button"
+              onClick={() => setEmployeesListOpen(false)}
+              className="mt-4 w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 transition flex-shrink-0"
+            >
+              Close
+            </button>
           </section>
+          </div>
+          )}
 
           {/* Attendance History */}
-          <section className="card-style lg:col-span-3 overflow-hidden !p-0">
+          <section className="card-style overflow-hidden !p-0">
             <button
               type="button"
               onClick={() => setAttendanceHistoryOpen((v) => !v)}
@@ -2054,6 +2597,233 @@ export default function HRDashboard() {
               type="button"
               onClick={() => { setLeaveHistoryModalOpen(false); setSelectedLeaveDetail(null); }}
               className="mt-6 w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 transition flex-shrink-0"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+      {/* LEAVE CREDITS OVERVIEW MODAL -- read-only monitoring, no manual
+          adjustment. Sorted so Regular employees running lowest on
+          credits surface first. */}
+      {leaveCreditsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm card-style shadow-2xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between mb-4 flex-shrink-0">
+              <div>
+                <h3 className="mb-0">Leave Credits</h3>
+                <p className="text-slate-400 text-xs mt-1">{new Date().getFullYear()} · Regular employees only</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLeaveCreditsModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 transition"
+                aria-label="Close"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 space-y-2">
+              {leaveCreditsLoading && (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <div key={`credit-skel-${i}`} className="p-3 bg-slate-50 rounded-2xl border border-slate-100 animate-pulse">
+                    <div className="h-3.5 w-2/3 bg-slate-200 rounded mb-2" />
+                    <div className="h-3 w-1/3 bg-slate-200 rounded" />
+                  </div>
+                ))
+              )}
+              {!leaveCreditsLoading && sortedLeaveCreditsData.length === 0 && (
+                <p className="py-8 text-center text-slate-400 text-sm">No employees found.</p>
+              )}
+              {!leaveCreditsLoading && sortedLeaveCreditsData.map((e) => {
+                const isRegular = e.employment_status === 'Regular';
+                const total = e.total_credits ?? fallbackLeaveCredits;
+                const used = e.used_credits ?? 0;
+                const remaining = total - used;
+                const isLow = isRegular && remaining <= 3;
+                return (
+                  <div key={e.id} className="flex items-center justify-between gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                    <div className="min-w-0">
+                      <p className="font-bold text-slate-900 text-xs truncate">{e.full_name || 'Unknown'}</p>
+                      <p className="text-slate-400 text-[10px]">{e.employee_id || '-'}</p>
+                    </div>
+                    {isRegular ? (
+                      <span className={`text-xs font-extrabold flex-shrink-0 ${isLow ? 'text-orange-600' : 'text-slate-700'}`}>
+                        {remaining} / {total}
+                      </span>
+                    ) : (
+                      <span className="text-slate-400 text-[10px] font-medium flex-shrink-0">
+                        {e.employment_status || 'Not set'}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setLeaveCreditsModalOpen(false)}
+              className="mt-6 w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 transition flex-shrink-0"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* EXPORT REPORTS MODAL */}
+      {exportModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget && !exportingType) setExportModalOpen(false);
+          }}
+        >
+          <div className="w-full max-w-sm card-style shadow-2xl max-h-[90vh] overflow-y-auto" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2.5">
+                <span className="w-9 h-9 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center flex-shrink-0"><FileDown size={17} strokeWidth={2.4}/></span>
+                <h3 className="mb-0">Export Reports</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setExportModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 transition"
+                aria-label="Close"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+
+            {exportMsg && (
+              <div className={`p-3 rounded-xl text-sm font-bold mb-4 ${exportMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                {exportMsg.text}
+              </div>
+            )}
+
+            {/* Payroll Summary per Cutoff */}
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 mb-3">
+              <p className="font-bold text-slate-900 text-xs mb-1">Payroll Summary</p>
+              <p className="text-slate-400 text-[11px] mb-3">Present/Late/Absent/Leave day counts and late minutes per employee, for one cutoff period.</p>
+              <select
+                className="input-field !py-1.5 !text-xs !min-h-0 mb-2"
+                value={exportCutoff}
+                onChange={(e) => setExportCutoff(e.target.value)}
+              >
+                <option value="">Select cutoff period...</option>
+                {availableCutoffs.map((c) => <option key={c} value={c}>{formatCutoffLabel(c)}</option>)}
+              </select>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={exportPayrollSummaryCSV}
+                  disabled={!!exportingType || !exportCutoff}
+                  className="w-full bg-slate-900 text-white text-xs font-bold py-2.5 rounded-full hover:bg-slate-700 transition disabled:opacity-50"
+                >
+                  {exportingType === 'payroll-csv' ? 'Exporting...' : 'Download CSV'}
+                </button>
+                <button
+                  type="button"
+                  onClick={exportPayrollSummaryPDF}
+                  disabled={!!exportingType || !exportCutoff}
+                  className="w-full bg-red-600 text-white text-xs font-bold py-2.5 rounded-full hover:bg-red-700 transition disabled:opacity-50"
+                >
+                  {exportingType === 'payroll-pdf' ? 'Preparing...' : 'Download PDF'}
+                </button>
+              </div>
+            </div>
+
+            {/* Employee Master List */}
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 mb-3">
+              <p className="font-bold text-slate-900 text-xs mb-1">Employee Master List</p>
+              <p className="text-slate-400 text-[11px] mb-3">Name, designation, employment status, and government IDs for every employee.</p>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={exportEmployeeMasterListCSV}
+                  disabled={!!exportingType}
+                  className="w-full bg-slate-900 text-white text-xs font-bold py-2.5 rounded-full hover:bg-slate-700 transition disabled:opacity-50"
+                >
+                  {exportingType === 'master-csv' ? 'Exporting...' : 'Download CSV'}
+                </button>
+                <button
+                  type="button"
+                  onClick={exportEmployeeMasterListPDF}
+                  disabled={!!exportingType}
+                  className="w-full bg-red-600 text-white text-xs font-bold py-2.5 rounded-full hover:bg-red-700 transition disabled:opacity-50"
+                >
+                  {exportingType === 'master-pdf' ? 'Preparing...' : 'Download PDF'}
+                </button>
+              </div>
+            </div>
+
+            {/* Raw Attendance Log */}
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+              <p className="font-bold text-slate-900 text-xs mb-1">Raw Attendance Log</p>
+              <p className="text-slate-400 text-[11px] mb-3">
+                Export every attendance record for a whole month or one payroll cutoff. This export is independent from the collapsed Attendance History view.
+              </p>
+
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Month</label>
+              <input
+                type="month"
+                className="input-field !py-1.5 !text-xs !min-h-0 mb-2"
+                value={rawExportMonth}
+                onChange={(e) => { setRawExportMonth(e.target.value); setExportMsg(null); }}
+              />
+
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Coverage</label>
+              <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-white border border-slate-200 mb-2">
+                {([
+                  ['MONTH', 'Whole Month'],
+                  ['H1', '1–15'],
+                  ['H2', '16–End'],
+                ] as const).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => { setRawExportPeriod(value); setExportMsg(null); }}
+                    className={`px-2 py-2 rounded-lg text-[10px] font-bold transition ${rawExportPeriod === value ? 'bg-slate-900 text-white shadow' : 'text-slate-500 hover:bg-slate-50'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <p className={`text-[10px] font-bold mb-3 ${rawExportPreviewCount > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
+                {rawExportPreviewCount} loaded matching record{rawExportPreviewCount === 1 ? '' : 's'} · complete period will be checked before export
+              </p>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={exportRawAttendanceCSV}
+                  disabled={!!exportingType || !rawExportMonth}
+                  className="w-full bg-slate-900 text-white text-xs font-bold py-2.5 rounded-full hover:bg-slate-700 transition disabled:opacity-50"
+                >
+                  {exportingType === 'raw-csv' ? 'Exporting...' : 'Download CSV'}
+                </button>
+                <button
+                  type="button"
+                  onClick={exportRawAttendancePDF}
+                  disabled={!!exportingType || !rawExportMonth}
+                  className="w-full bg-red-600 text-white text-xs font-bold py-2.5 rounded-full hover:bg-red-700 transition disabled:opacity-50"
+                >
+                  {exportingType === 'raw-pdf' ? 'Preparing...' : 'Download PDF'}
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setExportModalOpen(false)}
+              className="mt-4 w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 transition"
             >
               Close
             </button>
