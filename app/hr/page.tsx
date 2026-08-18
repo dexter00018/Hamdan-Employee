@@ -71,13 +71,12 @@ export default function HRDashboard() {
   const [lateCutoffHour, setLateCutoffHour] = useState(FALLBACK_LATE_CUTOFF_HOUR);
   const [lateCutoffMinute, setLateCutoffMinute] = useState(FALLBACK_LATE_CUTOFF_MINUTE);
   const [fallbackLeaveCredits, setFallbackLeaveCredits] = useState(10);
-  const [timeOutReminderHour, setTimeOutReminderHour] = useState(17);
 
   const fetchAppSettings = async () => {
     const { data, error } = await supabase
       .from('app_settings')
       .select('key, value')
-      .in('key', ['late_cutoff_hour', 'late_cutoff_minute', 'default_leave_credits', 'time_out_reminder_hour']);
+      .in('key', ['late_cutoff_hour', 'late_cutoff_minute', 'default_leave_credits']);
     if (error) {
       console.error('Error fetching app settings:', error);
       return;
@@ -86,7 +85,6 @@ export default function HRDashboard() {
     if (typeof map.late_cutoff_hour === 'number') setLateCutoffHour(map.late_cutoff_hour);
     if (typeof map.late_cutoff_minute === 'number') setLateCutoffMinute(map.late_cutoff_minute);
     if (typeof map.default_leave_credits === 'number') setFallbackLeaveCredits(map.default_leave_credits);
-    if (typeof map.time_out_reminder_hour === 'number') setTimeOutReminderHour(map.time_out_reminder_hour);
   };
 
   // --- Leave Credits Overview (read-only monitoring, no manual edit) ---
@@ -522,7 +520,7 @@ export default function HRDashboard() {
   const [payslipCutoff, setPayslipCutoff] = useState('');
   const [payslipUploading, setPayslipUploading] = useState(false);
   const [payslipMsg, setPayslipMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [employeePayslips, setEmployeePayslips] = useState<{ id: string; cutoff_label: string; file_name: string; uploaded_at: string; published: boolean; published_at: string | null }[]>([]);
+  const [employeePayslips, setEmployeePayslips] = useState<{ id: string; cutoff_label: string; file_name: string; file_path: string; uploaded_at: string; published: boolean; published_at: string | null; acknowledged_at: string | null }[]>([]);
   const [employeePayslipsLoading, setEmployeePayslipsLoading] = useState(false);
   const payslipFileRef = useRef<HTMLInputElement>(null);
 
@@ -562,7 +560,7 @@ export default function HRDashboard() {
     new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit' }).format(new Date()).slice(0, 7)
   );
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(null);
-  const [attendanceInsightsOpen, setAttendanceInsightsOpen] = useState(false);
+  const [attendanceInsightsOpen, setAttendanceInsightsOpen] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [filtersHydrated, setFiltersHydrated] = useState(false);
@@ -1002,9 +1000,11 @@ export default function HRDashboard() {
     let count = 0;
     const d = new Date(start);
     const endDate = new Date(end);
+    const holidayDates = new Set(holidays.map((holiday) => holiday.holiday_date));
     while (d <= endDate) {
       const day = d.getDay();
-      if (day !== 0 && day !== 6) count++;
+      const dateKey = d.toISOString().slice(0, 10);
+      if (day !== 0 && day !== 6 && !holidayDates.has(dateKey)) count++;
       d.setDate(d.getDate() + 1);
     }
     return count;
@@ -1411,11 +1411,11 @@ export default function HRDashboard() {
     setEmployeePayslipsLoading(true);
     const { data, error } = await supabase
       .from('payslips')
-      .select('id, cutoff_label, file_name, file_path, uploaded_at, published, published_at')
+      .select('id, cutoff_label, file_name, file_path, uploaded_at, published, published_at, acknowledged_at')
       .eq('user_id', userId)
       .order('uploaded_at', { ascending: false });
     if (error) console.error('Error fetching employee payslips:', error);
-    setEmployeePayslips((data || []) as { id: string; cutoff_label: string; file_name: string; file_path: string; uploaded_at: string; published: boolean; published_at: string | null }[]);
+    setEmployeePayslips((data || []) as { id: string; cutoff_label: string; file_name: string; file_path: string; uploaded_at: string; published: boolean; published_at: string | null; acknowledged_at: string | null }[]);
     setEmployeePayslipsLoading(false);
   };
 
@@ -1573,11 +1573,6 @@ export default function HRDashboard() {
     [profiles, todaysLogs, onApprovedLeaveToday]
   );
   const onLeaveTodayCount = onApprovedLeaveToday.size;
-  const openShiftsToday = useMemo(() => todaysLogs.filter((log) => !log.time_out), [todaysLogs]);
-  const currentManilaHour = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', hour12: false }).format(new Date()));
-  const timeOutReminderActive = currentManilaHour >= timeOutReminderHour;
-  const missingTimeOutToday = timeOutReminderActive ? openShiftsToday : [];
-  const completedShiftTodayCount = useMemo(() => todaysLogs.filter((log) => !!log.time_out).length, [todaysLogs]);
 
   // Light auto-refresh so this list (and the Present/Late header counts)
   // update on their own through the day as employees time in, without
@@ -1683,6 +1678,12 @@ export default function HRDashboard() {
   const pendingDisputesCount = disputes.filter((dispute) => dispute.status === 'Pending').length;
   const pendingLeaveCount = leaveRequests.filter((leave) => leave.status === 'Pending').length;
 
+  const getLeaveBalance = (userId?: string) => {
+    const employee = leaveCreditsData.find((entry) => entry.id === userId);
+    if (!employee || employee.employment_status !== 'Regular') return null;
+    return (employee.total_credits ?? fallbackLeaveCredits) - (employee.used_credits ?? 0);
+  };
+
   const scrollToDashboardSection = (id: string) => {
     requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   };
@@ -1751,14 +1752,12 @@ export default function HRDashboard() {
         </div>
 
         {/* Daily attendance overview */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2.5">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
           {[
             { label: 'Present', value: presentTodayCount, tone: 'text-emerald-600', icon: <CheckCircle2 size={15}/> },
             { label: 'Late', value: lateTodayCount, tone: 'text-orange-600', icon: <Clock3 size={15}/> },
             { label: 'On Leave', value: onLeaveTodayCount, tone: 'text-blue-600', icon: <CalendarClock size={15}/> },
             { label: 'Not Timed In', value: notYetTimedInToday.length, tone: 'text-amber-600', icon: <AlertTriangle size={15}/> },
-            { label: timeOutReminderActive ? 'Missing Time-Out' : 'Open Shifts', value: openShiftsToday.length, tone: timeOutReminderActive ? 'text-rose-600' : 'text-cyan-600', icon: <Clock3 size={15}/> },
-            { label: 'Completed Shift', value: completedShiftTodayCount, tone: 'text-violet-600', icon: <CheckCircle2 size={15}/> },
           ].map((stat) => (
             <div key={stat.label} className="card-style !p-3 flex items-center gap-2.5 min-w-0">
               <span className={`${stat.tone} flex-shrink-0`}>{stat.icon}</span>
@@ -1834,19 +1833,18 @@ export default function HRDashboard() {
               <p className="text-slate-400 text-[10px] mt-0.5">Items that may need HR attention today</p>
             </div>
             <span className="text-[10px] font-bold text-slate-500 bg-slate-100 rounded-full px-2.5 py-1">
-              {pendingDisputesCount + pendingLeaveCount + missingTimeOutToday.length + lowLeaveCreditsCount} open
+              {pendingDisputesCount + pendingLeaveCount + lowLeaveCreditsCount} open
             </span>
           </div>
-          {pendingDisputesCount + pendingLeaveCount + missingTimeOutToday.length + lowLeaveCreditsCount === 0 ? (
+          {pendingDisputesCount + pendingLeaveCount + lowLeaveCreditsCount === 0 ? (
             <div className="flex items-center justify-center gap-2 py-5 rounded-2xl border-2 border-dashed border-emerald-100 bg-emerald-50/50 text-emerald-700">
               <CheckCircle2 size={17}/><span className="text-xs font-bold">All caught up — no pending HR actions.</span>
             </div>
           ) : (
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {[
                 { label: 'Pending Disputes', count: pendingDisputesCount, tone: 'text-blue-600 bg-blue-50', action: () => scrollToDashboardSection('attendance-disputes') },
                 { label: 'Leave Requests', count: pendingLeaveCount, tone: 'text-violet-600 bg-violet-50', action: () => scrollToDashboardSection('leave-requests') },
-                { label: 'Missing Time-Out', count: missingTimeOutToday.length, tone: 'text-rose-600 bg-rose-50', action: () => scrollToDashboardSection('missing-time-out') },
                 { label: 'Low Leave Credits', count: lowLeaveCreditsCount, tone: 'text-orange-600 bg-orange-50', action: openLeaveCreditsModal },
               ].map((item) => (
                 <button key={item.label} type="button" onClick={item.action} className="p-3 rounded-2xl border border-slate-100 bg-slate-50 hover:bg-slate-100 transition text-left">
@@ -1854,6 +1852,36 @@ export default function HRDashboard() {
                   <span className="block text-slate-700 text-[10px] font-bold mt-2">{item.label}</span>
                 </button>
               ))}
+            </div>
+          )}
+        </section>
+
+        {/* Attendance insights moved near the top for faster daily review. */}
+        <section className="card-style !p-4">
+          <button type="button" onClick={() => setAttendanceInsightsOpen((open) => !open)} className="w-full flex items-center justify-between gap-2 text-left">
+            <div><h3 className="text-sm mb-0">Attendance Insights</h3><p className="text-slate-400 text-[10px] mt-0.5">Current-month performance and repeated lateness</p></div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`text-slate-400 transition-transform ${attendanceInsightsOpen ? 'rotate-180' : ''}`}><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          {attendanceInsightsOpen && (
+            <div className="pt-4">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
+                {[
+                  { label: 'Attendance Rate', value: `${attendanceInsights.current.attendanceRate}%`, tone: 'text-emerald-600' },
+                  { label: 'Late Records', value: attendanceInsights.current.late, tone: 'text-orange-600' },
+                  { label: 'Absent Records', value: attendanceInsights.current.absent, tone: 'text-rose-600' },
+                  { label: 'Leave Days', value: attendanceInsights.current.leave, tone: 'text-blue-600' },
+                ].map((item) => <div key={item.label} className="p-3 rounded-xl bg-slate-50 border border-slate-100"><p className={`stat-number text-xl ${item.tone}`}>{item.value}</p><p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mt-1">{item.label}</p></div>)}
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                <div className="p-3 rounded-2xl border border-slate-100 bg-slate-50">
+                  <p className="text-xs font-bold text-slate-800 mb-2">Compared with previous month</p>
+                  {[['Late', attendanceInsights.current.late, attendanceInsights.previous.late], ['Absent', attendanceInsights.current.absent, attendanceInsights.previous.absent], ['Worked', attendanceInsights.current.worked, attendanceInsights.previous.worked]].map(([label, current, previous]) => { const delta = Number(current) - Number(previous); return <div key={String(label)} className="flex items-center justify-between text-xs py-1"><span className="text-slate-500">{label}</span><span className="font-bold text-slate-800">{current} <small className="text-slate-400 ml-1">{delta === 0 ? '—' : `${delta > 0 ? '+' : ''}${delta}`}</small></span></div>; })}
+                </div>
+                <div className="p-3 rounded-2xl border border-slate-100 bg-slate-50">
+                  <p className="text-xs font-bold text-slate-800 mb-2">Most late this month</p>
+                  {attendanceInsights.topLateEmployees.length === 0 ? <p className="text-xs text-slate-400">No late records this month.</p> : attendanceInsights.topLateEmployees.map(([name, count]) => <div key={name} className="flex items-center justify-between text-xs py-1"><span className="font-semibold text-slate-600 truncate">{name}</span><span className="font-bold text-orange-600">{count}</span></div>)}
+                </div>
+              </div>
             </div>
           )}
         </section>
@@ -1885,38 +1913,6 @@ export default function HRDashboard() {
           </div>
         </section>
         )}
-
-        {/* Missing time-out monitoring */}
-        <section id="missing-time-out" className="card-style !p-4 scroll-mt-4">
-          <div className="flex items-center justify-between gap-3 mb-3">
-            <div>
-              <h3 className="mb-0 text-sm">{timeOutReminderActive ? 'Missing Time-Out' : 'Open Shifts'}</h3>
-              <p className="text-slate-400 text-[10px] mt-0.5">{timeOutReminderActive ? 'Employees who still have no time-out after the configured reminder hour' : `Currently timed in · missing time-out monitoring starts at ${String(timeOutReminderHour).padStart(2, '0')}:00`}</p>
-            </div>
-            <span className={`text-[10px] font-bold rounded-full px-2.5 py-1 ${timeOutReminderActive && openShiftsToday.length ? 'bg-rose-50 text-rose-600' : 'bg-cyan-50 text-cyan-600'}`}>{openShiftsToday.length}</span>
-          </div>
-          {openShiftsToday.length === 0 ? (
-            <div className="flex items-center justify-center gap-2 py-5 rounded-2xl border-2 border-dashed border-emerald-100 bg-emerald-50/40 text-emerald-700"><CheckCircle2 size={16}/><span className="text-xs font-bold">No open shifts right now.</span></div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              {openShiftsToday.map((log) => {
-                const timeInLabel = log.time_in ? formatPh(log.time_in) : '-';
-                const hoursOpen = log.time_in ? Math.max(0, (Date.now() - new Date(log.time_in).getTime()) / 3600000) : 0;
-                return (
-                  <button
-                    key={log.id}
-                    type="button"
-                    onClick={() => { setSearchTerm(log.profiles?.full_name || ''); setSelectedDate(todayManila); setCutoffFilter(''); setAttendanceHistoryOpen(true); scrollToDashboardSection('attendance-history'); }}
-                    className={`flex items-center justify-between gap-3 p-3 rounded-xl border transition text-left ${timeOutReminderActive ? 'border-rose-100 bg-rose-50/50 hover:bg-rose-50' : 'border-cyan-100 bg-cyan-50/40 hover:bg-cyan-50'}`}
-                  >
-                    <span className="min-w-0"><span className="block text-xs font-bold text-slate-900 truncate">{log.profiles?.full_name || 'Unknown'}</span><span className="block text-[10px] text-slate-500 mt-0.5">Timed in {timeInLabel}</span></span>
-                    <span className={`text-[10px] font-extrabold flex-shrink-0 ${timeOutReminderActive ? 'text-rose-600' : 'text-cyan-600'}`}>{hoursOpen.toFixed(1)}h open</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </section>
 
         {/* EMPLOYEE QUICK VIEW MODAL */}
         {quickViewProfile && (
@@ -2256,7 +2252,12 @@ export default function HRDashboard() {
                         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
                           <div className="min-w-0">
                             <p className="font-bold text-slate-900 text-xs">{l.employee?.full_name ?? 'Unknown'}</p>
-                            <p className="text-slate-500 text-xs mt-0.5"><span className="font-semibold">{l.leave_type}</span> · {l.start_date === l.end_date ? l.start_date : `${l.start_date} → ${l.end_date}`} · {countLeaveDays(l.start_date, l.end_date)}d</p>
+                            <p className="text-slate-500 text-xs mt-0.5"><span className="font-semibold">{l.leave_type}</span> · {l.start_date === l.end_date ? l.start_date : `${l.start_date} → ${l.end_date}`} · {countLeaveDays(l.start_date, l.end_date)} chargeable working day{countLeaveDays(l.start_date, l.end_date) === 1 ? '' : 's'}</p>
+                            {getLeaveBalance(l.employee?.id) !== null && (
+                              <p className={`text-[10px] font-bold mt-1 ${countLeaveDays(l.start_date, l.end_date) > Number(getLeaveBalance(l.employee?.id)) ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                Balance: {getLeaveBalance(l.employee?.id)} → estimated {Number(getLeaveBalance(l.employee?.id)) - countLeaveDays(l.start_date, l.end_date)} after approval
+                              </p>
+                            )}
                             {l.reason && <p className="text-slate-400 text-[10px] italic mt-0.5">&ldquo;{l.reason}&rdquo;</p>}
                             <input type="text" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()} className="input-field !py-1.5 !text-xs !min-h-0 mt-1.5" placeholder="HR notes (optional)..." value={leaveHrNotes[l.id] ?? ''} onChange={(e) => setLeaveHrNotes((prev) => ({ ...prev, [l.id]: e.target.value }))} />
                           </div>
@@ -2473,8 +2474,8 @@ export default function HRDashboard() {
             )}
           </section>
 
-          {/* Attendance insights */}
-          <section className="card-style overflow-hidden !p-0 mt-3 sm:mt-4 md:mt-5">
+          {/* Legacy placement retained in source for easy comparison, hidden because insights now appear near the top. */}
+          {false && <section className="card-style overflow-hidden !p-0 mt-3 sm:mt-4 md:mt-5">
             <button type="button" onClick={() => setAttendanceInsightsOpen((open) => !open)} className="w-full p-4 flex items-center justify-between gap-2 text-left">
               <div><h3 className="text-sm mb-0">Attendance Insights</h3><p className="text-slate-400 text-[10px] mt-0.5">Current-month trends and repeated lateness</p></div>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`text-slate-400 transition-transform ${attendanceInsightsOpen ? 'rotate-180' : ''}`}><polyline points="6 9 12 15 18 9"/></svg>
@@ -2506,7 +2507,7 @@ export default function HRDashboard() {
                 </div>
               </div>
             )}
-          </section>
+          </section>}
         </div>
       </div>
 
@@ -2693,6 +2694,11 @@ export default function HRDashboard() {
                         </span>
                       ) : (
                         <span className="tag-excused inline-block mt-1">Not yet published</span>
+                      )}
+                      {ps.published && (
+                        <span className={`inline-block mt-1 ml-1 rounded-full px-2 py-1 text-[9px] font-extrabold uppercase tracking-wide ${ps.acknowledged_at ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                          {ps.acknowledged_at ? `Acknowledged · ${new Date(ps.acknowledged_at).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric' })}` : 'Not acknowledged'}
+                        </span>
                       )}
                     </div>
                     <div className="flex items-center gap-1.5 flex-shrink-0">

@@ -30,7 +30,10 @@ export async function GET(request: Request) {
   // In local development there's no real public IP to check against,
   // so we skip the restriction entirely to avoid blocking testing.
   if (process.env.NODE_ENV !== 'production') {
-    return NextResponse.json({ allowed: true, dev: true });
+    return NextResponse.json(
+      { allowed: true, dev: true },
+      { headers: { 'Cache-Control': 'no-store, max-age=0' } }
+    );
   }
 
   const allowedIps = (process.env.OFFICE_ALLOWED_IPS || '')
@@ -39,14 +42,30 @@ export async function GET(request: Request) {
     .filter(Boolean);
 
   if (allowedIps.length === 0) {
-    // Fail open with a clear signal in the response so this isn't a
-    // silent misconfiguration -- but don't block time-in entirely just
-    // because the admin hasn't set this up yet.
-    return NextResponse.json({ allowed: true, unconfigured: true });
+    // Fail closed in production. The rest of the employee portal remains
+    // available, but attendance recording is disabled until IT restores
+    // the allowlist configuration.
+    return NextResponse.json(
+      {
+        allowed: false,
+        code: 'ATTENDANCE_NETWORK_UNAVAILABLE',
+        error: 'Attendance recording is temporarily unavailable. Please contact HR or IT.',
+      },
+      {
+        status: 503,
+        headers: { 'Cache-Control': 'no-store, max-age=0' },
+      }
+    );
   }
 
   const clientIp = getClientIp(request);
   const allowed = !!clientIp && allowedIps.includes(clientIp);
 
-  return NextResponse.json({ allowed, clientIp });
+  return NextResponse.json(
+    {
+      allowed,
+      code: allowed ? 'OFFICE_NETWORK_ALLOWED' : 'OUTSIDE_OFFICE_NETWORK',
+    },
+    { headers: { 'Cache-Control': 'no-store, max-age=0' } }
+  );
 }

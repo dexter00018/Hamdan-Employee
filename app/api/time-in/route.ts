@@ -28,14 +28,25 @@ export async function POST(request: Request) {
         .map((ip) => ip.trim())
         .filter(Boolean);
 
-      if (allowedIps.length > 0) {
-        const clientIp = getClientIp(request);
-        if (!clientIp || !allowedIps.includes(clientIp)) {
-          return NextResponse.json(
-            { error: 'You must be connected to the office network to time in.' },
-            { status: 403 }
-          );
-        }
+      if (allowedIps.length === 0) {
+        return NextResponse.json(
+          {
+            code: 'ATTENDANCE_NETWORK_UNAVAILABLE',
+            error: 'Attendance recording is temporarily unavailable. Please contact HR or IT.',
+          },
+          { status: 503 }
+        );
+      }
+
+      const clientIp = getClientIp(request);
+      if (!clientIp || !allowedIps.includes(clientIp)) {
+        return NextResponse.json(
+          {
+            code: 'OUTSIDE_OFFICE_NETWORK',
+            error: 'Time In is only available on the authorized office network.',
+          },
+          { status: 403 }
+        );
       }
     }
 
