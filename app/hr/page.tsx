@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { CalendarClock, FileDown, Megaphone, PartyPopper, UsersRound } from 'lucide-react';
+import { AlertTriangle, CalendarClock, CalendarRange, CheckCircle2, Clock3, FileDown, Megaphone, RefreshCw, Search, UsersRound } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import Spinner, { LoadingRow } from '@/components/Spinner';
 
@@ -71,12 +71,13 @@ export default function HRDashboard() {
   const [lateCutoffHour, setLateCutoffHour] = useState(FALLBACK_LATE_CUTOFF_HOUR);
   const [lateCutoffMinute, setLateCutoffMinute] = useState(FALLBACK_LATE_CUTOFF_MINUTE);
   const [fallbackLeaveCredits, setFallbackLeaveCredits] = useState(10);
+  const [timeOutReminderHour, setTimeOutReminderHour] = useState(17);
 
   const fetchAppSettings = async () => {
     const { data, error } = await supabase
       .from('app_settings')
       .select('key, value')
-      .in('key', ['late_cutoff_hour', 'late_cutoff_minute', 'default_leave_credits']);
+      .in('key', ['late_cutoff_hour', 'late_cutoff_minute', 'default_leave_credits', 'time_out_reminder_hour']);
     if (error) {
       console.error('Error fetching app settings:', error);
       return;
@@ -85,6 +86,7 @@ export default function HRDashboard() {
     if (typeof map.late_cutoff_hour === 'number') setLateCutoffHour(map.late_cutoff_hour);
     if (typeof map.late_cutoff_minute === 'number') setLateCutoffMinute(map.late_cutoff_minute);
     if (typeof map.default_leave_credits === 'number') setFallbackLeaveCredits(map.default_leave_credits);
+    if (typeof map.time_out_reminder_hour === 'number') setTimeOutReminderHour(map.time_out_reminder_hour);
   };
 
   // --- Leave Credits Overview (read-only monitoring, no manual edit) ---
@@ -553,9 +555,41 @@ export default function HRDashboard() {
   const [newHolidayName, setNewHolidayName] = useState('');
   const [holidaySaving, setHolidaySaving] = useState(false);
   const [holidayMsg, setHolidayMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [globalEmployeeSearch, setGlobalEmployeeSearch] = useState('');
+  const [quickViewProfile, setQuickViewProfile] = useState<Profile | null>(null);
+  const [leaveCalendarOpen, setLeaveCalendarOpen] = useState(false);
+  const [leaveCalendarMonth, setLeaveCalendarMonth] = useState(() =>
+    new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit' }).format(new Date()).slice(0, 7)
+  );
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(null);
+  const [attendanceInsightsOpen, setAttendanceInsightsOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+  const [filtersHydrated, setFiltersHydrated] = useState(false);
 
   useEffect(() => {
-    const moduleModalOpen = announcementOpen || holidaysOpen || employeesListOpen;
+    try {
+      const saved = window.localStorage.getItem('hamdan-hr-attendance-filters');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed.searchTerm === 'string') setSearchTerm(parsed.searchTerm);
+        if (typeof parsed.selectedDate === 'string') setSelectedDate(parsed.selectedDate);
+        if (typeof parsed.cutoffFilter === 'string') setCutoffFilter(parsed.cutoffFilter);
+      }
+    } catch (error) {
+      console.warn('Could not restore attendance filters:', error);
+    } finally {
+      setFiltersHydrated(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!filtersHydrated) return;
+    window.localStorage.setItem('hamdan-hr-attendance-filters', JSON.stringify({ searchTerm, selectedDate, cutoffFilter }));
+  }, [filtersHydrated, searchTerm, selectedDate, cutoffFilter]);
+
+  useEffect(() => {
+    const moduleModalOpen = announcementOpen || holidaysOpen || employeesListOpen || leaveCalendarOpen || !!quickViewProfile;
     if (!moduleModalOpen) return;
 
     const previousOverflow = document.body.style.overflow;
@@ -565,13 +599,15 @@ export default function HRDashboard() {
       if (announcementOpen && !announcementSaving) setAnnouncementOpen(false);
       if (holidaysOpen && !holidaySaving) setHolidaysOpen(false);
       if (employeesListOpen) setEmployeesListOpen(false);
+      if (leaveCalendarOpen) setLeaveCalendarOpen(false);
+      if (quickViewProfile) setQuickViewProfile(null);
     };
     window.addEventListener('keydown', closeOnEscape);
     return () => {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener('keydown', closeOnEscape);
     };
-  }, [announcementOpen, announcementSaving, holidaysOpen, holidaySaving, employeesListOpen]);
+  }, [announcementOpen, announcementSaving, holidaysOpen, holidaySaving, employeesListOpen, leaveCalendarOpen, quickViewProfile]);
 
   useEffect(() => {
     const runStartupSweeps = async () => {
@@ -601,6 +637,7 @@ export default function HRDashboard() {
 
   const refreshAllData = async () => {
     setLoadingData(true);
+    setRefreshing(true);
     setErrorMsg(null);
 
     const [att, prof] = await Promise.all([
@@ -629,6 +666,8 @@ export default function HRDashboard() {
     setAttendance(att.data || []);
     setProfiles(prof.data || []);
     setLoadingData(false);
+    setRefreshing(false);
+    setLastUpdatedAt(new Date());
   };
 
   // Loads the current published announcement (if any) so HR can see and
@@ -1530,9 +1569,15 @@ export default function HRDashboard() {
   );
 
   const notYetTimedInToday = useMemo(
-    () => profiles.filter((p) => !todaysLogs.some((log) => log.user_id === p.id)),
-    [profiles, todaysLogs]
+    () => profiles.filter((p) => !todaysLogs.some((log) => log.user_id === p.id) && !onApprovedLeaveToday.has(p.id)),
+    [profiles, todaysLogs, onApprovedLeaveToday]
   );
+  const onLeaveTodayCount = onApprovedLeaveToday.size;
+  const openShiftsToday = useMemo(() => todaysLogs.filter((log) => !log.time_out), [todaysLogs]);
+  const currentManilaHour = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', hour12: false }).format(new Date()));
+  const timeOutReminderActive = currentManilaHour >= timeOutReminderHour;
+  const missingTimeOutToday = timeOutReminderActive ? openShiftsToday : [];
+  const completedShiftTodayCount = useMemo(() => todaysLogs.filter((log) => !!log.time_out).length, [todaysLogs]);
 
   // Light auto-refresh so this list (and the Present/Late header counts)
   // update on their own through the day as employees time in, without
@@ -1566,6 +1611,82 @@ export default function HRDashboard() {
   const formatPh = (iso: string) =>
     new Date(iso).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
+  const globalEmployeeMatches = useMemo(() => {
+    const query = globalEmployeeSearch.trim().toLowerCase();
+    if (!query) return [];
+    return profiles
+      .filter((profile) =>
+        profile.full_name?.toLowerCase().includes(query) ||
+        profile.employee_id?.toLowerCase().includes(query) ||
+        profile.designation?.toLowerCase().includes(query)
+      )
+      .slice(0, 8);
+  }, [globalEmployeeSearch, profiles]);
+
+  const quickViewAttendance = useMemo(() => {
+    if (!quickViewProfile) return [];
+    return attendance.filter((log) => log.user_id === quickViewProfile.id).slice(0, 5);
+  }, [attendance, quickViewProfile]);
+  const quickViewCredits = quickViewProfile
+    ? leaveCreditsData.find((entry) => entry.id === quickViewProfile.id) ?? null
+    : null;
+
+  const calendarData = useMemo(() => {
+    const [year, month] = leaveCalendarMonth.split('-').map(Number);
+    if (!year || !month) return { blanks: 0, days: [] as { date: string; day: number; leaves: any[]; holiday: { id: string; holiday_date: string; name: string } | null }[] };
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const blanks = new Date(year, month - 1, 1).getDay();
+    const days = Array.from({ length: daysInMonth }, (_, index) => {
+      const day = index + 1;
+      const date = `${leaveCalendarMonth}-${String(day).padStart(2, '0')}`;
+      return {
+        date,
+        day,
+        leaves: leaveRequests.filter((leave) => leave.status === 'Approved' && leave.start_date <= date && leave.end_date >= date),
+        holiday: holidays.find((holiday) => holiday.holiday_date === date) ?? null,
+      };
+    });
+    return { blanks, days };
+  }, [leaveCalendarMonth, leaveRequests, holidays]);
+  const selectedCalendarDay = selectedCalendarDate
+    ? calendarData.days.find((day) => day.date === selectedCalendarDate) ?? null
+    : null;
+
+  const attendanceInsights = useMemo(() => {
+    const currentMonth = todayManila.slice(0, 7);
+    const [year, month] = currentMonth.split('-').map(Number);
+    const previousDate = new Date(year, month - 2, 1);
+    const previousMonth = `${previousDate.getFullYear()}-${String(previousDate.getMonth() + 1).padStart(2, '0')}`;
+    const summarize = (monthKey: string) => {
+      const logs = attendance.filter((log) => log.log_date?.startsWith(monthKey));
+      const late = logs.filter((log) => log.status?.toLowerCase() === 'late').length;
+      const absent = logs.filter((log) => log.status?.toLowerCase() === 'absent').length;
+      const leave = logs.filter((log) => log.status?.toLowerCase().includes('leave')).length;
+      const worked = logs.filter((log) => {
+        const status = log.status?.toLowerCase() ?? '';
+        return status !== 'absent' && !status.includes('leave');
+      }).length;
+      const total = worked + absent + leave;
+      return { logs, late, absent, leave, worked, attendanceRate: total ? Math.round((worked / total) * 100) : 0 };
+    };
+    const current = summarize(currentMonth);
+    const previous = summarize(previousMonth);
+    const lateByEmployee = new Map<string, number>();
+    current.logs.filter((log) => log.status?.toLowerCase() === 'late').forEach((log) => {
+      const name = log.profiles?.full_name || 'Unknown';
+      lateByEmployee.set(name, (lateByEmployee.get(name) ?? 0) + 1);
+    });
+    const topLateEmployees = Array.from(lateByEmployee.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    return { currentMonth, current, previous, topLateEmployees };
+  }, [attendance, todayManila]);
+
+  const pendingDisputesCount = disputes.filter((dispute) => dispute.status === 'Pending').length;
+  const pendingLeaveCount = leaveRequests.filter((leave) => leave.status === 'Pending').length;
+
+  const scrollToDashboardSection = (id: string) => {
+    requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  };
+
   return (
     <main className="min-h-screen p-3 sm:p-4 md:p-6 lg:p-8">
       <div className="max-w-7xl mx-auto space-y-3 sm:space-y-4 md:space-y-5">
@@ -1589,11 +1710,61 @@ export default function HRDashboard() {
 
         {errorMsg && <div className="p-3 rounded-xl text-xs font-bold bg-red-50 text-red-700">{errorMsg}</div>}
 
-        {/* Mobile stats */}
-        <div className="grid grid-cols-3 gap-2 lg:hidden">
-          <div className="card-dark flex flex-col items-center justify-center !p-3 text-center"><p className="stat-number text-xl text-white">{profiles.length}</p><p className="text-white/60 text-[9px] font-bold uppercase tracking-widest mt-0.5">Employees</p></div>
-          <div className="card-style flex flex-col items-center justify-center !p-3 text-center"><p className="stat-number text-xl text-green-600">{presentTodayCount}</p><p className="label-branded mt-0.5">Present</p></div>
-          <div className="card-style flex flex-col items-center justify-center !p-3 text-center"><p className="stat-number text-xl text-orange-600">{lateTodayCount}</p><p className="label-branded mt-0.5">Late</p></div>
+        {/* Global employee search + live refresh */}
+        <div className="card-style !p-3 flex flex-col sm:flex-row sm:items-center gap-3 relative z-30">
+          <div className="relative flex-1 min-w-0">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <input
+              type="search"
+              value={globalEmployeeSearch}
+              onChange={(e) => setGlobalEmployeeSearch(e.target.value)}
+              placeholder="Search employee name, ID, or designation..."
+              className="input-field !pl-9 !py-2 !text-xs !min-h-0 w-full"
+            />
+            {globalEmployeeSearch.trim() && (
+              <div className="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden max-h-72 overflow-y-auto z-50">
+                {globalEmployeeMatches.length === 0 ? (
+                  <p className="p-4 text-slate-400 text-xs text-center">No matching employee found.</p>
+                ) : globalEmployeeMatches.map((profile) => (
+                  <button
+                    key={profile.id}
+                    type="button"
+                    onClick={() => { setQuickViewProfile(profile); setGlobalEmployeeSearch(''); }}
+                    className="w-full flex items-center gap-3 p-3 text-left hover:bg-slate-50 border-b border-slate-100 last:border-0 transition"
+                  >
+                    <span className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center text-[10px] font-bold flex-shrink-0">{initials(profile.full_name)}</span>
+                    <span className="min-w-0"><span className="block text-xs font-bold text-slate-900 truncate">{profile.full_name || 'Unknown'}</span><span className="block text-[10px] text-slate-400 truncate">{profile.employee_id || 'No ID'} · {profile.designation || 'No designation'}</span></span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="flex items-center justify-between sm:justify-end gap-3 flex-shrink-0">
+            <span className="text-[10px] text-slate-400 font-medium">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5" />
+              {lastUpdatedAt ? `Updated ${lastUpdatedAt.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}` : 'Loading live data'}
+            </span>
+            <button type="button" onClick={refreshAllData} disabled={refreshing} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold hover:bg-slate-200 disabled:opacity-50 transition">
+              <RefreshCw size={13} className={refreshing ? 'animate-spin' : ''} /> Refresh
+            </button>
+          </div>
+        </div>
+
+        {/* Daily attendance overview */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2.5">
+          {[
+            { label: 'Present', value: presentTodayCount, tone: 'text-emerald-600', icon: <CheckCircle2 size={15}/> },
+            { label: 'Late', value: lateTodayCount, tone: 'text-orange-600', icon: <Clock3 size={15}/> },
+            { label: 'On Leave', value: onLeaveTodayCount, tone: 'text-blue-600', icon: <CalendarClock size={15}/> },
+            { label: 'Not Timed In', value: notYetTimedInToday.length, tone: 'text-amber-600', icon: <AlertTriangle size={15}/> },
+            { label: timeOutReminderActive ? 'Missing Time-Out' : 'Open Shifts', value: openShiftsToday.length, tone: timeOutReminderActive ? 'text-rose-600' : 'text-cyan-600', icon: <Clock3 size={15}/> },
+            { label: 'Completed Shift', value: completedShiftTodayCount, tone: 'text-violet-600', icon: <CheckCircle2 size={15}/> },
+          ].map((stat) => (
+            <div key={stat.label} className="card-style !p-3 flex items-center gap-2.5 min-w-0">
+              <span className={`${stat.tone} flex-shrink-0`}>{stat.icon}</span>
+              <span className="min-w-0"><span className={`stat-number block text-lg leading-none ${stat.tone}`}>{stat.value}</span><span className="block text-slate-400 text-[9px] font-bold uppercase tracking-wide mt-1 truncate">{stat.label}</span></span>
+            </div>
+          ))}
         </div>
 
         {/* MODULES -- compact icon buttons that open their own modal,
@@ -1632,7 +1803,7 @@ export default function HRDashboard() {
             onClick={() => { if (!holidaysOpen) toggleHolidays(); }}
             className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
           >
-            <span className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center flex-shrink-0"><PartyPopper size={18} strokeWidth={2.4}/></span>
+            <span className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center flex-shrink-0"><CalendarRange size={18} strokeWidth={2.4}/></span>
             <span className="min-w-0"><span className="block font-bold text-slate-900 text-xs">Holidays</span><span className="block text-slate-400 text-[10px] mt-0.5">{holidaysLoading ? 'Checking calendar...' : `${upcomingHolidaysCount} upcoming`}</span></span>
           </button>
 
@@ -1644,13 +1815,54 @@ export default function HRDashboard() {
             <span className="w-10 h-10 rounded-2xl bg-violet-50 text-violet-600 flex items-center justify-center flex-shrink-0"><UsersRound size={18} strokeWidth={2.4}/></span>
             <span className="min-w-0"><span className="block font-bold text-slate-900 text-xs">Employees</span><span className="block text-slate-400 text-[10px] mt-0.5">{profiles.length} total</span></span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => { setSelectedCalendarDate(null); setLeaveCalendarOpen(true); }}
+            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
+          >
+            <span className="w-10 h-10 rounded-2xl bg-cyan-50 text-cyan-600 flex items-center justify-center flex-shrink-0"><CalendarRange size={18} strokeWidth={2.4}/></span>
+            <span className="min-w-0"><span className="block font-bold text-slate-900 text-xs">Leave Calendar</span><span className="block text-slate-400 text-[10px] mt-0.5">Approved leaves &amp; holidays</span></span>
+          </button>
         </div>
+
+        {/* Priority action center */}
+        <section id="action-center" className="card-style !p-4 scroll-mt-4">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div>
+              <h3 className="mb-0 text-sm">Action Center</h3>
+              <p className="text-slate-400 text-[10px] mt-0.5">Items that may need HR attention today</p>
+            </div>
+            <span className="text-[10px] font-bold text-slate-500 bg-slate-100 rounded-full px-2.5 py-1">
+              {pendingDisputesCount + pendingLeaveCount + missingTimeOutToday.length + lowLeaveCreditsCount} open
+            </span>
+          </div>
+          {pendingDisputesCount + pendingLeaveCount + missingTimeOutToday.length + lowLeaveCreditsCount === 0 ? (
+            <div className="flex items-center justify-center gap-2 py-5 rounded-2xl border-2 border-dashed border-emerald-100 bg-emerald-50/50 text-emerald-700">
+              <CheckCircle2 size={17}/><span className="text-xs font-bold">All caught up — no pending HR actions.</span>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+              {[
+                { label: 'Pending Disputes', count: pendingDisputesCount, tone: 'text-blue-600 bg-blue-50', action: () => scrollToDashboardSection('attendance-disputes') },
+                { label: 'Leave Requests', count: pendingLeaveCount, tone: 'text-violet-600 bg-violet-50', action: () => scrollToDashboardSection('leave-requests') },
+                { label: 'Missing Time-Out', count: missingTimeOutToday.length, tone: 'text-rose-600 bg-rose-50', action: () => scrollToDashboardSection('missing-time-out') },
+                { label: 'Low Leave Credits', count: lowLeaveCreditsCount, tone: 'text-orange-600 bg-orange-50', action: openLeaveCreditsModal },
+              ].map((item) => (
+                <button key={item.label} type="button" onClick={item.action} className="p-3 rounded-2xl border border-slate-100 bg-slate-50 hover:bg-slate-100 transition text-left">
+                  <span className={`inline-flex min-w-7 h-7 items-center justify-center rounded-full px-2 text-xs font-extrabold ${item.tone}`}>{item.count}</span>
+                  <span className="block text-slate-700 text-[10px] font-bold mt-2">{item.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
 
         {/* Not Yet Timed In Today -- live view, not a permanent Absent tag */}
         {notYetTimedInToday.length > 0 && (
-        <section className="card-style !p-4">
+        <section id="not-yet-timed-in" className="card-style !p-4 scroll-mt-4">
           <h3 className="mb-0 text-sm">
-            Not Timed In
+            Not Yet Timed In Today
             <span className="block text-[10px] font-medium text-red-600 normal-case tracking-normal mt-0.5">
               {notYetTimedInToday.length} employee{notYetTimedInToday.length === 1 ? '' : 's'} — auto-updates as they time in
             </span>
@@ -1672,6 +1884,127 @@ export default function HRDashboard() {
             ))}
           </div>
         </section>
+        )}
+
+        {/* Missing time-out monitoring */}
+        <section id="missing-time-out" className="card-style !p-4 scroll-mt-4">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div>
+              <h3 className="mb-0 text-sm">{timeOutReminderActive ? 'Missing Time-Out' : 'Open Shifts'}</h3>
+              <p className="text-slate-400 text-[10px] mt-0.5">{timeOutReminderActive ? 'Employees who still have no time-out after the configured reminder hour' : `Currently timed in · missing time-out monitoring starts at ${String(timeOutReminderHour).padStart(2, '0')}:00`}</p>
+            </div>
+            <span className={`text-[10px] font-bold rounded-full px-2.5 py-1 ${timeOutReminderActive && openShiftsToday.length ? 'bg-rose-50 text-rose-600' : 'bg-cyan-50 text-cyan-600'}`}>{openShiftsToday.length}</span>
+          </div>
+          {openShiftsToday.length === 0 ? (
+            <div className="flex items-center justify-center gap-2 py-5 rounded-2xl border-2 border-dashed border-emerald-100 bg-emerald-50/40 text-emerald-700"><CheckCircle2 size={16}/><span className="text-xs font-bold">No open shifts right now.</span></div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {openShiftsToday.map((log) => {
+                const timeInLabel = log.time_in ? formatPh(log.time_in) : '-';
+                const hoursOpen = log.time_in ? Math.max(0, (Date.now() - new Date(log.time_in).getTime()) / 3600000) : 0;
+                return (
+                  <button
+                    key={log.id}
+                    type="button"
+                    onClick={() => { setSearchTerm(log.profiles?.full_name || ''); setSelectedDate(todayManila); setCutoffFilter(''); setAttendanceHistoryOpen(true); scrollToDashboardSection('attendance-history'); }}
+                    className={`flex items-center justify-between gap-3 p-3 rounded-xl border transition text-left ${timeOutReminderActive ? 'border-rose-100 bg-rose-50/50 hover:bg-rose-50' : 'border-cyan-100 bg-cyan-50/40 hover:bg-cyan-50'}`}
+                  >
+                    <span className="min-w-0"><span className="block text-xs font-bold text-slate-900 truncate">{log.profiles?.full_name || 'Unknown'}</span><span className="block text-[10px] text-slate-500 mt-0.5">Timed in {timeInLabel}</span></span>
+                    <span className={`text-[10px] font-extrabold flex-shrink-0 ${timeOutReminderActive ? 'text-rose-600' : 'text-cyan-600'}`}>{hoursOpen.toFixed(1)}h open</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* EMPLOYEE QUICK VIEW MODAL */}
+        {quickViewProfile && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/20 backdrop-blur-sm p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) setQuickViewProfile(null); }}>
+            <div className="w-full max-w-xl card-style shadow-2xl max-h-[90vh] flex flex-col !p-4 sm:!p-5" onMouseDown={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between gap-3 mb-4 flex-shrink-0">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="w-11 h-11 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center text-xs font-extrabold overflow-hidden flex-shrink-0">
+                    {initials(quickViewProfile.full_name)}
+                  </span>
+                  <span className="min-w-0"><span className="block text-sm font-bold text-slate-900 truncate">{quickViewProfile.full_name || 'Unknown'}</span><span className="block text-[10px] text-slate-400 truncate">{quickViewProfile.employee_id || 'No ID'} · {quickViewProfile.designation || 'No designation'}</span></span>
+                </div>
+                <button type="button" onClick={() => setQuickViewProfile(null)} className="text-slate-400 hover:text-slate-600" aria-label="Close employee quick view">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              </div>
+
+              <div className="overflow-y-auto flex-1 pr-1 space-y-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-100"><p className="label-branded mb-1">Today</p><p className="text-xs font-bold text-slate-800">{quickViewAttendance.find((log) => log.log_date === todayManila)?.status || 'No record'}</p></div>
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-100"><p className="label-branded mb-1">Time In</p><p className="text-xs font-bold text-slate-800">{quickViewAttendance.find((log) => log.log_date === todayManila)?.time_in ? formatPh(quickViewAttendance.find((log) => log.log_date === todayManila)!.time_in as string) : '-'}</p></div>
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-100"><p className="label-branded mb-1">Employment</p><p className="text-xs font-bold text-slate-800">{quickViewCredits?.employment_status || 'Not set'}</p></div>
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-100"><p className="label-branded mb-1">Leave Credits</p><p className="text-xs font-bold text-slate-800">{quickViewCredits?.employment_status === 'Regular' ? `${(quickViewCredits.total_credits ?? fallbackLeaveCredits) - (quickViewCredits.used_credits ?? 0)} remaining` : 'N/A'}</p></div>
+                </div>
+
+                <div>
+                  <p className="label-branded mb-2">Recent Attendance</p>
+                  {quickViewAttendance.length === 0 ? (
+                    <p className="p-4 text-center text-xs text-slate-400 rounded-xl border-2 border-dashed border-slate-100">No attendance records yet.</p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {quickViewAttendance.map((log) => (
+                        <div key={log.id} className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                          <span className="text-xs font-medium text-slate-700">{log.log_date}</span>
+                          <span className="text-[10px] text-slate-500">{log.time_in ? formatPh(log.time_in) : '-'} → {log.time_out ? formatPh(log.time_out) : 'No time-out'}</span>
+                          <span className={statusTagClass(log.status)}>{log.status || '-'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 mt-4 flex-shrink-0">
+                <button type="button" onClick={() => { const profile = quickViewProfile; if (!profile) return; setQuickViewProfile(null); openProfileChoice(profile); }} className="py-2.5 rounded-full bg-slate-900 text-white text-[10px] font-bold hover:bg-slate-700">Profile</button>
+                <button type="button" onClick={() => { setSearchTerm(quickViewProfile?.full_name || ''); setSelectedDate(''); setCutoffFilter(''); setAttendanceHistoryOpen(true); setQuickViewProfile(null); scrollToDashboardSection('attendance-history'); }} className="py-2.5 rounded-full bg-blue-50 text-blue-600 text-[10px] font-bold hover:bg-blue-100">Attendance</button>
+                <button type="button" onClick={() => { const profile = quickViewProfile; if (!profile) return; setQuickViewProfile(null); openPayslipsModal(profile); }} className="py-2.5 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-bold hover:bg-emerald-100">Payslips</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TEAM LEAVE CALENDAR MODAL */}
+        {leaveCalendarOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) setLeaveCalendarOpen(false); }}>
+            <div className="w-full max-w-4xl card-style shadow-2xl max-h-[92vh] flex flex-col !p-4 sm:!p-5" onMouseDown={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between gap-3 mb-4 flex-shrink-0">
+                <div className="flex items-center gap-2.5"><span className="w-9 h-9 rounded-2xl bg-cyan-50 text-cyan-600 flex items-center justify-center"><CalendarRange size={17}/></span><div><h3 className="mb-0 text-sm">Team Leave Calendar</h3><p className="text-[10px] text-slate-400 mt-0.5">Approved leaves and company holidays</p></div></div>
+                <button type="button" onClick={() => setLeaveCalendarOpen(false)} className="text-slate-400 hover:text-slate-600" aria-label="Close leave calendar"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+              </div>
+              <div className="overflow-y-auto flex-1 pr-1">
+                <div className="flex items-center gap-2 mb-3">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Month</label>
+                  <input type="month" value={leaveCalendarMonth} onChange={(e) => { setLeaveCalendarMonth(e.target.value); setSelectedCalendarDate(null); }} className="input-field !py-1.5 !text-xs !min-h-0 !w-auto" />
+                  <div className="ml-auto flex items-center gap-3 text-[9px] font-bold text-slate-400"><span><i className="inline-block w-2 h-2 rounded-full bg-blue-500 mr-1"/>Leave</span><span><i className="inline-block w-2 h-2 rounded-full bg-rose-500 mr-1"/>Holiday</span></div>
+                </div>
+                <div className="grid grid-cols-7 gap-1 mb-1">{['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((day) => <div key={day} className="text-center text-[9px] font-bold uppercase text-slate-400 py-1">{day}</div>)}</div>
+                <div className="grid grid-cols-7 gap-1">
+                  {Array.from({ length: calendarData.blanks }).map((_, index) => <div key={`blank-${index}`} className="min-h-16 sm:min-h-20" />)}
+                  {calendarData.days.map((day) => (
+                    <button key={day.date} type="button" onClick={() => setSelectedCalendarDate(day.date)} className={`min-h-16 sm:min-h-20 p-1.5 rounded-xl border text-left transition ${selectedCalendarDate === day.date ? 'border-blue-400 bg-blue-50' : day.date === todayManila ? 'border-emerald-300 bg-emerald-50/50' : 'border-slate-100 bg-slate-50 hover:bg-slate-100'}`}>
+                      <span className="block text-[10px] font-bold text-slate-700">{day.day}</span>
+                      <span className="flex gap-1 mt-1 flex-wrap">{day.leaves.length > 0 && <span className="inline-flex min-w-4 h-4 items-center justify-center rounded-full bg-blue-500 text-white text-[8px] font-bold px-1">{day.leaves.length}</span>}{day.holiday && <span className="w-2 h-2 rounded-full bg-rose-500 mt-1"/>}</span>
+                    </button>
+                  ))}
+                </div>
+                {selectedCalendarDay && (
+                  <div className="mt-4 p-3 rounded-2xl border border-slate-100 bg-slate-50">
+                    <p className="text-xs font-bold text-slate-900 mb-2">{new Date(`${selectedCalendarDay.date}T00:00:00`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
+                    {selectedCalendarDay.holiday && <div className="p-2 rounded-xl bg-rose-50 text-rose-700 text-xs font-bold mb-2">Holiday · {selectedCalendarDay.holiday.name}</div>}
+                    {selectedCalendarDay.leaves.length === 0 ? <p className="text-xs text-slate-400">No approved leaves on this date.</p> : <div className="space-y-1.5">{selectedCalendarDay.leaves.map((leave) => <div key={leave.id} className="flex items-center justify-between gap-2 p-2 rounded-xl bg-white border border-slate-100"><span className="text-xs font-bold text-slate-800">{leave.employee?.full_name || 'Unknown'}</span><span className="text-[10px] text-blue-600 font-bold">{leave.leave_type}</span></div>)}</div>}
+                    {selectedCalendarDay.leaves.length >= 3 && <p className="mt-2 text-[10px] font-bold text-orange-600">Coverage warning: {selectedCalendarDay.leaves.length} employees are on leave.</p>}
+                  </div>
+                )}
+              </div>
+              <button type="button" onClick={() => setLeaveCalendarOpen(false)} className="mt-4 w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 flex-shrink-0">Close</button>
+            </div>
+          </div>
         )}
 
         {/* ANNOUNCEMENTS MODULE MODAL */}
@@ -1772,7 +2105,7 @@ export default function HRDashboard() {
         <section className="w-full max-w-2xl card-style shadow-2xl max-h-[90vh] flex flex-col !p-4 sm:!p-5" onMouseDown={(e) => e.stopPropagation()}>
           <div className="flex items-center justify-between gap-2 mb-4 flex-shrink-0">
             <div className="flex items-center gap-2.5">
-              <span className="w-9 h-9 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center"><PartyPopper size={17} strokeWidth={2.4}/></span>
+              <span className="w-9 h-9 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center"><CalendarRange size={17} strokeWidth={2.4}/></span>
               <h3 className="mb-0 text-sm">
               Holidays
               <span className="block text-[10px] font-medium text-slate-400 normal-case tracking-normal mt-0.5">
@@ -1850,7 +2183,7 @@ export default function HRDashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 md:gap-5">
 
         {/* Attendance Disputes */}
-        <section className="card-style !p-4">
+        <section id="attendance-disputes" className="card-style !p-4 scroll-mt-4">
           <h3 className="mb-3 text-sm">Attendance Disputes</h3>
           {disputeMsg && <div className={`p-2.5 rounded-xl text-xs font-bold mb-3 ${disputeMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>{disputeMsg.text}</div>}
           <div className="min-h-[160px]">
@@ -1858,7 +2191,7 @@ export default function HRDashboard() {
             <>
               <p className="label-branded mb-2">Pending</p>
               {disputes.filter((d) => d.status === 'Pending').length === 0
-                ? <p className="text-slate-400 text-xs mb-4">No pending disputes.</p>
+                ? <div className="flex items-center gap-2 p-3 rounded-xl border border-emerald-100 bg-emerald-50/50 text-emerald-700 text-xs font-bold mb-4"><CheckCircle2 size={15}/>All caught up — no pending disputes.</div>
                 : <div className="space-y-2 mb-4">
                     {disputes.filter((d) => d.status === 'Pending').map((d) => (
                       <div
@@ -1901,7 +2234,7 @@ export default function HRDashboard() {
         </section>
 
         {/* Leave Requests */}
-        <section className="card-style !p-4">
+        <section id="leave-requests" className="card-style !p-4 scroll-mt-4">
           <h3 className="mb-3 text-sm">Leave Requests</h3>
           {leaveMsg && <div className={`p-2.5 rounded-xl text-xs font-bold mb-3 ${leaveMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>{leaveMsg.text}</div>}
           <div className="min-h-[160px]">
@@ -1909,7 +2242,7 @@ export default function HRDashboard() {
             <>
               <p className="label-branded mb-2">Pending</p>
               {leaveRequests.filter((l) => l.status === 'Pending').length === 0
-                ? <p className="text-slate-400 text-xs mb-4">No pending leave requests.</p>
+                ? <div className="flex items-center gap-2 p-3 rounded-xl border border-emerald-100 bg-emerald-50/50 text-emerald-700 text-xs font-bold mb-4"><CheckCircle2 size={15}/>All caught up — no pending leave requests.</div>
                 : <div className="space-y-2 mb-4">
                     {leaveRequests.filter((l) => l.status === 'Pending').map((l) => (
                       <div
@@ -2032,7 +2365,7 @@ export default function HRDashboard() {
           )}
 
           {/* Attendance History */}
-          <section className="card-style overflow-hidden !p-0">
+          <section id="attendance-history" className="card-style overflow-hidden !p-0 scroll-mt-4">
             <button
               type="button"
               onClick={() => setAttendanceHistoryOpen((v) => !v)}
@@ -2086,6 +2419,7 @@ export default function HRDashboard() {
               <div className="flex gap-3">
                 {selectedDate !== todayManila && <button onClick={() => { setSelectedDate(todayManila); setCutoffFilter(''); }} className="text-blue-600 font-bold text-xs whitespace-nowrap">Today</button>}
                 {(selectedDate || cutoffFilter) && <button onClick={() => { setSelectedDate(''); setCutoffFilter(''); }} className="text-slate-400 font-bold text-xs whitespace-nowrap">All</button>}
+                {(searchTerm || selectedDate !== todayManila || cutoffFilter) && <button onClick={() => { setSearchTerm(''); setSelectedDate(todayManila); setCutoffFilter(''); setAttendancePage(1); }} className="text-rose-500 font-bold text-xs whitespace-nowrap">Reset Filters</button>}
               </div>
             </div>
             <div className="overflow-x-auto min-h-[260px]">
@@ -2136,6 +2470,41 @@ export default function HRDashboard() {
               )}
             </div>
             </>
+            )}
+          </section>
+
+          {/* Attendance insights */}
+          <section className="card-style overflow-hidden !p-0 mt-3 sm:mt-4 md:mt-5">
+            <button type="button" onClick={() => setAttendanceInsightsOpen((open) => !open)} className="w-full p-4 flex items-center justify-between gap-2 text-left">
+              <div><h3 className="text-sm mb-0">Attendance Insights</h3><p className="text-slate-400 text-[10px] mt-0.5">Current-month trends and repeated lateness</p></div>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`text-slate-400 transition-transform ${attendanceInsightsOpen ? 'rotate-180' : ''}`}><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            {attendanceInsightsOpen && (
+              <div className="px-4 pb-4">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mb-4">
+                  {[
+                    { label: 'Attendance Rate', value: `${attendanceInsights.current.attendanceRate}%`, tone: 'text-emerald-600' },
+                    { label: 'Late Records', value: attendanceInsights.current.late, tone: 'text-orange-600' },
+                    { label: 'Absent Records', value: attendanceInsights.current.absent, tone: 'text-rose-600' },
+                    { label: 'Leave Days', value: attendanceInsights.current.leave, tone: 'text-blue-600' },
+                  ].map((item) => <div key={item.label} className="p-3 rounded-xl bg-slate-50 border border-slate-100"><p className={`stat-number text-xl ${item.tone}`}>{item.value}</p><p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mt-1">{item.label}</p></div>)}
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                  <div className="p-3 rounded-2xl border border-slate-100 bg-slate-50">
+                    <p className="text-xs font-bold text-slate-800 mb-3">Compared with previous month</p>
+                    <div className="space-y-2">
+                      {[['Late', attendanceInsights.current.late, attendanceInsights.previous.late], ['Absent', attendanceInsights.current.absent, attendanceInsights.previous.absent], ['Worked', attendanceInsights.current.worked, attendanceInsights.previous.worked]].map(([label, current, previous]) => {
+                        const delta = Number(current) - Number(previous);
+                        return <div key={String(label)} className="flex items-center justify-between text-xs"><span className="text-slate-500">{label}</span><span className="font-bold text-slate-800">{current} <small className={`${delta > 0 && label !== 'Worked' ? 'text-rose-500' : delta < 0 && label !== 'Worked' ? 'text-emerald-500' : 'text-slate-400'} ml-1`}>{delta === 0 ? '—' : `${delta > 0 ? '+' : ''}${delta}`}</small></span></div>;
+                      })}
+                    </div>
+                  </div>
+                  <div className="p-3 rounded-2xl border border-slate-100 bg-slate-50">
+                    <p className="text-xs font-bold text-slate-800 mb-3">Most late this month</p>
+                    {attendanceInsights.topLateEmployees.length === 0 ? <p className="text-xs text-slate-400">No late records this month.</p> : <div className="space-y-2">{attendanceInsights.topLateEmployees.map(([name, count]) => { const max = attendanceInsights.topLateEmployees[0]?.[1] || 1; return <div key={name}><div className="flex justify-between gap-2 text-[10px] mb-1"><span className="font-bold text-slate-700 truncate">{name}</span><span className="text-orange-600 font-bold">{count}</span></div><div className="h-1.5 rounded-full bg-white overflow-hidden"><div className="h-full bg-orange-400 rounded-full" style={{ width: `${Math.max(8, (count / max) * 100)}%` }}/></div></div>; })}</div>}
+                  </div>
+                </div>
+              </div>
             )}
           </section>
         </div>
