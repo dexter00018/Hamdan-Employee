@@ -1389,7 +1389,6 @@ export default function HRDashboard() {
 
   // Opens the Payslips modal for the selected profile
   const openPayslipsModal = (p: Profile) => {
-    setSelectedProfile(p);
     setPayslipFile(null);
     setPayslipCutoff('');
     setPayslipMsg(null);
@@ -1660,8 +1659,22 @@ export default function HRDashboard() {
     () => attendance.filter((log) => log.time_in && toManilaDateString(log.time_in) === todayManila),
     [attendance, todayManila]
   );
-  const presentTodayCount = todaysLogs.filter((log) => log.status?.toLowerCase() === 'present').length;
-  const lateTodayCount = todaysLogs.filter((l) => l.status?.toLowerCase() === 'late').length;
+  // Present = every employee who has successfully timed in today.
+  // Late is a subset of Present, so late employees remain included here.
+  // Example: 13 on-time + 1 late = 14 Present, while Late still shows 1.
+  const presentTodayCount = useMemo(
+    () => new Set(todaysLogs.map((log) => log.user_id)).size,
+    [todaysLogs]
+  );
+
+  const lateTodayCount = useMemo(
+    () => new Set(
+      todaysLogs
+        .filter((log) => log.status?.toLowerCase() === 'late')
+        .map((log) => log.user_id)
+    ).size,
+    [todaysLogs]
+  );
   const lowLeaveCreditsCount = leaveCreditsData.filter((employee) => {
     if (employee.employment_status !== 'Regular') return false;
     const total = employee.total_credits ?? fallbackLeaveCredits;
@@ -1833,7 +1846,7 @@ export default function HRDashboard() {
   }[dailyOverviewModal] : null;
 
   const dailyOverviewRecords = dailyOverviewModal === 'present'
-    ? todaysLogs.filter((log) => log.status?.toLowerCase() === 'present')
+    ? todaysLogs
     : dailyOverviewModal === 'late'
       ? todaysLogs.filter((log) => log.status?.toLowerCase() === 'late')
       : dailyOverviewModal === 'leave'
@@ -1937,16 +1950,16 @@ export default function HRDashboard() {
           <button
             type="button"
             onClick={openLeaveCreditsModal}
-            className="card-style !p-3 flex items-center gap-2.5 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[66px]"
+            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
           >
-            <span className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center flex-shrink-0"><CalendarClock size={17} strokeWidth={2.4}/></span>
+            <span className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center flex-shrink-0"><CalendarClock size={18} strokeWidth={2.4}/></span>
             <span className="min-w-0"><span className="block font-bold text-slate-900 text-xs">Leave Credits</span><span className={`block text-[10px] mt-0.5 truncate ${lowLeaveCreditsCount > 0 ? 'text-orange-600 font-bold' : 'text-slate-400'}`}>{leaveCreditsLoading ? 'Checking balances...' : lowLeaveCreditsCount > 0 ? `${lowLeaveCreditsCount} low balance${lowLeaveCreditsCount === 1 ? '' : 's'}` : 'Balances healthy'}</span></span>
           </button>
 
           <button
             type="button"
             onClick={() => { setExportModalOpen(true); setExportMsg(null); if (!exportCutoff) setExportCutoff(availableCutoffs[0] || ''); }}
-            className="card-style !p-3 flex items-center gap-2.5 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[66px]"
+            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
           >
             <span className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center flex-shrink-0"><FileDown size={18} strokeWidth={2.4}/></span>
             <span className="min-w-0"><span className="block font-bold text-slate-900 text-xs">Export Reports</span><span className="block text-slate-400 text-[10px] mt-0.5">CSV &amp; PDF</span></span>
@@ -1955,7 +1968,7 @@ export default function HRDashboard() {
           <button
             type="button"
             onClick={() => setAnnouncementOpen(true)}
-            className="card-style !p-3 flex items-center gap-2.5 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[66px]"
+            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
           >
             <span className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0"><Megaphone size={18} strokeWidth={2.4}/></span>
             <span className="min-w-0"><span className="block font-bold text-slate-900 text-xs">Announcements</span><span className="block text-slate-400 text-[10px] mt-0.5 truncate">{announcementModuleLabel}</span></span>
@@ -1964,7 +1977,7 @@ export default function HRDashboard() {
           <button
             type="button"
             onClick={() => { if (!holidaysOpen) toggleHolidays(); }}
-            className="card-style !p-3 flex items-center gap-2.5 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[66px]"
+            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
           >
             <span className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center flex-shrink-0"><CalendarRange size={18} strokeWidth={2.4}/></span>
             <span className="min-w-0"><span className="block font-bold text-slate-900 text-xs">Holidays</span><span className="block text-slate-400 text-[10px] mt-0.5">{holidaysLoading ? 'Checking calendar...' : `${upcomingHolidaysCount} upcoming`}</span></span>
@@ -1972,8 +1985,8 @@ export default function HRDashboard() {
 
           <button
             type="button"
-            onClick={() => { setEmployeesPage(1); setEmployeesListOpen(true); }}
-            className="card-style !p-3 flex items-center gap-2.5 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[66px]"
+            onClick={() => setEmployeesListOpen(true)}
+            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
           >
             <span className="w-10 h-10 rounded-2xl bg-violet-50 text-violet-600 flex items-center justify-center flex-shrink-0"><UsersRound size={18} strokeWidth={2.4}/></span>
             <span className="min-w-0"><span className="block font-bold text-slate-900 text-xs">Employees</span><span className="block text-slate-400 text-[10px] mt-0.5">{profiles.length} total</span></span>
@@ -1982,18 +1995,18 @@ export default function HRDashboard() {
           <button
             type="button"
             onClick={() => { setSelectedCalendarDate(null); setLeaveCalendarOpen(true); }}
-            className="card-style !p-3 flex items-center gap-2.5 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[66px]"
+            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
           >
             <span className="w-10 h-10 rounded-2xl bg-cyan-50 text-cyan-600 flex items-center justify-center flex-shrink-0"><CalendarRange size={18} strokeWidth={2.4}/></span>
             <span className="min-w-0"><span className="block font-bold text-slate-900 text-xs">Leave Calendar</span><span className="block text-slate-400 text-[10px] mt-0.5">Approved leaves &amp; holidays</span></span>
           </button>
 
-          <button type="button" onClick={() => { setHrSupportModalOpen(true); fetchHrSupportRequests(); }} className="card-style !p-3 flex items-center gap-2.5 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[66px]">
+          <button type="button" onClick={() => { setHrSupportModalOpen(true); fetchHrSupportRequests(); }} className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]">
             <span className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center flex-shrink-0 text-base">🎫</span>
             <span className="min-w-0"><span className="block font-bold text-slate-900 text-xs">Help Desk Requests</span><span className={`block text-[10px] mt-0.5 ${openHrSupportCount ? 'text-orange-600 font-bold' : 'text-slate-400'}`}>{openHrSupportCount ? `${openHrSupportCount} open` : 'No open requests'}</span></span>
           </button>
 
-          <button type="button" onClick={() => { setHrDocumentsModalOpen(true); fetchHrDocuments(); }} className="card-style !p-3 flex items-center gap-2.5 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[66px]">
+          <button type="button" onClick={() => { setHrDocumentsModalOpen(true); fetchHrDocuments(); }} className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]">
             <span className="w-10 h-10 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center flex-shrink-0 text-base">📚</span>
             <span className="min-w-0"><span className="block font-bold text-slate-900 text-xs">Employee Documents</span><span className="block text-slate-400 text-[10px] mt-0.5">{activeHrDocumentsCount} published</span></span>
           </button>
@@ -2010,6 +2023,11 @@ export default function HRDashboard() {
               {pendingDisputesCount + pendingLeaveCount + lowLeaveCreditsCount + openHrSupportCount} open
             </span>
           </div>
+          {pendingDisputesCount + pendingLeaveCount + lowLeaveCreditsCount + openHrSupportCount === 0 ? (
+            <div className="flex items-center justify-center gap-2 py-5 rounded-2xl border-2 border-dashed border-emerald-100 bg-emerald-50/50 text-emerald-700">
+              <CheckCircle2 size={17}/><span className="text-xs font-bold">All caught up — no pending HR actions.</span>
+            </div>
+          ) : (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
               {[
                 { label: 'Pending Disputes', count: pendingDisputesCount, tone: 'text-blue-600 bg-blue-50', action: () => scrollToDashboardSection('attendance-disputes') },
@@ -2017,12 +2035,13 @@ export default function HRDashboard() {
                 { label: 'Low Leave Credits', count: lowLeaveCreditsCount, tone: 'text-orange-600 bg-orange-50', action: openLeaveCreditsModal },
                 { label: 'Help Desk Requests', count: openHrSupportCount, tone: 'text-indigo-600 bg-indigo-50', action: () => { setHrSupportModalOpen(true); fetchHrSupportRequests(); } },
               ].map((item) => (
-                <button key={item.label} type="button" onClick={item.action} className="p-2.5 rounded-xl border border-slate-100 bg-slate-50 hover:bg-white hover:-translate-y-0.5 transition text-left flex items-center gap-2.5 min-h-[48px]">
-                  <span className={`inline-flex min-w-7 h-7 items-center justify-center rounded-full px-2 text-xs font-extrabold flex-shrink-0 ${item.tone}`}>{item.count}</span>
-                  <span className="text-slate-700 text-[10px] font-bold leading-tight">{item.label}</span>
+                <button key={item.label} type="button" onClick={item.action} className="p-3 rounded-2xl border border-slate-100 bg-slate-50 hover:bg-slate-100 transition text-left">
+                  <span className={`inline-flex min-w-7 h-7 items-center justify-center rounded-full px-2 text-xs font-extrabold ${item.tone}`}>{item.count}</span>
+                  <span className="block text-slate-700 text-[10px] font-bold mt-2">{item.label}</span>
                 </button>
               ))}
             </div>
+          )}
         </section>
 
         {/* Attendance insights moved near the top for faster daily review. */}
@@ -2041,15 +2060,15 @@ export default function HRDashboard() {
                   { key: 'leave' as const, label: 'Leave Days', value: attendanceInsights.current.leave, tone: 'text-blue-600' },
                 ].map((item) => <button type="button" key={item.key} onClick={() => setAttendanceInsightModal(item.key)} className="p-2 sm:p-2.5 min-h-[54px] rounded-xl bg-slate-50 border border-slate-100 hover:bg-white hover:-translate-y-0.5 transition text-left" aria-label={`View ${item.label}`}><p className={`stat-number text-base sm:text-lg leading-none ${item.tone}`}>{item.value}</p><p className="text-[7px] sm:text-[8px] leading-tight font-extrabold uppercase tracking-tight sm:tracking-wide text-slate-500 mt-1 whitespace-normal">{item.label}</p></button>)}
               </div>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
-                <button type="button" onClick={() => setAttendanceInsightModal('attendance')} className="w-full p-3 rounded-2xl border border-slate-100 bg-slate-50 hover:bg-white hover:-translate-y-0.5 transition text-left">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                <div className="p-3 rounded-2xl border border-slate-100 bg-slate-50">
                   <p className="text-xs font-bold text-slate-800 mb-2">Compared with previous month</p>
                   {[['Late', attendanceInsights.current.late, attendanceInsights.previous.late], ['Absent', attendanceInsights.current.absent, attendanceInsights.previous.absent], ['Worked', attendanceInsights.current.worked, attendanceInsights.previous.worked]].map(([label, current, previous]) => { const delta = Number(current) - Number(previous); return <div key={String(label)} className="flex items-center justify-between text-xs py-1"><span className="text-slate-500">{label}</span><span className="font-bold text-slate-800">{current} <small className="text-slate-400 ml-1">{delta === 0 ? '—' : `${delta > 0 ? '+' : ''}${delta}`}</small></span></div>; })}
-                </button>
-                <button type="button" onClick={() => setAttendanceInsightModal('late')} className="w-full p-3 rounded-2xl border border-slate-100 bg-slate-50 hover:bg-white hover:-translate-y-0.5 transition text-left">
+                </div>
+                <div className="p-3 rounded-2xl border border-slate-100 bg-slate-50">
                   <p className="text-xs font-bold text-slate-800 mb-2">Most late this month</p>
-                  {attendanceInsights.topLateEmployees.length === 0 ? <span className="text-xs text-slate-400">No late records this month.</span> : <span className="grid grid-cols-1 sm:grid-cols-2 gap-x-4">{attendanceInsights.topLateEmployees.map(([name, count]) => <span key={name} className="flex items-center justify-between text-xs py-1 min-w-0"><span className="font-semibold text-slate-600 truncate">{name}</span><span className="font-bold text-orange-600 ml-2">{count}</span></span>)}</span>}
-                </button>
+                  {attendanceInsights.topLateEmployees.length === 0 ? <p className="text-xs text-slate-400">No late records this month.</p> : attendanceInsights.topLateEmployees.map(([name, count]) => <div key={name} className="flex items-center justify-between text-xs py-1"><span className="font-semibold text-slate-600 truncate">{name}</span><span className="font-bold text-orange-600">{count}</span></div>)}
+                </div>
               </div>
             </div>
           )}
@@ -2532,7 +2551,7 @@ export default function HRDashboard() {
               {loadingData && profiles.length === 0 && <LoadingRow label="Loading employees..." />}
               {!loadingData && profiles.length === 0 && <p className="text-slate-400 text-xs">No employees found.</p>}
               {paginatedProfiles.map((p) => (
-                <button key={p.id} onClick={() => openProfileChoice(p)} className="w-full flex items-center gap-2.5 text-left p-2.5 rounded-xl hover:bg-slate-50 border border-slate-100 transition">
+                <button key={p.id} onClick={() => openProfileChoice(p)} className="w-full flex items-center gap-2.5 text-left p-3 rounded-2xl hover:bg-slate-50 border border-slate-100 transition">
                   <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-50 text-blue-600 font-bold text-[10px] flex items-center justify-center overflow-hidden">
                     {p.avatar_url ? (
                       // eslint-disable-next-line @next/next/no-img-element -- external Supabase Storage URL, not a static asset
