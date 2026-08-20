@@ -2658,46 +2658,95 @@ export default function EmployeeDashboard() {
   return (
     <main className="min-h-screen p-3 sm:p-4 md:p-6 lg:p-8">
       <style jsx global>{`
+        /* DARK MODE — neutral dark gray, not pure black. */
         .dark { color-scheme: dark; }
-        .dark body { background-color: #08110c; color: #edf6ef; }
-        .dark .card-style { background: #111c15 !important; border-color: #26372c !important; color: #edf6ef; }
-        .dark .branding-box { background: #142219 !important; border-color: #2b3d31 !important; color: #f4faf5; }
-        .dark .input-field { background: #0d1711 !important; border-color: #34483a !important; color: #f1f7f2 !important; }
-        .dark .input-field::placeholder { color: #8da092 !important; opacity: 1; }
+        .dark body { background-color: #202522; color: #f1f5f2; }
+        .dark .card-style { background: #292f2b !important; border-color: #414944 !important; color: #f1f5f2; }
+        .dark .branding-box { background: #2c332e !important; border-color: #465049 !important; color: #f7faf8; }
+        .dark .input-field { background: #252b27 !important; border-color: #4b554e !important; color: #f7faf8 !important; }
+        .dark .input-field::placeholder { color: #aeb8b1 !important; opacity: 1; }
         .dark input, .dark select, .dark textarea { color-scheme: dark; }
-        .dark .text-slate-900, .dark .text-slate-800 { color: #f1f7f2 !important; }
-        .dark .text-slate-700, .dark .text-slate-600 { color: #d1ddd4 !important; }
-        .dark .text-slate-500 { color: #afbeb3 !important; }
-        .dark .text-slate-400 { color: #99aa9e !important; }
-        .dark .text-slate-300 { color: #7f9285 !important; }
-        .dark .bg-white { background-color: #17241b !important; }
-        .dark .bg-slate-50 { background-color: #142019 !important; }
-        .dark .bg-slate-100 { background-color: #1c2a21 !important; }
-        .dark .bg-slate-200 { background-color: #2b3b30 !important; }
-        .dark .border-slate-100 { border-color: #293b2f !important; }
-        .dark .border-slate-200 { border-color: #34483a !important; }
-        .dark .hover\\:bg-slate-50:hover { background-color: #1a2920 !important; }
-        .dark .hover\\:bg-slate-100:hover { background-color: #223329 !important; }
-        .dark .hover\\:bg-slate-200:hover { background-color: #2b4033 !important; }
-        .dark .bg-green-50 { background-color: rgba(20, 83, 45, .35) !important; }
-        .dark .border-green-100 { border-color: #287044 !important; }
-        .dark .text-green-800, .dark .text-green-700 { color: #bbf7d0 !important; }
-        .dark .text-green-600 { color: #86efac !important; }
-        .dark .bg-blue-50, .dark .bg-sky-50 { background-color: rgba(30, 64, 175, .30) !important; }
-        .dark .border-blue-100, .dark .border-sky-100 { border-color: #315b9b !important; }
-        .dark .text-blue-800, .dark .text-blue-700, .dark .text-blue-600, .dark .text-sky-700, .dark .text-sky-600 { color: #93c5fd !important; }
-        .dark .bg-amber-50, .dark .bg-orange-50 { background-color: rgba(120, 53, 15, .34) !important; }
-        .dark .border-amber-100, .dark .border-orange-100 { border-color: #9a5b22 !important; }
-        .dark .text-amber-800, .dark .text-amber-700, .dark .text-amber-600, .dark .text-orange-700, .dark .text-orange-600 { color: #fcd34d !important; }
-        .dark .bg-red-50, .dark .bg-rose-50 { background-color: rgba(127, 29, 29, .34) !important; }
-        .dark .border-red-100, .dark .border-rose-100 { border-color: #9f3f4b !important; }
-        .dark .text-red-800, .dark .text-red-700, .dark .text-red-600, .dark .text-red-500, .dark .text-rose-800, .dark .text-rose-700, .dark .text-rose-600, .dark .text-rose-500 { color: #fda4af !important; }
-        .dark .bg-purple-50, .dark .bg-violet-50 { background-color: rgba(88, 28, 135, .32) !important; }
-        .dark .border-purple-100, .dark .border-violet-100 { border-color: #7045a0 !important; }
-        .dark .text-purple-700, .dark .text-purple-600, .dark .text-violet-800, .dark .text-violet-600 { color: #d8b4fe !important; }
-        .dark .bg-teal-50 { background-color: rgba(19, 78, 74, .38) !important; }
-        .dark .border-teal-100 { border-color: #317873 !important; }
-        .dark .text-teal-700, .dark .text-teal-600 { color: #99f6e4 !important; }
+
+        .dark .text-slate-950, .dark .text-slate-900, .dark .text-slate-800 { color: #f8faf9 !important; }
+        .dark .text-slate-700, .dark .text-slate-600 { color: #dce3de !important; }
+        .dark .text-slate-500 { color: #bec8c1 !important; }
+        .dark .text-slate-400 { color: #a7b2aa !important; }
+        .dark .text-slate-300 { color: #94a098 !important; }
+
+        .dark .bg-white { background-color: #2d342f !important; }
+        .dark .bg-white\/20 { background-color: rgba(75, 84, 78, .45) !important; }
+        .dark .bg-white\/70, .dark .bg-white\/80, .dark .bg-white\/85, .dark .bg-white\/90, .dark .bg-white\/95 { background-color: rgba(49, 57, 51, .96) !important; }
+        .dark .bg-slate-50, .dark .bg-slate-50\/80 { background-color: #282e2a !important; }
+        .dark .bg-slate-100 { background-color: #333a35 !important; }
+        .dark .bg-slate-100\/90 { background-color: rgba(51, 58, 53, .96) !important; }
+        .dark .bg-slate-300 { background-color: #68726b !important; }
+        .dark .bg-slate-400 { background-color: #7c8780 !important; }
+        .dark .bg-slate-200 { background-color: #444c46 !important; }
+        .dark .bg-slate-900 { background-color: #343a36 !important; }
+        .dark .bg-slate-950 { background-color: #303632 !important; }
+        .dark .border-slate-100 { border-color: #3e4741 !important; }
+        .dark .border-slate-200 { border-color: #4b554e !important; }
+        .dark .border-slate-200\/80 { border-color: rgba(75, 85, 78, .88) !important; }
+        .dark .border-white\/70 { border-color: #505a53 !important; }
+        .dark .border-black\/5 { border-color: #4b554e !important; }
+        .dark .hover\:bg-slate-50:hover { background-color: #343b36 !important; }
+        .dark .hover\:bg-slate-100:hover { background-color: #3b433d !important; }
+        .dark .hover\:bg-slate-200:hover { background-color: #48514a !important; }
+
+        .dark .bg-green-50, .dark .bg-emerald-50 { background-color: #263b2f !important; }
+        .dark .bg-green-100, .dark .bg-emerald-100 { background-color: #31503c !important; }
+        .dark .border-green-100, .dark .border-green-200, .dark .border-emerald-100, .dark .border-emerald-200 { border-color: #4b7458 !important; }
+        .dark .text-green-950, .dark .text-green-900, .dark .text-green-800, .dark .text-green-700,
+        .dark .text-emerald-950, .dark .text-emerald-900, .dark .text-emerald-800, .dark .text-emerald-700 { color: #c8f2d3 !important; }
+        .dark .text-green-600, .dark .text-emerald-600 { color: #8ee6a7 !important; }
+
+        .dark .bg-blue-50, .dark .bg-sky-50 { background-color: #263443 !important; }
+        .dark .bg-sky-50\/40 { background-color: rgba(38, 52, 67, .94) !important; }
+        .dark .bg-blue-100, .dark .bg-sky-100 { background-color: #304760 !important; }
+        .dark .border-blue-100, .dark .border-blue-200, .dark .border-sky-100, .dark .border-sky-200 { border-color: #4b6f94 !important; }
+        .dark .text-blue-950, .dark .text-blue-900, .dark .text-blue-800, .dark .text-blue-700, .dark .text-blue-600,
+        .dark .text-sky-950, .dark .text-sky-900, .dark .text-sky-800, .dark .text-sky-700, .dark .text-sky-600 { color: #c5ddff !important; }
+
+        .dark .bg-amber-50, .dark .bg-orange-50 { background-color: #403525 !important; }
+        .dark .bg-amber-50\/60 { background-color: rgba(64, 53, 37, .96) !important; }
+        .dark .bg-orange-50\/60 { background-color: rgba(64, 53, 37, .96) !important; }
+        .dark .bg-amber-100, .dark .bg-orange-100 { background-color: #57432b !important; }
+        .dark .border-amber-100, .dark .border-amber-200, .dark .border-orange-100, .dark .border-orange-200 { border-color: #84633a !important; }
+        .dark .text-amber-950, .dark .text-amber-900, .dark .text-amber-800, .dark .text-amber-700, .dark .text-amber-600,
+        .dark .text-orange-950, .dark .text-orange-900, .dark .text-orange-800, .dark .text-orange-700, .dark .text-orange-600 { color: #ffe2a3 !important; }
+
+        /* Realtime red alerts: light text on muted dark-red surface. */
+        .dark .bg-red-50, .dark .bg-rose-50 { background-color: #44292b !important; }
+        .dark .bg-red-50\/60 { background-color: rgba(68, 41, 43, .96) !important; }
+        .dark .bg-red-100, .dark .bg-rose-100 { background-color: #5a3034 !important; }
+        .dark .bg-red-200, .dark .bg-rose-200 { background-color: #67373c !important; }
+        .dark .border-red-100, .dark .border-red-200, .dark .border-rose-100, .dark .border-rose-200 { border-color: #8b4d53 !important; }
+        .dark .text-red-950, .dark .text-red-900, .dark .text-red-800, .dark .text-red-700, .dark .text-red-600, .dark .text-red-500,
+        .dark .text-rose-950, .dark .text-rose-900, .dark .text-rose-800, .dark .text-rose-700, .dark .text-rose-600, .dark .text-rose-500 { color: #ffd1d5 !important; }
+
+        .dark .bg-purple-50, .dark .bg-violet-50 { background-color: #382e42 !important; }
+        .dark .bg-purple-100, .dark .bg-violet-100 { background-color: #493758 !important; }
+        .dark .border-purple-100, .dark .border-purple-200, .dark .border-violet-100, .dark .border-violet-200 { border-color: #705885 !important; }
+        .dark .text-purple-950, .dark .text-purple-900, .dark .text-purple-800, .dark .text-purple-700, .dark .text-purple-600,
+        .dark .text-violet-950, .dark .text-violet-900, .dark .text-violet-800, .dark .text-violet-700, .dark .text-violet-600 { color: #ead8ff !important; }
+
+        .dark .bg-teal-50, .dark .bg-cyan-50 { background-color: #263b3a !important; }
+        .dark .border-teal-100, .dark .border-teal-200, .dark .border-cyan-100, .dark .border-cyan-200 { border-color: #4d7774 !important; }
+        .dark .text-teal-950, .dark .text-teal-900, .dark .text-teal-800, .dark .text-teal-700, .dark .text-teal-600,
+        .dark .text-cyan-950, .dark .text-cyan-900, .dark .text-cyan-800, .dark .text-cyan-700, .dark .text-cyan-600 { color: #c6f3ef !important; }
+
+        .dark .employee-notification-unread { background: #29394a !important; border-color: #45617d !important; }
+        .dark .employee-notification-read { background: #2a302c !important; border-color: #414a44 !important; opacity: 1 !important; }
+        .dark .employee-notification-unread .text-slate-900,
+        .dark .employee-notification-read .text-slate-900 { color: #f7faf8 !important; }
+        .dark .employee-notification-unread .text-slate-500,
+        .dark .employee-notification-read .text-slate-500 { color: #c2ccc5 !important; }
+
+        .dark .hover\:bg-red-100:hover, .dark .hover\:bg-rose-100:hover { background-color: #60363a !important; }
+        .dark .hover\:bg-amber-100:hover, .dark .hover\:bg-orange-100:hover { background-color: #604a30 !important; }
+        .dark .hover\:bg-blue-50:hover, .dark .hover\:bg-sky-50:hover { background-color: #31455a !important; }
+        .dark .hover\:bg-emerald-50:hover, .dark .hover\:bg-green-50:hover { background-color: #304a39 !important; }
+
         .dark .tag-present, .dark .tag-late, .dark .tag-absent, .dark .tag-leave, .dark .tag-excused { border: 1px solid currentColor; }
         .dark button:disabled { opacity: .55; }
       `}</style>
@@ -3357,7 +3406,7 @@ export default function EmployeeDashboard() {
             <button
               type="button"
               onClick={() => setSummaryDetailType(null)}
-              className="mt-6 w-full py-3 rounded-full bg-[#edf4ef] text-[#405047] border border-[#dce7df] font-medium text-sm hover:bg-[#e1ece4] hover:text-[#253229] transition flex-shrink-0 dark:bg-[#223027] dark:text-[#dbe7de] dark:border-[#33443a] dark:hover:bg-[#2c3d32] dark:hover:text-[#f2f8f3]"
+              className="mt-6 w-full py-3 rounded-full bg-[#edf4ef] text-[#405047] border border-[#dce7df] font-medium text-sm hover:bg-[#e1ece4] hover:text-[#253229] transition flex-shrink-0 dark:bg-[#323833] dark:text-[#dbe7de] dark:border-[#33443a] dark:hover:bg-[#3c443e] dark:hover:text-[#f2f8f3]"
             >
               Close
             </button>
@@ -3710,7 +3759,7 @@ export default function EmployeeDashboard() {
               ) : (
                 <div className="space-y-3">
                   {payslips.map((p) => (
-                    <div key={p.id} className="flex items-center justify-between gap-3 p-4 bg-[#f8fbf8] rounded-xl border border-[#e0e9e1] dark:bg-[#142019] dark:border-[#25362b]">
+                    <div key={p.id} className="flex items-center justify-between gap-3 p-4 bg-[#f8fbf8] rounded-xl border border-[#e0e9e1] dark:bg-[#2b312d] dark:border-[#25362b]">
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <p className="font-semibold text-[#1f2a23] dark:text-[#edf6ef] text-sm truncate">{p.cutoff_label}</p>
@@ -3726,7 +3775,7 @@ export default function EmployeeDashboard() {
                         <button
                           onClick={() => downloadPayslip(p)}
                           disabled={downloadingId === p.id}
-                          className="flex items-center justify-center gap-1.5 bg-[#e8f1ea] text-[#1f2a23] border border-[#d2e0d5] text-[10px] font-bold px-3 py-2 rounded-full hover:bg-[#dce9df] transition disabled:opacity-50 dark:bg-[#26382c] dark:text-[#eaf3ec] dark:border-[#3a5040] dark:hover:bg-[#304438]"
+                          className="flex items-center justify-center gap-1.5 bg-[#e8f1ea] text-[#1f2a23] border border-[#d2e0d5] text-[10px] font-bold px-3 py-2 rounded-full hover:bg-[#dce9df] transition disabled:opacity-50 dark:bg-[#343b36] dark:text-[#eaf3ec] dark:border-[#3a5040] dark:hover:bg-[#404943]"
                         >
                           {downloadingId === p.id ? <><Spinner size="sm" />Downloading...</> : 'Download'}
                         </button>
@@ -3750,7 +3799,7 @@ export default function EmployeeDashboard() {
             <button
               type="button"
               onClick={() => setPayslipsModalOpen(false)}
-              className="mt-6 w-full py-3 rounded-full bg-[#e8f1ea] text-[#2b3a30] font-semibold text-sm hover:bg-[#dce9df] transition flex-shrink-0 dark:bg-[#26382c] dark:text-[#eaf3ec] dark:hover:bg-[#304438]"
+              className="mt-6 w-full py-3 rounded-full bg-[#e8f1ea] text-[#2b3a30] font-semibold text-sm hover:bg-[#dce9df] transition flex-shrink-0 dark:bg-[#343b36] dark:text-[#eaf3ec] dark:hover:bg-[#404943]"
             >
               Close
             </button>
@@ -4187,7 +4236,7 @@ export default function EmployeeDashboard() {
                       </div>
 
                       {advisory.recommendation && (
-                        <div className="mt-3 rounded-xl bg-slate-950 text-white p-3.5">
+                        <div className="mt-3 rounded-xl bg-slate-950 dark:bg-[#343a36] text-white dark:text-[#f7faf8] border border-transparent dark:border-[#4b554e] p-3.5">
                           <p className="text-[9px] uppercase tracking-wider font-extrabold text-white/60">
                             {isTl ? 'Gawin ngayon' : 'What to do'}
                           </p>
@@ -4291,7 +4340,7 @@ export default function EmployeeDashboard() {
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <p className="label-branded mb-0">Traffic Incidents</p>
-                          <span className="px-2 py-0.5 rounded-full bg-slate-900 text-white text-[9px] font-extrabold">
+                          <span className="px-2 py-0.5 rounded-full bg-slate-900 dark:bg-[#3a413c] text-white text-[9px] font-extrabold border border-transparent dark:border-[#525b54]">
                             {commuteResult.incidents?.length ?? 0} LIVE
                           </span>
                         </div>
@@ -4952,7 +5001,7 @@ export default function EmployeeDashboard() {
                   key={t}
                   type="button"
                   onClick={() => setLeaveForm({ ...leaveForm, leave_type: t })}
-                  className={`py-2.5 rounded-full text-xs font-bold transition border ${leaveForm.leave_type === t ? 'bg-[#17211b] text-white border-[#17211b] dark:bg-[#e5eee7] dark:text-[#17211b] dark:border-[#c9d9cc]' : 'bg-[#eef3ef] text-[#526054] border-transparent hover:bg-[#e2ebe4] dark:bg-[#1f2c24] dark:text-[#c7d5ca] dark:hover:bg-[#29382f]'}`}
+                  className={`py-2.5 rounded-full text-xs font-bold transition border ${leaveForm.leave_type === t ? 'bg-[#17211b] text-white border-[#17211b] dark:bg-[#e5eee7] dark:text-[#17211b] dark:border-[#c9d9cc]' : 'bg-[#eef3ef] text-[#526054] border-transparent hover:bg-[#e2ebe4] dark:bg-[#303631] dark:text-[#c7d5ca] dark:hover:bg-[#29382f]'}`}
                 >
                   {t}
                 </button>
@@ -5072,7 +5121,7 @@ export default function EmployeeDashboard() {
               ) : employeeNotifications.map((notification) => {
                 const isUnread = !readNotificationIds.includes(notification.id);
                 return (
-                  <button key={notification.id} type="button" onClick={() => openNotificationTarget(notification)} className={`w-full text-left p-3 rounded-xl border transition ${isUnread ? 'bg-blue-50 border-blue-100' : 'bg-slate-50 border-slate-100 opacity-75'}`}>
+                  <button key={notification.id} type="button" onClick={() => openNotificationTarget(notification)} className={`w-full text-left p-3 rounded-xl border transition ${isUnread ? 'employee-notification-unread bg-blue-50 border-blue-100' : 'employee-notification-read bg-slate-50 border-slate-100 opacity-75'}`}>
                     <div className="flex items-start gap-2">
                       <span className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${isUnread ? 'bg-blue-500' : 'bg-slate-300'}`} />
                       <div className="min-w-0 flex-1">
