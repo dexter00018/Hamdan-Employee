@@ -58,6 +58,16 @@ type CommutePoint = {
   lon: number;
 };
 
+type AddressSuggestion = {
+  id: string;
+  name: string;
+  address: string;
+  municipality: string;
+  latitude: number;
+  longitude: number;
+  type: string;
+};
+
 type CommuteCheckResult = {
   success: boolean;
   origin: CommutePoint;
@@ -701,6 +711,149 @@ export default function EmployeeDashboard() {
   const [commuteError, setCommuteError] = useState<string | null>(null);
   const [commuteResult, setCommuteResult] = useState<CommuteCheckResult | null>(null);
   const [commuteLanguage, setCommuteLanguage] = useState<'auto' | 'en' | 'tl'>('auto');
+  const [originSuggestions, setOriginSuggestions] = useState<AddressSuggestion[]>([]);
+  const [destinationSuggestions, setDestinationSuggestions] = useState<AddressSuggestion[]>([]);
+  const [selectedOriginAddress, setSelectedOriginAddress] = useState<AddressSuggestion | null>(null);
+  const [selectedDestinationAddress, setSelectedDestinationAddress] = useState<AddressSuggestion | null>(null);
+  const [originSearchLoading, setOriginSearchLoading] = useState(false);
+  const [destinationSearchLoading, setDestinationSearchLoading] = useState(false);
+  const [showOriginSuggestions, setShowOriginSuggestions] = useState(false);
+  const [showDestinationSuggestions, setShowDestinationSuggestions] = useState(false);
+  const originSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const destinationSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const fetchAddressSuggestions = async (
+    query: string,
+    kind: 'origin' | 'destination'
+  ) => {
+    const trimmed = query.trim();
+
+    if (trimmed.length < 3) {
+      if (kind === 'origin') {
+        setOriginSuggestions([]);
+        setOriginSearchLoading(false);
+      } else {
+        setDestinationSuggestions([]);
+        setDestinationSearchLoading(false);
+      }
+      return;
+    }
+
+    if (kind === 'origin') {
+      setOriginSearchLoading(true);
+    } else {
+      setDestinationSearchLoading(true);
+    }
+
+    try {
+      const response = await fetch(
+        `/api/address-search?q=${encodeURIComponent(trimmed)}`,
+        { cache: 'no-store' }
+      );
+
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Unable to search addresses.');
+      }
+
+      const rawResults = Array.isArray(payload?.results)
+        ? payload.results
+        : [];
+
+      // Remove exact duplicate Photon results so React does not render
+      // identical address cards with the same identity.
+      const seen = new Set<string>();
+      const results = rawResults.filter((place: AddressSuggestion) => {
+        const key = [
+          String(place?.id ?? ''),
+          Number(place?.latitude ?? 0).toFixed(6),
+          Number(place?.longitude ?? 0).toFixed(6),
+          String(place?.address ?? '').trim().toLowerCase(),
+        ].join('|');
+
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      if (kind === 'origin') {
+        setOriginSuggestions(results);
+        setShowOriginSuggestions(true);
+      } else {
+        setDestinationSuggestions(results);
+        setShowDestinationSuggestions(true);
+      }
+    } catch (error) {
+      console.error('Address autocomplete error:', error);
+
+      if (kind === 'origin') {
+        setOriginSuggestions([]);
+      } else {
+        setDestinationSuggestions([]);
+      }
+    } finally {
+      if (kind === 'origin') {
+        setOriginSearchLoading(false);
+      } else {
+        setDestinationSearchLoading(false);
+      }
+    }
+  };
+
+  const scheduleAddressSearch = (
+    query: string,
+    kind: 'origin' | 'destination'
+  ) => {
+    const timer =
+      kind === 'origin'
+        ? originSearchTimer
+        : destinationSearchTimer;
+
+    if (timer.current) {
+      clearTimeout(timer.current);
+    }
+
+    if (query.trim().length < 3) {
+      if (kind === 'origin') {
+        setOriginSuggestions([]);
+        setShowOriginSuggestions(false);
+      } else {
+        setDestinationSuggestions([]);
+        setShowDestinationSuggestions(false);
+      }
+      return;
+    }
+
+    timer.current = setTimeout(() => {
+      fetchAddressSuggestions(query, kind);
+    }, 350);
+  };
+
+  const selectAddressSuggestion = (
+    suggestion: AddressSuggestion,
+    kind: 'origin' | 'destination'
+  ) => {
+    // Keep the human-readable address for the input, but preserve the
+    // selected Photon coordinates separately. The commute workflow will use
+    // the coordinates directly instead of trying to geocode this text again.
+    const exactAddress =
+      suggestion.address ||
+      [suggestion.name, suggestion.municipality].filter(Boolean).join(', ') ||
+      suggestion.name;
+
+    if (kind === 'origin') {
+      setCommuteOrigin(exactAddress);
+      setSelectedOriginAddress(suggestion);
+      setOriginSuggestions([]);
+      setShowOriginSuggestions(false);
+    } else {
+      setCommuteDestination(exactAddress);
+      setSelectedDestinationAddress(suggestion);
+      setDestinationSuggestions([]);
+      setShowDestinationSuggestions(false);
+    }
+  };
 
   const fetchWeatherAdvisory = async () => {
     setWeatherLoading(true);
@@ -728,6 +881,12 @@ export default function EmployeeDashboard() {
   const openCommuteChecker = () => {
     setCommuteError(null);
     setCommuteResult(null);
+    setOriginSuggestions([]);
+    setDestinationSuggestions([]);
+    setSelectedOriginAddress(null);
+    setSelectedDestinationAddress(null);
+    setShowOriginSuggestions(false);
+    setShowDestinationSuggestions(false);
     setCommuteDestination((current) => current || weatherAdvisory?.location_name || 'Makati City');
     setCommuteModalOpen(true);
   };
@@ -739,7 +898,23 @@ export default function EmployeeDashboard() {
     }
     setCommuteError(null);
     navigator.geolocation.getCurrentPosition(
-      (position) => setCommuteOrigin(`${position.coords.latitude.toFixed(6)},${position.coords.longitude.toFixed(6)}`),
+      (position) => {
+        const latitude = Number(position.coords.latitude);
+        const longitude = Number(position.coords.longitude);
+
+        setCommuteOrigin(`${latitude.toFixed(6)},${longitude.toFixed(6)}`);
+        setSelectedOriginAddress({
+          id: `browser-geolocation-${latitude}-${longitude}`,
+          name: 'Current location',
+          address: `${latitude.toFixed(6)},${longitude.toFixed(6)}`,
+          municipality: '',
+          latitude,
+          longitude,
+          type: 'geolocation',
+        });
+        setOriginSuggestions([]);
+        setShowOriginSuggestions(false);
+      },
       () => setCommuteError('Unable to read your current location. You can type your starting place instead.'),
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
     );
@@ -757,7 +932,23 @@ export default function EmployeeDashboard() {
       const response = await fetch('/api/commute-check', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ origin: commuteOrigin.trim(), destination: commuteDestination.trim(), language: commuteLanguage }),
+        body: JSON.stringify({
+          origin: commuteOrigin.trim(),
+          destination: commuteDestination.trim(),
+          language: commuteLanguage,
+          origin_position: selectedOriginAddress
+            ? {
+                lat: selectedOriginAddress.latitude,
+                lon: selectedOriginAddress.longitude,
+              }
+            : null,
+          destination_position: selectedDestinationAddress
+            ? {
+                lat: selectedDestinationAddress.latitude,
+                lon: selectedDestinationAddress.longitude,
+              }
+            : null,
+        }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.error || 'Unable to check this route.');
@@ -3525,16 +3716,151 @@ export default function EmployeeDashboard() {
             </div>
 
             <div className="grid sm:grid-cols-2 gap-3">
-              <div>
+              <div className="relative">
                 <label className="label-branded">From</label>
                 <div className="flex gap-2">
-                  <input value={commuteOrigin} onChange={(e) => setCommuteOrigin(e.target.value)} className="input-field flex-1" placeholder="e.g. Ayala, Makati" />
-                  <button type="button" onClick={useCurrentLocationForCommute} className="px-3 rounded-2xl bg-slate-100 text-slate-700 text-xs font-bold hover:bg-slate-200 transition" title="Use current location">◎</button>
+                  <div className="relative flex-1">
+                    <input
+                      value={commuteOrigin}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setCommuteOrigin(value);
+                        setSelectedOriginAddress(null);
+                        setCommuteResult(null);
+                        setShowOriginSuggestions(true);
+                        scheduleAddressSearch(value, 'origin');
+                      }}
+                      onFocus={() => {
+                        if (originSuggestions.length > 0) {
+                          setShowOriginSuggestions(true);
+                        } else if (commuteOrigin.trim().length >= 3) {
+                          scheduleAddressSearch(commuteOrigin, 'origin');
+                        }
+                      }}
+                      onBlur={() => {
+                        window.setTimeout(() => {
+                          setShowOriginSuggestions(false);
+                        }, 180);
+                      }}
+                      autoComplete="off"
+                      className="input-field w-full"
+                      placeholder="Type an exact address..."
+                    />
+
+                    {originSearchLoading && (
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                        <Spinner size="sm" />
+                      </div>
+                    )}
+
+                    {showOriginSuggestions && originSuggestions.length > 0 && (
+                      <div className="absolute left-0 right-0 top-full z-[100] mt-1.5 max-h-64 overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl">
+                        {originSuggestions.map((place, index) => (
+                          <button
+                            key={`origin-${place.id}-${place.latitude}-${place.longitude}-${index}`}
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => selectAddressSuggestion(place, 'origin')}
+                            className="w-full px-3.5 py-3 text-left border-b border-slate-100 last:border-b-0 hover:bg-slate-50 transition"
+                          >
+                            <div className="flex items-start gap-2.5">
+                              <span className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-emerald-50 text-xs">
+                                📍
+                              </span>
+                              <div className="min-w-0">
+                                <p className="text-xs font-extrabold text-slate-900 truncate">
+                                  {place.name}
+                                </p>
+                                {place.address && (
+                                  <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
+                                    {place.address}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={useCurrentLocationForCommute}
+                    className="px-3 rounded-2xl bg-slate-100 text-slate-700 text-xs font-bold hover:bg-slate-200 transition"
+                    title="Use current location"
+                  >
+                    ◎
+                  </button>
                 </div>
               </div>
-              <div>
+
+              <div className="relative">
                 <label className="label-branded">To</label>
-                <input value={commuteDestination} onChange={(e) => setCommuteDestination(e.target.value)} className="input-field" placeholder="e.g. Buendia, Makati" />
+                <div className="relative">
+                  <input
+                    value={commuteDestination}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setCommuteDestination(value);
+                      setSelectedDestinationAddress(null);
+                      setCommuteResult(null);
+                      setShowDestinationSuggestions(true);
+                      scheduleAddressSearch(value, 'destination');
+                    }}
+                    onFocus={() => {
+                      if (destinationSuggestions.length > 0) {
+                        setShowDestinationSuggestions(true);
+                      } else if (commuteDestination.trim().length >= 3) {
+                        scheduleAddressSearch(commuteDestination, 'destination');
+                      }
+                    }}
+                    onBlur={() => {
+                      window.setTimeout(() => {
+                        setShowDestinationSuggestions(false);
+                      }, 180);
+                    }}
+                    autoComplete="off"
+                    className="input-field w-full"
+                    placeholder="Type an exact address..."
+                  />
+
+                  {destinationSearchLoading && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                      <Spinner size="sm" />
+                    </div>
+                  )}
+
+                  {showDestinationSuggestions && destinationSuggestions.length > 0 && (
+                    <div className="absolute left-0 right-0 top-full z-[100] mt-1.5 max-h-64 overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl">
+                      {destinationSuggestions.map((place, index) => (
+                        <button
+                          key={`destination-${place.id}-${place.latitude}-${place.longitude}-${index}`}
+                          type="button"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => selectAddressSuggestion(place, 'destination')}
+                          className="w-full px-3.5 py-3 text-left border-b border-slate-100 last:border-b-0 hover:bg-slate-50 transition"
+                        >
+                          <div className="flex items-start gap-2.5">
+                            <span className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-emerald-50 text-xs">
+                              📍
+                            </span>
+                            <div className="min-w-0">
+                              <p className="text-xs font-extrabold text-slate-900 truncate">
+                                {place.name}
+                              </p>
+                              {place.address && (
+                                <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
+                                  {place.address}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 

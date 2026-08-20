@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 // app/api/commute-check/route.ts
-// Proxies the Employee commute request to n8n so the private webhook URL
-// and x-commute-secret never need to be exposed in the browser.
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,6 +16,20 @@ export async function POST(request: NextRequest) {
       requestedLanguage === 'auto'
         ? requestedLanguage
         : 'auto';
+
+    const normalizePosition = (value: any) => {
+      const lat = Number(value?.lat);
+      const lon = Number(value?.lon);
+
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+        return null;
+      }
+
+      return { lat, lon };
+    };
+
+    const originPosition = normalizePosition(body?.origin_position);
+    const destinationPosition = normalizePosition(body?.destination_position);
 
     if (!origin || !destination) {
       return NextResponse.json(
@@ -52,22 +64,21 @@ export async function POST(request: NextRequest) {
           origin,
           destination,
           language,
+          origin_position: originPosition,
+          destination_position: destinationPosition,
         }),
         signal: controller.signal,
         cache: 'no-store',
       });
 
-      const text = await n8nResponse.text();
+      const raw = await n8nResponse.text();
 
       let payload: any = {};
-
       try {
-        payload = text ? JSON.parse(text) : {};
+        payload = raw ? JSON.parse(raw) : {};
       } catch {
         payload = {
-          error:
-            text ||
-            'Invalid response from commute workflow.',
+          error: raw || 'Invalid response from commute workflow.',
         };
       }
 
@@ -84,9 +95,7 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json(payload, {
         status: 200,
-        headers: {
-          'Cache-Control': 'no-store',
-        },
+        headers: { 'Cache-Control': 'no-store' },
       });
     } finally {
       clearTimeout(timeout);
@@ -94,10 +103,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     if (error?.name === 'AbortError') {
       return NextResponse.json(
-        {
-          error:
-            'Traffic service timed out. Please try again.',
-        },
+        { error: 'Traffic service timed out. Please try again.' },
         { status: 504 }
       );
     }
@@ -105,10 +111,7 @@ export async function POST(request: NextRequest) {
     console.error('Commute check API error:', error);
 
     return NextResponse.json(
-      {
-        error:
-          'Unable to check the route right now.',
-      },
+      { error: 'Unable to check the route right now.' },
       { status: 500 }
     );
   }
