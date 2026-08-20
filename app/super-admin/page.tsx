@@ -939,143 +939,277 @@ export default function SuperAdminDashboard() {
   return (
     <main className="min-h-screen p-3 sm:p-4 md:p-6 lg:p-8">
       <div className="max-w-7xl mx-auto space-y-3 sm:space-y-4 md:space-y-5">
-        {/* BRANDING HEADER */}
-        <header className="branding-box flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 !p-3 sm:!p-4">
-          <div>
-            <h1 className="text-base sm:text-lg md:text-2xl leading-tight">HAMDAN ENGINEERING</h1>
-            <p className="text-slate-400 text-[9px] sm:text-[10px] font-bold uppercase tracking-widest mt-0.5">
-              Super Admin Portal
-            </p>
-          </div>
+        {/* SUPER ADMIN HEADER — aligned with HR / Employee hierarchy */}
+        <header className="branding-box !p-4 sm:!p-5">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-start gap-3 min-w-0">
+              <div className="w-11 h-11 rounded-2xl bg-slate-950 text-white flex items-center justify-center text-lg flex-shrink-0 shadow-sm">
+                🛡️
+              </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="text-base sm:text-lg md:text-xl leading-tight">HAMDAN ENGINEERING</h1>
+                  <span className="px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 text-[8px] font-extrabold uppercase tracking-wider">
+                    Super Admin
+                  </span>
+                </div>
+                <p className="text-slate-400 text-[10px] font-medium mt-1">
+                  Manage workforce access, shared HR rules, security, and system operations.
+                </p>
+              </div>
+            </div>
 
-          <button
-            onClick={() =>
-              supabase.auth.signOut().then(() => (window.location.href = '/'))
-            }
-            className="text-slate-500 font-medium text-xs hover:text-red-600 transition whitespace-nowrap"
-            type="button"
-          >
-            Log Out
-          </button>
+            <div className="flex items-center gap-2 sm:flex-shrink-0">
+              <button
+                type="button"
+                onClick={openHealthModal}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-700 text-[10px] font-extrabold hover:bg-emerald-100 transition"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                System status
+              </button>
+              <button
+                onClick={() =>
+                  supabase.auth.signOut().then(() => (window.location.href = '/'))
+                }
+                className="px-3 py-2 rounded-xl bg-slate-100 text-slate-600 font-bold text-[10px] hover:bg-red-50 hover:text-red-600 transition"
+                type="button"
+              >
+                Log Out
+              </button>
+            </div>
+          </div>
         </header>
 
         {message && (
           <div
-            className={`p-4 rounded-2xl text-sm font-bold ${
+            className={`p-3.5 rounded-2xl text-xs font-bold border ${
               message.type === 'success'
-                ? 'bg-green-50 text-green-700'
-                : 'bg-red-50 text-red-700'
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                : 'bg-red-50 text-red-700 border-red-100'
             }`}
           >
             {message.text}
           </div>
         )}
 
-        {/* QUICK STATS */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-          <div className="card-dark flex flex-col items-center justify-center !p-4 md:!p-6 text-center">
-            <p className="stat-number text-2xl md:text-3xl text-white">{totalAccounts}</p>
-            <p className="text-white/60 text-[10px] font-bold uppercase tracking-widest mt-1">Total Accounts</p>
+        {/* ADMIN OVERVIEW */}
+        <section className="space-y-2.5">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <p className="text-[9px] uppercase tracking-[0.18em] font-extrabold text-slate-400">
+                Administration overview
+              </p>
+              <h2 className="text-sm sm:text-base font-extrabold text-slate-900 mt-0.5">
+                Workforce & access
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={openUserAccountsModal}
+              className="text-[9px] font-extrabold text-slate-500 hover:text-slate-900 transition"
+            >
+              View accounts →
+            </button>
           </div>
-          <div className="card-style flex flex-col items-center justify-center !p-4 md:!p-6 text-center">
-            <p className="stat-number text-2xl md:text-3xl text-sky-600">{totalEmployeesCount}</p>
-            <p className="label-branded mt-1">Employees</p>
+
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
+            <button
+              type="button"
+              onClick={openUserAccountsModal}
+              className="card-dark !p-3.5 sm:!p-4 flex items-center gap-3 text-left hover:-translate-y-0.5 transition"
+            >
+              <span className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center text-base flex-shrink-0">👥</span>
+              <span className="min-w-0">
+                <span className="stat-number text-xl sm:text-2xl text-white block leading-none">{totalAccounts}</span>
+                <span className="text-white/60 text-[8px] sm:text-[9px] font-extrabold uppercase tracking-wide block mt-1">Total Accounts</span>
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={openUserAccountsModal}
+              className="card-style !p-3.5 sm:!p-4 flex items-center gap-3 text-left hover:bg-sky-50/50 hover:-translate-y-0.5 transition"
+            >
+              <span className="w-9 h-9 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center text-base flex-shrink-0">🧑‍💼</span>
+              <span className="min-w-0">
+                <span className="stat-number text-xl sm:text-2xl text-sky-600 block leading-none">{totalEmployeesCount}</span>
+                <span className="text-slate-500 text-[8px] sm:text-[9px] font-extrabold uppercase tracking-wide block mt-1">Employees</span>
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={openUserAccountsModal}
+              className="card-style !p-3.5 sm:!p-4 flex items-center gap-3 text-left hover:bg-violet-50/50 hover:-translate-y-0.5 transition"
+            >
+              <span className="w-9 h-9 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center text-base flex-shrink-0">🧑‍💻</span>
+              <span className="min-w-0">
+                <span className="stat-number text-xl sm:text-2xl text-violet-600 block leading-none">{totalAdmins}</span>
+                <span className="text-slate-500 text-[8px] sm:text-[9px] font-extrabold uppercase tracking-wide block mt-1">HR Admins</span>
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={openUserAccountsModal}
+              className="card-style !p-3.5 sm:!p-4 flex items-center gap-3 text-left hover:bg-amber-50/50 hover:-translate-y-0.5 transition"
+            >
+              <span className={`w-9 h-9 rounded-xl flex items-center justify-center text-base flex-shrink-0 ${
+                incompleteProfilesCount ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'
+              }`}>
+                {incompleteProfilesCount ? '⚠️' : '✓'}
+              </span>
+              <span className="min-w-0">
+                <span className={`stat-number text-xl sm:text-2xl block leading-none ${
+                  incompleteProfilesCount ? 'text-amber-600' : 'text-emerald-600'
+                }`}>{incompleteProfilesCount}</span>
+                <span className="text-slate-500 text-[8px] sm:text-[9px] font-extrabold uppercase tracking-wide block mt-1">Incomplete</span>
+              </span>
+            </button>
           </div>
-          <div className="card-style flex flex-col items-center justify-center !p-4 md:!p-6 text-center">
-            <p className="stat-number text-2xl md:text-3xl text-purple-600">{totalAdmins}</p>
-            <p className="label-branded mt-1">HR Admins</p>
+        </section>
+
+        {/* PRIMARY MANAGEMENT — mirrors HR / Employee module hierarchy */}
+        <section className="card-style !p-3.5 sm:!p-4">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div>
+              <p className="text-[9px] uppercase tracking-[0.18em] font-extrabold text-slate-400">
+                Primary management
+              </p>
+              <h2 className="text-sm font-extrabold text-slate-900 mt-0.5">
+                People, attendance & shared rules
+              </h2>
+            </div>
+            <span className="hidden sm:inline-flex px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[8px] font-extrabold">
+              HR + Employee aligned
+            </span>
           </div>
-          <button type="button" onClick={openUserAccountsModal} className="card-style flex flex-col items-center justify-center !p-4 md:!p-6 text-center hover:bg-slate-50 transition">
-            <p className={`stat-number text-2xl md:text-3xl ${incompleteProfilesCount ? 'text-orange-600' : 'text-emerald-600'}`}>{incompleteProfilesCount}</p>
-            <p className="label-branded mt-1">Incomplete Profiles</p>
-          </button>
-        </div>
 
-        {/* ACTION GRID -- every management area is a compact icon button
-            that opens its own modal, instead of an always-expanded or
-            accordion-style card. Keeps the dashboard short and tidy. */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-          <button
-            type="button"
-            onClick={openCreateAccountModal}
-            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
-          >
-            <span className="w-10 h-10 rounded-2xl bg-sky-50 flex items-center justify-center text-lg flex-shrink-0">➕</span>
-            <span><span className="block font-bold text-slate-900 text-xs">Create New Account</span><span className="block text-slate-400 text-[10px] mt-0.5">Employee or HR access</span></span>
-          </button>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5">
+            <button
+              type="button"
+              onClick={openCreateAccountModal}
+              className="rounded-2xl border border-slate-200 bg-white p-3 flex items-center gap-3 text-left hover:bg-sky-50/60 hover:border-sky-100 hover:-translate-y-0.5 transition min-h-[72px]"
+            >
+              <span className="w-10 h-10 rounded-2xl bg-sky-50 flex items-center justify-center text-lg flex-shrink-0">➕</span>
+              <span className="min-w-0">
+                <span className="block font-extrabold text-slate-900 text-xs">Create Account</span>
+                <span className="block text-slate-400 text-[9px] mt-1">Employee or HR access</span>
+              </span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => { setResetEmail(''); setResetPasswordMsg(null); setResetPasswordModalOpen(true); }}
-            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
-          >
-            <span className="w-10 h-10 rounded-2xl bg-amber-50 flex items-center justify-center text-lg flex-shrink-0">🔑</span>
-            <span><span className="block font-bold text-slate-900 text-xs">Reset Password</span><span className="block text-slate-400 text-[10px] mt-0.5">Send a secure reset link</span></span>
-          </button>
+            <button
+              type="button"
+              onClick={openUserAccountsModal}
+              className="rounded-2xl border border-slate-200 bg-white p-3 flex items-center gap-3 text-left hover:bg-blue-50/60 hover:border-blue-100 hover:-translate-y-0.5 transition min-h-[72px]"
+            >
+              <span className="w-10 h-10 rounded-2xl bg-blue-50 flex items-center justify-center text-lg flex-shrink-0">👥</span>
+              <span className="min-w-0">
+                <span className="block font-extrabold text-slate-900 text-xs">User Accounts</span>
+                <span className="block text-slate-400 text-[9px] mt-1">Roles, profile details & access</span>
+              </span>
+            </button>
 
-          <button
-            type="button"
-            onClick={openUserAccountsModal}
-            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
-          >
-            <span className="w-10 h-10 rounded-2xl bg-blue-50 flex items-center justify-center text-lg flex-shrink-0">👥</span>
-            <span><span className="block font-bold text-slate-900 text-xs">User Accounts</span><span className="block text-slate-400 text-[10px] mt-0.5">{totalAccounts} total accounts</span></span>
-          </button>
+            <button
+              type="button"
+              onClick={openAttendanceRecordsModal}
+              className="rounded-2xl border border-slate-200 bg-white p-3 flex items-center gap-3 text-left hover:bg-emerald-50/60 hover:border-emerald-100 hover:-translate-y-0.5 transition min-h-[72px]"
+            >
+              <span className="w-10 h-10 rounded-2xl bg-emerald-50 flex items-center justify-center text-lg flex-shrink-0">📋</span>
+              <span className="min-w-0">
+                <span className="block font-extrabold text-slate-900 text-xs">Attendance Records</span>
+                <span className="block text-slate-400 text-[9px] mt-1">Review & correct employee logs</span>
+              </span>
+            </button>
 
-          <button
-            type="button"
-            onClick={openAttendanceRecordsModal}
-            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
-          >
-            <span className="w-10 h-10 rounded-2xl bg-emerald-50 flex items-center justify-center text-lg flex-shrink-0">📋</span>
-            <span><span className="block font-bold text-slate-900 text-xs">Attendance Records</span><span className="block text-slate-400 text-[10px] mt-0.5">Review and correct logs</span></span>
-          </button>
+            <button
+              type="button"
+              onClick={openAppSettingsModal}
+              className="rounded-2xl border border-slate-200 bg-white p-3 flex items-center gap-3 text-left hover:bg-orange-50/60 hover:border-orange-100 hover:-translate-y-0.5 transition min-h-[72px]"
+            >
+              <span className="w-10 h-10 rounded-2xl bg-orange-50 flex items-center justify-center text-lg flex-shrink-0">⚙️</span>
+              <span className="min-w-0">
+                <span className="block font-extrabold text-slate-900 text-xs">Shared App Settings</span>
+                <span className="block text-slate-400 text-[9px] mt-1">Rules used by HR & Employee</span>
+              </span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setArchivalModalOpen(true)}
-            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
-          >
-            <span className="w-10 h-10 rounded-2xl bg-slate-100 flex items-center justify-center text-lg flex-shrink-0">🗃️</span>
-            <span><span className="block font-bold text-slate-900 text-xs">Data Archival</span><span className="block text-slate-400 text-[10px] mt-0.5">Move records older than a year</span></span>
-          </button>
+            <button
+              type="button"
+              onClick={() => { setResetEmail(''); setResetPasswordMsg(null); setResetPasswordModalOpen(true); }}
+              className="rounded-2xl border border-slate-200 bg-white p-3 flex items-center gap-3 text-left hover:bg-amber-50/60 hover:border-amber-100 hover:-translate-y-0.5 transition min-h-[72px]"
+            >
+              <span className="w-10 h-10 rounded-2xl bg-amber-50 flex items-center justify-center text-lg flex-shrink-0">🔑</span>
+              <span className="min-w-0">
+                <span className="block font-extrabold text-slate-900 text-xs">Password Reset</span>
+                <span className="block text-slate-400 text-[9px] mt-1">Secure account recovery</span>
+              </span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setBackupModalOpen(true)}
-            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
-          >
-            <span className="w-10 h-10 rounded-2xl bg-slate-100 flex items-center justify-center text-lg flex-shrink-0">🗄️</span>
-            <span><span className="block font-bold text-slate-900 text-xs">Database Backup</span><span className="block text-slate-400 text-[10px] mt-0.5">Create an off-site copy</span></span>
-          </button>
+            <button
+              type="button"
+              onClick={openAuditLogModal}
+              className="rounded-2xl border border-slate-200 bg-white p-3 flex items-center gap-3 text-left hover:bg-indigo-50/60 hover:border-indigo-100 hover:-translate-y-0.5 transition min-h-[72px]"
+            >
+              <span className="w-10 h-10 rounded-2xl bg-indigo-50 flex items-center justify-center text-lg flex-shrink-0">📜</span>
+              <span className="min-w-0">
+                <span className="block font-extrabold text-slate-900 text-xs">Audit Log</span>
+                <span className="block text-slate-400 text-[9px] mt-1">Administrative activity trail</span>
+              </span>
+            </button>
+          </div>
+        </section>
 
-          <button
-            type="button"
-            onClick={openAuditLogModal}
-            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
-          >
-            <span className="w-10 h-10 rounded-2xl bg-indigo-50 flex items-center justify-center text-lg flex-shrink-0">📜</span>
-            <span><span className="block font-bold text-slate-900 text-xs">Audit Log</span><span className="block text-slate-400 text-[10px] mt-0.5">Administrative activity trail</span></span>
-          </button>
+        {/* SYSTEM OPERATIONS — lower visual priority */}
+        <section className="space-y-2.5">
+          <div>
+            <p className="text-[9px] uppercase tracking-[0.18em] font-extrabold text-slate-400">
+              System operations
+            </p>
+            <h2 className="text-sm font-extrabold text-slate-900 mt-0.5">
+              Maintenance & resilience
+            </h2>
+          </div>
 
-          <button
-            type="button"
-            onClick={openHealthModal}
-            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
-          >
-            <span className="w-10 h-10 rounded-2xl bg-teal-50 flex items-center justify-center text-lg flex-shrink-0">💚</span>
-            <span><span className="block font-bold text-slate-900 text-xs">System Health</span><span className="block text-slate-400 text-[10px] mt-0.5">Backup, archive, and email checks</span></span>
-          </button>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <button
+              type="button"
+              onClick={openHealthModal}
+              className="card-style !p-3 flex items-center gap-3 text-left hover:bg-emerald-50/50 hover:-translate-y-0.5 transition"
+            >
+              <span className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center text-base flex-shrink-0">💚</span>
+              <span className="min-w-0">
+                <span className="block font-extrabold text-slate-900 text-[11px]">System Health</span>
+                <span className="block text-slate-400 text-[9px] mt-0.5">Check backup, archive & email</span>
+              </span>
+            </button>
 
-          <button
-            type="button"
-            onClick={openAppSettingsModal}
-            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
-          >
-            <span className="w-10 h-10 rounded-2xl bg-orange-50 flex items-center justify-center text-lg flex-shrink-0">⚙️</span>
-            <span><span className="block font-bold text-slate-900 text-xs">App Settings</span><span className="block text-slate-400 text-[10px] mt-0.5">Shared Employee and HR rules</span></span>
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={() => setBackupModalOpen(true)}
+              className="card-style !p-3 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition"
+            >
+              <span className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center text-base flex-shrink-0">🗄️</span>
+              <span className="min-w-0">
+                <span className="block font-extrabold text-slate-900 text-[11px]">Database Backup</span>
+                <span className="block text-slate-400 text-[9px] mt-0.5">Create an off-site copy</span>
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setArchivalModalOpen(true)}
+              className="card-style !p-3 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition"
+            >
+              <span className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center text-base flex-shrink-0">🗃️</span>
+              <span className="min-w-0">
+                <span className="block font-extrabold text-slate-900 text-[11px]">Data Archival</span>
+                <span className="block text-slate-400 text-[9px] mt-0.5">Move records older than one year</span>
+              </span>
+            </button>
+          </div>
+        </section>
       </div>
 
       {/* ── CREATE / EDIT ACCOUNT MODAL ── */}

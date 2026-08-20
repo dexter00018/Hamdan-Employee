@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
 
 // Service-role client -- same pattern as /api/create-employee. Needed
 // because banning/unbanning a login (auth.users.banned_until) requires
@@ -15,9 +17,59 @@ export async function POST(request: Request) {
   try {
     const { userId, deactivate } = await request.json();
 
-    if (!userId || typeof deactivate !== 'boolean') {
+    if (!userId || typeof userId !== 'string' || typeof deactivate !== 'boolean') {
       return NextResponse.json({ error: 'Missing userId or deactivate flag.' }, { status: 400 });
     }
+
+    // --- Step 1: Verify the caller is an authenticated super_admin ---
+    // Without this, anyone who discovers this URL could POST to it and
+    // deactivate/reactivate any non-super-admin account with no login
+    // at all. This mirrors the same verification pattern already used
+    // in app/api/create-employee/route.ts, app/api/check-email/route.ts,
+    // and app/api/admin/update-password/route.ts -- except this route is
+    // scoped tighter to super_admin only, since deactivating a coworker's
+    // login is more sensitive than the actions those routes gate.
+    const cookieStore = await cookies();
+
+    const supabaseServer = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return cookieStore.getAll();
+          },
+          setAll() {
+            // no-op: we don't need to set cookies in this API route
+          },
+        },
+      }
+    );
+
+    const {
+      data: { user: callerUser },
+      error: callerError,
+    } = await supabaseServer.auth.getUser();
+
+    if (callerError || !callerUser) {
+      return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 });
+    }
+
+    const { data: callerProfile, error: callerProfileError } = await supabaseServer
+      .from('profiles')
+      .select('role')
+      .eq('id', callerUser.id)
+      .single();
+
+    if (callerProfileError || callerProfile?.role !== 'super_admin') {
+      return NextResponse.json(
+        { error: 'Only Super Admins can deactivate or reactivate accounts.' },
+        { status: 403 }
+      );
+    }
+
+    // --- Step 2: Caller is confirmed super_admin -- safe to use the
+    // service-role client for the privileged operation below. ---
 
     // Guard: never let a super_admin account get deactivated through
     // this route -- prevents accidentally locking yourself (or another
@@ -46,7 +98,7 @@ export async function POST(request: Request) {
 
     if (banError) {
       console.error('Error updating ban status:', banError);
-      return NextResponse.json({ error: banError.message }, { status: 500 });
+      return NextResponse.json({ error: 'Failed to update account status.' }, { status: 500 });
     }
 
     // Mirror the state in profiles.is_active so the rest of the app
@@ -59,7 +111,7 @@ export async function POST(request: Request) {
 
     if (profileUpdateError) {
       console.error('Error updating profile is_active:', profileUpdateError);
-      return NextResponse.json({ error: profileUpdateError.message }, { status: 500 });
+      return NextResponse.json({ error: 'Failed to update account status.' }, { status: 500 });
     }
 
     return NextResponse.json({
@@ -70,6 +122,6 @@ export async function POST(request: Request) {
     });
   } catch (err: any) {
     console.error('Error in deactivate-employee route:', err);
-    return NextResponse.json({ error: err?.message ?? 'Something went wrong.' }, { status: 500 });
+    return NextResponse.json({ error: 'Something went wrong.' }, { status: 500 });
   }
 }

@@ -114,11 +114,15 @@ type CommuteCheckResult = {
   }>;
   advisory?: string | null;
   ai_advisory?: {
+    status?: 'good_to_go' | 'leave_early' | 'expect_delays' | 'consider_alternate_route' | string | null;
+    status_label?: string | null;
     headline?: string | null;
     summary?: string | null;
     traffic_summary?: string | null;
     weather_summary?: string | null;
     recommendation?: string | null;
+    recommended_extra_minutes?: number | null;
+    key_reasons?: string[];
     language?: 'en' | 'tl' | string | null;
   } | null;
   ai_request?: any;
@@ -165,6 +169,31 @@ function TrafficRouteMap({ result }: { result: CommuteCheckResult }) {
   }, [result]);
 
   const apiKey = process.env.NEXT_PUBLIC_TOMTOM_API_KEY || '';
+  const googleMapsDirectionsUrl = useMemo(() => {
+    const originLat = Number(result.origin?.lat);
+    const originLon = Number(result.origin?.lon);
+    const destinationLat = Number(result.destination?.lat);
+    const destinationLon = Number(result.destination?.lon);
+
+    if (
+      !Number.isFinite(originLat) ||
+      !Number.isFinite(originLon) ||
+      !Number.isFinite(destinationLat) ||
+      !Number.isFinite(destinationLon)
+    ) {
+      return null;
+    }
+
+    const params = new URLSearchParams({
+      api: '1',
+      origin: `${originLat},${originLon}`,
+      destination: `${destinationLat},${destinationLon}`,
+      travelmode: 'driving',
+    });
+
+    return `https://www.google.com/maps/dir/?${params.toString()}`;
+  }, [result.destination?.lat, result.destination?.lon, result.origin?.lat, result.origin?.lon]);
+
 
   const mapData = useMemo(() => {
     if (!size.width || !size.height) return null;
@@ -343,7 +372,22 @@ function TrafficRouteMap({ result }: { result: CommuteCheckResult }) {
   return (
     <div
       ref={containerRef}
-      className="relative w-full h-64 sm:h-80 rounded-2xl overflow-hidden bg-[#e8ece8] border border-slate-200"
+      role={googleMapsDirectionsUrl ? 'link' : undefined}
+      tabIndex={googleMapsDirectionsUrl ? 0 : undefined}
+      title={googleMapsDirectionsUrl ? 'Open this route in Google Maps' : undefined}
+      onClick={(event) => {
+        if (!googleMapsDirectionsUrl) return;
+        if ((event.target as HTMLElement).closest('button')) return;
+        window.open(googleMapsDirectionsUrl, '_blank', 'noopener,noreferrer');
+      }}
+      onKeyDown={(event) => {
+        if (!googleMapsDirectionsUrl) return;
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          window.open(googleMapsDirectionsUrl, '_blank', 'noopener,noreferrer');
+        }
+      }}
+      className={`relative w-full h-64 sm:h-80 rounded-2xl overflow-hidden bg-[#e8ece8] border border-slate-200 ${googleMapsDirectionsUrl ? 'cursor-pointer' : ''}`}
     >
       {mapData && (
         <>
@@ -449,6 +493,12 @@ function TrafficRouteMap({ result }: { result: CommuteCheckResult }) {
           <div className="absolute right-2 bottom-2 z-30 rounded bg-white/85 px-1.5 py-0.5 text-[9px] text-slate-600">
             © TomTom
           </div>
+
+          {googleMapsDirectionsUrl && (
+            <div className="absolute top-3 left-3 z-30 rounded-full bg-white/95 border border-slate-200 px-3 py-1.5 text-[9px] font-extrabold text-slate-700 shadow-sm pointer-events-none">
+              📍 Click map to open in Google Maps
+            </div>
+          )}
 
           {tileFailures > Math.max(3, mapData.tiles.length / 2) && (
             <div className="absolute inset-0 z-40 flex items-center justify-center bg-slate-100/90 p-5 text-center">
@@ -708,9 +758,10 @@ export default function EmployeeDashboard() {
   const [commuteOrigin, setCommuteOrigin] = useState('');
   const [commuteDestination, setCommuteDestination] = useState('');
   const [commuteLoading, setCommuteLoading] = useState(false);
+  const [showCommuteIncidents, setShowCommuteIncidents] = useState(false);
   const [commuteError, setCommuteError] = useState<string | null>(null);
   const [commuteResult, setCommuteResult] = useState<CommuteCheckResult | null>(null);
-  const [commuteLanguage, setCommuteLanguage] = useState<'auto' | 'en' | 'tl'>('auto');
+  const [commuteLanguage, setCommuteLanguage] = useState<'en' | 'tl'>('en');
   const [originSuggestions, setOriginSuggestions] = useState<AddressSuggestion[]>([]);
   const [destinationSuggestions, setDestinationSuggestions] = useState<AddressSuggestion[]>([]);
   const [selectedOriginAddress, setSelectedOriginAddress] = useState<AddressSuggestion | null>(null);
@@ -921,6 +972,7 @@ export default function EmployeeDashboard() {
   };
 
   const checkCommuteRoute = async () => {
+    setShowCommuteIncidents(false);
     if (!commuteOrigin.trim() || !commuteDestination.trim()) {
       setCommuteError('Enter both From and To locations.');
       return;
@@ -3710,16 +3762,55 @@ export default function EmployeeDashboard() {
       {commuteModalOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/30 backdrop-blur-sm p-3 sm:p-4">
           <div className="w-full max-w-2xl card-style shadow-2xl max-h-[92vh] overflow-y-auto !p-4 sm:!p-5">
-            <div className="flex items-start justify-between gap-3 mb-4">
-              <div><h3 className="mb-0">Weather & Live Traffic</h3><p className="text-slate-400 text-xs mt-1">See the route, live traffic flow, ETA, delay, and destination weather.</p></div>
-              <button type="button" onClick={() => setCommuteModalOpen(false)} className="w-8 h-8 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center hover:bg-slate-200 transition">×</button>
+            <div className="flex items-start justify-between gap-4 mb-4">
+              <div className="flex items-start gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center flex-shrink-0 text-lg">
+                  🚗
+                </div>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="mb-0">Commute Assistant</h3>
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[8px] font-extrabold uppercase tracking-wider">
+                      Live
+                    </span>
+                  </div>
+                  <p className="text-slate-400 text-xs mt-1">
+                    Route, traffic, weather, and AI travel advice in one view.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCommuteModalOpen(false)}
+                className="w-8 h-8 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center hover:bg-slate-200 transition flex-shrink-0"
+                aria-label="Close commute assistant"
+              >
+                ×
+              </button>
             </div>
 
-            <div className="grid sm:grid-cols-2 gap-3">
+            <section className="rounded-3xl bg-slate-50/80 border border-slate-200 p-3.5 sm:p-4">
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div>
+                  <p className="text-[9px] uppercase tracking-[0.16em] font-extrabold text-slate-500">
+                    Plan your route
+                  </p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    Select an exact address for better route accuracy.
+                  </p>
+                </div>
+                <span className="hidden sm:inline-flex rounded-full bg-white border border-slate-200 px-2.5 py-1 text-[8px] font-extrabold text-slate-500">
+                  PH
+                </span>
+              </div>
+            <div className="grid sm:grid-cols-[1fr_auto_1fr] gap-2.5 items-end">
               <div className="relative">
-                <label className="label-branded">From</label>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="label-branded mb-0">From</label>
+                  <span className="text-[9px] font-bold text-slate-400">Starting point</span>
+                </div>
+                <div className="relative">
+                  <div className="relative">
                     <input
                       value={commuteOrigin}
                       onChange={(e) => {
@@ -3784,19 +3875,24 @@ export default function EmployeeDashboard() {
                     )}
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={useCurrentLocationForCommute}
-                    className="px-3 rounded-2xl bg-slate-100 text-slate-700 text-xs font-bold hover:bg-slate-200 transition"
-                    title="Use current location"
-                  >
-                    ◎
-                  </button>
                 </div>
               </div>
 
+              <button
+                type="button"
+                onClick={useCurrentLocationForCommute}
+                className="hidden sm:flex w-10 h-11 mb-[1px] rounded-2xl bg-white border border-slate-200 text-slate-600 text-sm font-bold items-center justify-center hover:bg-emerald-50 hover:border-emerald-200 hover:text-emerald-700 transition shadow-sm"
+                title="Use my current location"
+                aria-label="Use my current location"
+              >
+                ◎
+              </button>
+
               <div className="relative">
-                <label className="label-branded">To</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="label-branded mb-0">To</label>
+                  <span className="text-[9px] font-bold text-slate-400">Destination</span>
+                </div>
                 <div className="relative">
                   <input
                     value={commuteDestination}
@@ -3864,25 +3960,78 @@ export default function EmployeeDashboard() {
               </div>
             </div>
 
-            <div className="mt-3">
-              <label className="label-branded">AI Advisory Language</label>
-              <select
-                value={commuteLanguage}
-                onChange={(e) => setCommuteLanguage(e.target.value as 'auto' | 'en' | 'tl')}
-                className="input-field"
+              <button
+                type="button"
+                onClick={useCurrentLocationForCommute}
+                className="sm:hidden mt-2 w-full py-2 rounded-xl bg-white border border-slate-200 text-[10px] font-extrabold text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 transition"
               >
-                <option value="auto">Auto</option>
-                <option value="en">English</option>
-                <option value="tl">Filipino / Tagalog</option>
-              </select>
-              <p className="text-[10px] text-slate-400 mt-1">
-                Translation changes the advisory language only. Route and traffic data are not requested again.
-              </p>
+                ◎ Use my current location
+              </button>
+            <div className="mt-3 pt-3 border-t border-slate-200/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="w-7 h-7 rounded-xl bg-violet-50 border border-violet-100 flex items-center justify-center text-xs">
+                    ✨
+                  </span>
+                  <div>
+                    <p className="text-[10px] font-extrabold text-slate-700 leading-none">
+                      AI advisory
+                    </p>
+                    <p className="text-[9px] text-slate-400 mt-1">
+                      Choose recommendation language
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="inline-flex w-full sm:w-auto items-center rounded-xl bg-slate-100 p-1 border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setCommuteLanguage('en')}
+                  aria-pressed={commuteLanguage === 'en'}
+                  className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-[10px] font-extrabold transition-all ${
+                    commuteLanguage === 'en'
+                      ? 'bg-white text-slate-950 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  English
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCommuteLanguage('tl')}
+                  aria-pressed={commuteLanguage === 'tl'}
+                  className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-[10px] font-extrabold transition-all ${
+                    commuteLanguage === 'tl'
+                      ? 'bg-slate-900 text-white shadow-sm'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  Filipino
+                </button>
+              </div>
             </div>
 
+            </section>
+
             {commuteError && <div className="mt-3 p-3 rounded-xl bg-red-50 text-red-700 text-xs font-medium">{commuteError}</div>}
-            <button type="button" onClick={checkCommuteRoute} disabled={commuteLoading} className="btn-primary mt-4 flex items-center justify-center gap-2 disabled:opacity-50">
-              {commuteLoading ? <><Spinner size="sm" /> Checking route...</> : 'Check Route'}
+            <button
+              type="button"
+              onClick={checkCommuteRoute}
+              disabled={commuteLoading}
+              className="mt-3 w-full min-h-12 rounded-2xl bg-slate-950 text-white text-xs font-extrabold flex items-center justify-center gap-2 shadow-sm hover:bg-slate-800 active:scale-[0.995] transition disabled:opacity-50"
+            >
+              {commuteLoading ? (
+                <>
+                  <Spinner size="sm" />
+                  Checking route...
+                </>
+              ) : (
+                <>
+                  <span>Check Route</span>
+                  <span className="text-white/50">→</span>
+                </>
+              )}
             </button>
 
             {commuteResult && (
@@ -3915,6 +4064,147 @@ export default function EmployeeDashboard() {
                     </p>
                   </div>
                 </div>
+
+                {commuteResult.ai_advisory && (() => {
+                  const advisory = commuteResult.ai_advisory;
+                  const isTl = advisory.language === 'tl';
+
+                  const status = advisory.status || 'good_to_go';
+                  const statusMeta =
+                    status === 'consider_alternate_route'
+                      ? {
+                          icon: '🔴',
+                          label: isTl ? 'ISIPIN ANG IBANG RUTA' : 'CONSIDER ALTERNATE ROUTE',
+                          card: 'bg-red-50 border-red-200',
+                          badge: 'bg-red-600 text-white',
+                          title: 'text-red-950',
+                        }
+                      : status === 'expect_delays'
+                        ? {
+                            icon: '🟠',
+                            label: isTl ? 'ASAHAN ANG PAGKAANTALA' : 'EXPECT DELAYS',
+                            card: 'bg-orange-50 border-orange-200',
+                            badge: 'bg-orange-500 text-white',
+                            title: 'text-orange-950',
+                          }
+                        : status === 'leave_early'
+                          ? {
+                              icon: '🟡',
+                              label: isTl ? 'UMALIS NANG MAS MAAGA' : 'LEAVE EARLY',
+                              card: 'bg-amber-50 border-amber-200',
+                              badge: 'bg-amber-500 text-white',
+                              title: 'text-amber-950',
+                            }
+                          : {
+                              icon: '🟢',
+                              label: isTl ? 'MAAYOS ANG BIYAHE' : 'GOOD TO GO',
+                              card: 'bg-emerald-50 border-emerald-200',
+                              badge: 'bg-emerald-600 text-white',
+                              title: 'text-emerald-950',
+                            };
+
+                  return (
+                    <div className={`p-4 rounded-2xl border ${statusMeta.card}`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-[9px] uppercase tracking-[0.18em] font-extrabold text-slate-500">
+                            {isTl ? 'AI Desisyon sa Biyahe' : 'AI Commute Decision'}
+                          </p>
+
+                          <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[9px] font-extrabold ${statusMeta.badge}`}>
+                              <span>{statusMeta.icon}</span>
+                              {advisory.status_label || statusMeta.label}
+                            </span>
+
+                            <span className="rounded-full bg-white/80 border border-black/5 px-2 py-1 text-[9px] font-extrabold text-slate-600">
+                              {isTl ? 'FILIPINO' : 'ENGLISH'}
+                            </span>
+                          </div>
+
+                          <p className={`text-sm font-extrabold mt-2 ${statusMeta.title}`}>
+                            {advisory.headline || (isTl ? 'Abiso sa Biyahe' : 'Commute Advisory')}
+                          </p>
+                        </div>
+
+                        {Number(advisory.recommended_extra_minutes ?? 0) > 0 && (
+                          <div className="flex-shrink-0 rounded-2xl bg-white/80 border border-black/5 px-3 py-2 text-center shadow-sm">
+                            <p className="text-[8px] uppercase tracking-wider font-extrabold text-slate-400">
+                              {isTl ? 'Allowance' : 'Extra Time'}
+                            </p>
+                            <p className="text-lg font-black text-slate-900 leading-none mt-1">
+                              +{Math.round(Number(advisory.recommended_extra_minutes))}
+                              <span className="text-[9px] ml-0.5">min</span>
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      {advisory.summary && (
+                        <p className="text-xs text-slate-700 leading-relaxed mt-3">
+                          {advisory.summary}
+                        </p>
+                      )}
+
+                      {Array.isArray(advisory.key_reasons) && advisory.key_reasons.length > 0 && (
+                        <div className="mt-3 rounded-xl bg-white/70 border border-black/5 p-3">
+                          <p className="text-[9px] uppercase tracking-wider font-extrabold text-slate-500">
+                            {isTl ? 'Bakit ito ang rekomendasyon' : 'Why this recommendation'}
+                          </p>
+                          <div className="mt-2 space-y-1.5">
+                            {advisory.key_reasons.slice(0, 3).map((reason, index) => (
+                              <div key={`${reason}-${index}`} className="flex items-start gap-2 text-[10px] text-slate-700 leading-relaxed">
+                                <span className="mt-[5px] h-1.5 w-1.5 rounded-full bg-slate-400 flex-shrink-0" />
+                                <span>{reason}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="grid sm:grid-cols-2 gap-2 mt-3">
+                        {advisory.traffic_summary && (
+                          <div className="rounded-xl bg-white/70 border border-black/5 p-3">
+                            <p className="text-[9px] uppercase tracking-wider font-extrabold text-slate-500">
+                              {isTl ? 'Trapiko' : 'Traffic'}
+                            </p>
+                            <p className="text-[10px] text-slate-700 mt-1 leading-relaxed">
+                              {advisory.traffic_summary}
+                            </p>
+                          </div>
+                        )}
+
+                        {advisory.weather_summary && (
+                          <div className="rounded-xl bg-white/70 border border-black/5 p-3">
+                            <p className="text-[9px] uppercase tracking-wider font-extrabold text-slate-500">
+                              {isTl ? 'Panahon' : 'Weather'}
+                            </p>
+                            <p className="text-[10px] text-slate-700 mt-1 leading-relaxed">
+                              {advisory.weather_summary}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      {advisory.recommendation && (
+                        <div className="mt-3 rounded-xl bg-slate-950 text-white p-3.5">
+                          <p className="text-[9px] uppercase tracking-wider font-extrabold text-white/60">
+                            {isTl ? 'Gawin ngayon' : 'What to do'}
+                          </p>
+                          <p className="text-xs font-semibold mt-1 leading-relaxed">
+                            {advisory.recommendation}
+                          </p>
+                        </div>
+                      )}
+
+                      <p className="text-[9px] text-slate-400 mt-3 leading-relaxed">
+                        {isTl
+                          ? 'Ang AI advice ay base lamang sa route, traffic incident, at weather data na ipinakita sa itaas. Ang incident delay ay hindi awtomatikong idinadagdag sa kabuuang ETA.'
+                          : 'AI advice is based only on the route, traffic incident, and weather data shown above. Individual incident delays are not automatically added to the total ETA.'}
+                      </p>
+                    </div>
+                  );
+                })()}
 
                 {commuteResult.weather && (() => {
                   const weatherHighlight = getCommuteWeatherHighlight(commuteResult.weather);
@@ -3989,85 +4279,34 @@ export default function EmployeeDashboard() {
                   );
                 })()}
 
-                {commuteResult.advisory && (
-                  <div className="p-3 rounded-2xl bg-amber-50 border border-amber-100">
-                    <p className="label-branded">Commute Advisory</p>
-                    <p className="text-xs text-slate-700 leading-relaxed">{commuteResult.advisory}</p>
-                  </div>
-                )}
-
-                {commuteResult.ai_advisory && (
-                  <div className="p-3.5 rounded-2xl bg-violet-50 border border-violet-200">
-                    <div className="flex items-center justify-between gap-3 mb-2">
-                      <div>
-                        <p className="label-branded">AI Overall Advisory</p>
-                        <p className="text-sm font-extrabold text-violet-950 mt-0.5">
-                          {commuteResult.ai_advisory.headline || 'Commute Summary'}
-                        </p>
-                      </div>
-                      <span className="px-2 py-1 rounded-full bg-violet-600 text-white text-[9px] font-extrabold">
-                        {commuteResult.ai_advisory.language === 'tl' ? 'FILIPINO' : 'AI'}
-                      </span>
-                    </div>
-
-                    {commuteResult.ai_advisory.summary && (
-                      <p className="text-xs text-violet-950 leading-relaxed">
-                        {commuteResult.ai_advisory.summary}
-                      </p>
-                    )}
-
-                    <div className="grid sm:grid-cols-2 gap-2 mt-3">
-                      {commuteResult.ai_advisory.traffic_summary && (
-                        <div className="rounded-xl bg-white/70 border border-violet-100 p-3">
-                          <p className="text-[9px] uppercase tracking-wider font-extrabold text-violet-500">
-                            Traffic
-                          </p>
-                          <p className="text-[10px] text-slate-700 mt-1 leading-relaxed">
-                            {commuteResult.ai_advisory.traffic_summary}
-                          </p>
-                        </div>
-                      )}
-
-                      {commuteResult.ai_advisory.weather_summary && (
-                        <div className="rounded-xl bg-white/70 border border-violet-100 p-3">
-                          <p className="text-[9px] uppercase tracking-wider font-extrabold text-violet-500">
-                            Weather
-                          </p>
-                          <p className="text-[10px] text-slate-700 mt-1 leading-relaxed">
-                            {commuteResult.ai_advisory.weather_summary}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-
-                    {commuteResult.ai_advisory.recommendation && (
-                      <div className="mt-3 rounded-xl bg-violet-100/70 border border-violet-200 p-3">
-                        <p className="text-[9px] uppercase tracking-wider font-extrabold text-violet-600">
-                          Recommendation
-                        </p>
-                        <p className="text-[10px] text-violet-950 mt-1 leading-relaxed">
-                          {commuteResult.ai_advisory.recommendation}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
+                <TrafficRouteMap result={commuteResult} />
 
                 {(commuteResult.incidents?.length ?? 0) > 0 && (
-                  <div className="p-3.5 rounded-2xl bg-white border border-slate-200">
-                    <div className="flex items-center justify-between gap-3 mb-3">
-                      <div>
-                        <p className="label-branded">Traffic Ahead</p>
-                        <p className="text-[10px] text-slate-500 mt-0.5">
-                          Current TomTom incidents close to your selected route
+                  <div className="rounded-2xl bg-white border border-slate-200 overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setShowCommuteIncidents((value) => !value)}
+                      className="w-full p-3.5 flex items-center justify-between gap-3 text-left hover:bg-slate-50 transition-colors"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="label-branded mb-0">Traffic Incidents</p>
+                          <span className="px-2 py-0.5 rounded-full bg-slate-900 text-white text-[9px] font-extrabold">
+                            {commuteResult.incidents?.length ?? 0} LIVE
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-500 mt-1">
+                          {showCommuteIncidents ? 'Hide reported incidents' : 'View reported incidents near your route'}
                         </p>
                       </div>
-                      <span className="px-2.5 py-1 rounded-full bg-slate-900 text-white text-[9px] font-extrabold">
-                        LIVE
+                      <span className={`text-slate-500 text-lg transition-transform ${showCommuteIncidents ? 'rotate-180' : ''}`}>
+                        ⌄
                       </span>
-                    </div>
+                    </button>
 
-                    <div className="space-y-2">
+                    {showCommuteIncidents && (
+                      <div className="px-3.5 pb-3.5 border-t border-slate-100">
+                        <div className="space-y-2 mt-3">
                       {(commuteResult.incidents ?? []).slice(0, 5).map((incident, index) => {
                         const style = getTrafficLevelStyle(incident.severity);
 
@@ -4145,28 +4384,17 @@ export default function EmployeeDashboard() {
                       })}
                     </div>
 
-                    <div className="flex flex-wrap gap-3 mt-3 pt-3 border-t border-slate-100 text-[9px] font-bold text-slate-500">
-                      <span>
-                        <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-500 mr-1" />
-                        Light
-                      </span>
-                      <span>
-                        <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-500 mr-1" />
-                        Moderate
-                      </span>
-                      <span>
-                        <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-500 mr-1" />
-                        Heavy
-                      </span>
-                      <span>
-                        <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-800 mr-1" />
-                        Severe / road closed
-                      </span>
-                    </div>
+                        <div className="flex flex-wrap gap-3 mt-3 pt-3 border-t border-slate-100 text-[9px] font-bold text-slate-500">
+                          <span><span className="inline-block w-2.5 h-2.5 rounded-full bg-green-500 mr-1" />Light</span>
+                          <span><span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-500 mr-1" />Moderate</span>
+                          <span><span className="inline-block w-2.5 h-2.5 rounded-full bg-red-500 mr-1" />Heavy</span>
+                          <span><span className="inline-block w-2.5 h-2.5 rounded-full bg-red-800 mr-1" />Severe / road closed</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
-                <TrafficRouteMap result={commuteResult} />
 
                 <div className="flex items-center gap-3 text-[10px] text-slate-500 flex-wrap">
                   <span className="font-semibold">

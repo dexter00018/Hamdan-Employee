@@ -62,6 +62,23 @@ export async function POST(request: Request) {
       );
     }
 
+    // --- Step 1.5: Server-side role allowlist ---
+    // The UI only ever offers "Employee" or "HR Admin", but this is an
+    // API endpoint -- a crafted request could send role: "super_admin"
+    // (or anything else) directly. Never trust the role value coming
+    // from the browser; only these two roles are ever creatable here,
+    // and there is intentionally no path in this app that lets an
+    // ordinary admin create or promote someone to super_admin.
+    const ALLOWED_CREATE_ROLES = ['employee', 'admin'] as const;
+    const requestedRole = role || 'employee';
+
+    if (!ALLOWED_CREATE_ROLES.includes(requestedRole)) {
+      return NextResponse.json(
+        { error: 'Invalid role. Accounts can only be created as "employee" or "admin".' },
+        { status: 400 }
+      );
+    }
+
     // --- Step 2: Use the service role client to create the account ---
     // This runs ONLY on the server (never shipped to the browser), so
     // it's safe to use the service_role key here — it bypasses RLS and
@@ -104,7 +121,7 @@ export async function POST(request: Request) {
         full_name: fullName,
         employee_id: employeeId || null,
         designation: designation || null,
-        role: role || 'employee',
+        role: requestedRole,
       });
 
     if (profileError) {
