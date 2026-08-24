@@ -5,23 +5,18 @@ import { cookies } from 'next/headers';
 // The n8n workflow is exposed through an ngrok tunnel, which rotates its URL
 // whenever the local ngrok process restarts. Set N8N_PUBLISH_PAYSLIP_WEBHOOK_URL
 // in Vercel's project environment variables so updating it doesn't require a
-// redeploy -- the hardcoded value below is only a fallback for local dev.
+// redeploy.
 //
-// IMPORTANT: this is the custom "path" configured on the webhook node itself
-// (no ID segment needed) -- confirmed directly via the n8n editor's
-// Production URL tab. Do not add an ID segment back in here.
-const N8N_WEBHOOK_URL =
-  process.env.N8N_PUBLISH_PAYSLIP_WEBHOOK_URL ||
-  'https://yearly-goggles-proved.ngrok-free.dev/webhook/publish-payslip';
-
-// Shared secret the n8n workflow checks before processing a publish request --
-// without this, anyone who discovered the webhook URL could re-trigger a
-// payslip email send. MUST match the value configured in the workflow's
-// "Valid Secret?" node exactly. Set N8N_PUBLISH_WEBHOOK_SECRET in Vercel's
-// env vars; the hardcoded value below is only a fallback for local dev.
-const N8N_WEBHOOK_SECRET =
-  process.env.N8N_PUBLISH_WEBHOOK_SECRET ||
-  'pSMtRV9A5bu29SYbXJ2G2zUCviXmQcBX9SYYrmvWXZk';
+// SECURITY: no hardcoded fallback here anymore. This repo is public, and a
+// hardcoded secret/URL in a public repo is effectively a public secret. Both
+// env vars below are now REQUIRED -- if either is missing, publishing still
+// marks the payslip published (see below) but skips the webhook call rather
+// than silently using a leaked value.
+// IMPORTANT: rotate N8N_PUBLISH_WEBHOOK_SECRET's value in the n8n workflow's
+// "Valid Secret?" node -- the old hardcoded value must be treated as
+// compromised since it was committed to this public repo.
+const N8N_WEBHOOK_URL = process.env.N8N_PUBLISH_PAYSLIP_WEBHOOK_URL;
+const N8N_WEBHOOK_SECRET = process.env.N8N_PUBLISH_WEBHOOK_SECRET;
 
 // NOTE: This route builds its own Supabase server client inline using
 // @supabase/ssr, since the exact server-side auth helper already living in
@@ -93,9 +88,15 @@ export async function POST(request: Request) {
   }
 
   // Fire the n8n webhook so the email goes out immediately. If this call
-  // fails (tunnel down, network hiccup, etc.), the payslip is still marked
-  // published -- the workflow's 10-minute polling fetch (also filtered to
-  // published=true) will pick it up as a fallback, just not instantly.
+  // fails (tunnel down, network hiccup, etc.) -- or the env vars are simply
+  // not configured -- the payslip is still marked published; the workflow's
+  // 10-minute polling fetch (also filtered to published=true) picks it up
+  // as a fallback, just not instantly.
+  if (!N8N_WEBHOOK_URL || !N8N_WEBHOOK_SECRET) {
+    console.error('N8N_PUBLISH_PAYSLIP_WEBHOOK_URL or N8N_PUBLISH_WEBHOOK_SECRET is not configured.');
+    return NextResponse.json({ published: true, emailTriggered: false });
+  }
+
   try {
     const webhookRes = await fetch(N8N_WEBHOOK_URL, {
       method: 'POST',

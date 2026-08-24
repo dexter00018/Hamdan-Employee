@@ -74,6 +74,29 @@ export async function POST(req: Request) {
       );
     }
 
+    // --- Step 1.5: Block a regular admin from resetting a super_admin's
+    // password. Without this, any HR/admin account could take over a
+    // super_admin login by resetting its password through this route --
+    // the same protection app/api/deactivate-employee/route.ts already
+    // has for deactivation. Only a super_admin may reset another
+    // super_admin's password (or their own).
+    const { data: targetProfile, error: targetProfileError } = await supabaseServer
+      .from('profiles')
+      .select('role')
+      .eq('id', userId)
+      .single();
+
+    if (targetProfileError || !targetProfile) {
+      return NextResponse.json({ error: 'Target user not found.' }, { status: 404 });
+    }
+
+    if (targetProfile.role === 'super_admin' && callerProfile?.role !== 'super_admin') {
+      return NextResponse.json(
+        { error: 'Only a Super Admin can reset another Super Admin\'s password.' },
+        { status: 403 }
+      );
+    }
+
     // --- Step 2: Use the service role client to update the password ---
     // Ligtas ito dahil nasa loob ng server-side route lang gagamitin
     // ang SERVICE_ROLE_KEY, hindi ito lalabas sa browser.

@@ -3,18 +3,19 @@ import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
 // Same ngrok-tunnel setup as publish-payslip. Set N8N_BACKUP_WEBHOOK_URL in
-// Vercel's env vars; this hardcoded value is only a local-dev fallback.
-// Path matches the "Backup Webhook" node's configured path in the
-// "Supabase Backup Notification" n8n workflow.
-const N8N_WEBHOOK_URL =
-  process.env.N8N_BACKUP_WEBHOOK_URL ||
-  'https://yearly-goggles-proved.ngrok-free.dev/webhook/backup-notification';
-
-// Must match the value in the workflow's "Valid Secret?" node exactly.
-// Set N8N_BACKUP_WEBHOOK_SECRET in Vercel's env vars.
-const N8N_WEBHOOK_SECRET =
-  process.env.N8N_BACKUP_WEBHOOK_SECRET ||
-  's_oVQRRvyqMX-XG63ZRYiriZ0xSUkoz681MpxCdNiMc';
+// Vercel's env vars. Path matches the "Backup Webhook" node's configured
+// path in the "Supabase Backup Notification" n8n workflow.
+//
+// SECURITY: no hardcoded fallback here anymore. This repo is public, and a
+// hardcoded secret/URL in a public repo is effectively a public secret.
+// Both N8N_BACKUP_WEBHOOK_URL and N8N_BACKUP_WEBHOOK_SECRET are REQUIRED
+// env vars in Vercel now -- the route fails closed (503) if either is
+// missing, rather than silently falling back to a leaked value.
+// IMPORTANT: rotate N8N_BACKUP_WEBHOOK_SECRET's value in the n8n workflow's
+// "Valid Secret?" node -- the old hardcoded value must be treated as
+// compromised since it was committed to this public repo.
+const N8N_WEBHOOK_URL = process.env.N8N_BACKUP_WEBHOOK_URL;
+const N8N_WEBHOOK_SECRET = process.env.N8N_BACKUP_WEBHOOK_SECRET;
 
 async function getAuthedSuperAdmin() {
   const cookieStore = await cookies();
@@ -60,6 +61,14 @@ export async function POST() {
     return NextResponse.json(
       { error: 'Only super admins can trigger a database backup.' },
       { status: 403 }
+    );
+  }
+
+  if (!N8N_WEBHOOK_URL || !N8N_WEBHOOK_SECRET) {
+    console.error('N8N_BACKUP_WEBHOOK_URL or N8N_BACKUP_WEBHOOK_SECRET is not configured.');
+    return NextResponse.json(
+      { error: 'Database backup is not configured. Set N8N_BACKUP_WEBHOOK_URL and N8N_BACKUP_WEBHOOK_SECRET in Vercel.' },
+      { status: 503 }
     );
   }
 
