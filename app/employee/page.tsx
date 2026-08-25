@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef, type KeyboardEvent } from 'react';
+import { useState, useEffect, useMemo, useRef, type KeyboardEvent, type ReactNode } from 'react';
 import { supabase } from '@/lib/supabase';
 import Image from 'next/image';
 import Spinner, { LoadingRow } from '@/components/Spinner';
@@ -40,6 +40,74 @@ function MoonIcon() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z" />
     </svg>
+  );
+}
+
+type CommuteSurfaceProps = {
+  className?: string;
+};
+
+type MetricCardProps = CommuteSurfaceProps & {
+  icon: string;
+  label: string;
+  value: ReactNode;
+  helper?: ReactNode;
+  valueClassName?: string;
+};
+
+function MetricCard({ icon, label, value, helper, valueClassName = '', className = '' }: MetricCardProps) {
+  return (
+    <div className={`min-h-[88px] border-b border-slate-200 p-3 sm:min-h-0 sm:border-b-0 sm:border-r sm:px-5 sm:py-2 sm:last:border-r-0 dark:border-slate-700 ${className}`}>
+      <div className="flex items-center gap-2">
+        <span className="flex h-8 w-8 items-center justify-center text-xl text-blue-600 dark:text-blue-300" aria-hidden="true">
+          {icon}
+        </span>
+        <p className="text-[9px] font-extrabold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-300">{label}</p>
+      </div>
+      <p className={`mt-1.5 text-xl font-black leading-none text-slate-950 sm:text-2xl dark:text-white ${valueClassName}`}>{value}</p>
+      {helper && <p className="mt-1 text-[8px] leading-relaxed text-slate-400 dark:text-slate-400">{helper}</p>}
+    </div>
+  );
+}
+
+type CheckpointItemProps = CommuteSurfaceProps & {
+  selected: boolean;
+  label: string;
+  onClick: () => void;
+  children: ReactNode;
+};
+
+function CheckpointItem({ selected, label, onClick, children, className = '' }: CheckpointItemProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-expanded={selected}
+      aria-label={label}
+      className={`group relative flex-1 min-w-0 rounded-2xl border p-3 text-left lg:text-center transition-all duration-200 hover:bg-blue-50/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:hover:bg-blue-950/20 ${selected ? 'border-blue-500 bg-blue-50/50 shadow-sm dark:border-blue-400 dark:bg-blue-950/20' : ''} ${className}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+type AdvisoryBannerProps = CommuteSurfaceProps & {
+  icon: string;
+  title: string;
+  children: ReactNode;
+};
+
+function AdvisoryBanner({ icon, title, children, className = '' }: AdvisoryBannerProps) {
+  return (
+    <div className={`rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 to-white p-3.5 dark:border-blue-800 dark:from-blue-950/40 dark:to-slate-900 ${className}`}>
+      <div className="flex items-start gap-3">
+        <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-white text-lg shadow-sm dark:bg-slate-900" aria-hidden="true">{icon}</span>
+        <div className="min-w-0">
+          <p className="text-[8px] font-extrabold uppercase tracking-wider text-blue-700 dark:text-blue-300">{title}</p>
+          <div className="mt-1 text-[10px] font-semibold leading-relaxed text-slate-700 dark:text-slate-200">{children}</div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1213,6 +1281,7 @@ export default function EmployeeDashboard() {
   const [commuteError, setCommuteError] = useState<string | null>(null);
   const [commuteResult, setCommuteResult] = useState<CommuteCheckResult | null>(null);
   const [selectedCommuteCheckpointIndex, setSelectedCommuteCheckpointIndex] = useState<number | null>(null);
+  const [isCommuteFormCollapsed, setIsCommuteFormCollapsed] = useState(false);
   const [commuteLanguage, setCommuteLanguage] = useState<'en' | 'tl'>('en');
   const [commuteAdviceOptions, setCommuteAdviceOptions] = useState<CommuteAdviceOption[]>([]);
   const [originSuggestions, setOriginSuggestions] = useState<AddressSuggestion[]>([]);
@@ -1554,6 +1623,7 @@ export default function EmployeeDashboard() {
     setCommuteResult(null);
     setCommuteUIState('idle');
     setCommuteHasAttempted(false);
+    setIsCommuteFormCollapsed(false);
     const currentManila = getManilaDateTimeInputs();
     setCommuteDepartureDate(currentManila.date);
     setCommuteDepartureTime(currentManila.time);
@@ -1624,18 +1694,21 @@ export default function EmployeeDashboard() {
   const checkCommuteRoute = async () => {
     setShowCommuteIncidents(false);
     if (!commuteOrigin.trim() || !commuteDestination.trim()) {
+      setIsCommuteFormCollapsed(false);
       setCommuteError('Enter both From and To locations.');
       setCommuteUIState('input_error');
       setCommuteHasAttempted(true);
       return;
     }
     if (!selectedOriginAddress || !selectedDestinationAddress) {
+      setIsCommuteFormCollapsed(false);
       setCommuteError('Select both locations from the address suggestions so exact coordinates can be verified.');
       setCommuteUIState('input_error');
       setCommuteHasAttempted(true);
       return;
     }
     if (commuteAdviceOptions.length === 0) {
+      setIsCommuteFormCollapsed(false);
       setCommuteError('Select at least one advice option.');
       setCommuteUIState('input_error');
       setCommuteHasAttempted(true);
@@ -1691,6 +1764,7 @@ export default function EmployeeDashboard() {
       });
 
       if (mapped.state === 'input_error' || mapped.state === 'failed') {
+        setIsCommuteFormCollapsed(false);
         setCommuteUIState(mapped.state);
         setCommuteError(mapped.message);
         return;
@@ -1708,11 +1782,13 @@ export default function EmployeeDashboard() {
           },
         });
         setCommuteUIState(incomplete.state);
+        setIsCommuteFormCollapsed(false);
         setCommuteError(incomplete.message);
         return;
       }
 
       setCommuteResult(payload);
+      setIsCommuteFormCollapsed(true);
       setSelectedCommuteCheckpointIndex(
         payload.route_weather_summary?.wettest_checkpoint?.index ??
           payload.route_weather_checkpoints?.[0]?.index ??
@@ -1730,6 +1806,7 @@ export default function EmployeeDashboard() {
         return;
       }
       const mapped = mapCommuteUIState({ thrownError: err });
+      setIsCommuteFormCollapsed(false);
       setCommuteUIState(mapped.state);
       setCommuteError(mapped.message);
     } finally {
@@ -4610,11 +4687,11 @@ export default function EmployeeDashboard() {
 
       {/* Weather + Live Traffic Route Checker */}
       {commuteModalOpen && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/30 backdrop-blur-sm p-3 sm:p-4">
-          <div className="w-full max-w-7xl card-style shadow-2xl max-h-[94vh] overflow-y-auto !p-3.5 sm:!p-5 lg:!p-6">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/45 backdrop-blur-sm p-0 sm:p-4">
+          <div className="w-full max-w-[1500px] max-h-[100dvh] overflow-y-auto bg-[#fcfbf8] p-4 shadow-2xl sm:max-h-[94vh] sm:rounded-[28px] sm:p-6 dark:bg-slate-950">
             <div className="flex items-start justify-between gap-4 mb-4">
               <div className="flex items-start gap-3 min-w-0">
-                <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center flex-shrink-0 text-xl">
+                <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center flex-shrink-0 text-xl dark:border-blue-900 dark:bg-blue-950/50">
                   🌦️
                 </div>
                 <div className="min-w-0">
@@ -4629,16 +4706,43 @@ export default function EmployeeDashboard() {
               <button
                 type="button"
                 onClick={() => setCommuteModalOpen(false)}
-                className="w-8 h-8 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center hover:bg-slate-200 transition flex-shrink-0"
+                className="w-11 h-11 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center hover:bg-slate-200 transition flex-shrink-0"
                 aria-label="Close commute assistant"
               >
                 ×
               </button>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-[minmax(300px,0.72fr)_minmax(0,1.35fr)] gap-4 lg:gap-5 items-start">
+            <div className="grid grid-cols-1 gap-4 items-start">
             <div className="min-w-0">
-            <section className="rounded-3xl bg-white border border-slate-200 p-3.5 sm:p-4 lg:p-5 shadow-sm">
+            {isCommuteFormCollapsed && (
+              <div className="mb-3 rounded-2xl border border-slate-200 bg-white px-3.5 py-3 dark:border-slate-700 dark:bg-slate-900">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className={`text-[8px] font-extrabold uppercase tracking-wider ${commuteUIState === 'partial' ? 'text-orange-700' : 'text-blue-700 dark:text-blue-300'}`}>
+                      {commuteUIState === 'partial' ? '⚠ Partial data' : '● Live'}
+                      {commuteResult ? ` · Updated ${formatCommuteUpdatedAt(commuteResult.freshness?.overall_updated_at || commuteResult.generated_at)}` : ''}
+                    </p>
+                    <p className="mt-1 truncate text-xs font-black text-slate-900 dark:text-white">
+                      {selectedOriginAddress ? getAddressPrimaryLabel(selectedOriginAddress) : shortCommutePlace(commuteOrigin, 'From')}
+                      {' → '}
+                      {selectedDestinationAddress ? getAddressPrimaryLabel(selectedDestinationAddress) : shortCommutePlace(commuteDestination, 'To')}
+                    </p>
+                    <p className="mt-1 text-[9px] font-semibold text-slate-500 dark:text-slate-300">
+                      🕒 Depart {commuteDepartureTime} · {commuteAdviceOptions.length} selected
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsCommuteFormCollapsed(false)}
+                    className="inline-flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center rounded-xl border border-blue-200 bg-white px-3 text-[9px] font-extrabold text-blue-700 shadow-sm transition hover:bg-blue-50 dark:border-blue-800 dark:bg-slate-900 dark:text-blue-300"
+                  >
+                    ✏️ Edit
+                  </button>
+                </div>
+              </div>
+            )}
+            <section className={`rounded-3xl bg-white border border-slate-200 p-3.5 sm:p-4 lg:p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900 ${isCommuteFormCollapsed ? 'hidden' : 'block'}`}>
               <div className="flex items-center justify-between gap-3 mb-3">
                 <div>
                   <p className="text-[9px] uppercase tracking-[0.16em] font-extrabold text-slate-500">
@@ -4652,7 +4756,7 @@ export default function EmployeeDashboard() {
                   PH · Philippines only
                 </span>
               </div>
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2.5 items-end">
+            <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_56px_minmax(0,1fr)] lg:items-end lg:gap-3">
               <div className="relative">
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="label-branded mb-0">From</label>
@@ -4665,17 +4769,17 @@ export default function EmployeeDashboard() {
                       <div><p className="text-[10px] font-extrabold text-slate-700">Locating…</p><p className="text-[9px] text-slate-400 mt-0.5">Finding a readable address for your GPS position.</p></div>
                     </div>
                   ) : selectedOriginAddress ? (
-                    <div className="min-h-14 rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-2.5 flex items-start gap-2.5">
-                      <span className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white text-[10px]" aria-hidden="true">✓</span>
+                    <div className="min-h-14 rounded-xl border border-blue-200 bg-blue-50/70 px-3 py-2.5 flex items-start gap-2.5">
+                      <span className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-blue-600 text-white text-[10px]" aria-hidden="true">✓</span>
                       <div className="min-w-0 flex-1">
-                        <p className="text-[10px] font-extrabold text-emerald-950 leading-tight">
+                        <p className="text-[10px] font-extrabold text-blue-950 leading-tight">
                           {getAddressPrimaryLabel(selectedOriginAddress)}
                         </p>
-                        <p className="text-[9px] text-emerald-800/80 mt-1 leading-snug line-clamp-2" title={getAddressSecondaryLabel(selectedOriginAddress)}>
+                        <p className="text-[9px] text-blue-800/80 mt-1 leading-snug line-clamp-2" title={getAddressSecondaryLabel(selectedOriginAddress)}>
                           {getAddressSecondaryLabel(selectedOriginAddress)}
                         </p>
                       </div>
-                      <button type="button" onClick={() => clearCommuteAddress('origin')} className="w-7 h-7 rounded-lg bg-white border border-emerald-200 text-emerald-700 hover:bg-emerald-100 transition" aria-label="Change starting point">×</button>
+                      <button type="button" onClick={() => clearCommuteAddress('origin')} className="w-11 h-11 rounded-xl bg-white border border-blue-200 text-blue-700 hover:bg-blue-100 transition" aria-label="Change starting point">×</button>
                     </div>
                   ) : (
                   <div className="relative" role="combobox" aria-expanded={showOriginSuggestions} aria-haspopup="listbox" aria-owns="commute-origin-listbox">
@@ -4703,17 +4807,17 @@ export default function EmployeeDashboard() {
                         }, 180);
                       }}
                       autoComplete="off"
-                      className="input-field w-full !pl-9 !pr-9"
+                      className="input-field w-full !h-14 !pl-10 !pr-16"
                       placeholder="Search landmark, street, or barangay..."
                       aria-autocomplete="list"
                       aria-controls="commute-origin-listbox"
                       aria-activedescendant={originActiveSuggestion >= 0 ? `commute-origin-option-${originActiveSuggestion}` : undefined}
                     />
 
-                    <span className="absolute left-3 top-[22px] -translate-y-1/2 text-emerald-700 text-xs pointer-events-none" aria-hidden="true">⌖</span>
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-700 text-xs pointer-events-none" aria-hidden="true">⌖</span>
 
                     {originSearchLoading && (
-                      <div className="absolute right-3 top-[22px] -translate-y-1/2">
+                      <div className="absolute right-14 top-1/2 -translate-y-1/2">
                         <Spinner size="sm" />
                       </div>
                     )}
@@ -4732,10 +4836,10 @@ export default function EmployeeDashboard() {
                             type="button"
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={() => selectAddressSuggestion(place, 'origin')}
-                            className={`w-full px-3.5 py-3 text-left border-b border-slate-100 last:border-b-0 transition ${index === originActiveSuggestion ? 'bg-emerald-50' : 'hover:bg-slate-50'}`}
+                            className={`w-full px-3.5 py-3 text-left border-b border-slate-100 last:border-b-0 transition ${index === originActiveSuggestion ? 'bg-blue-50' : 'hover:bg-slate-50'}`}
                           >
                             <div className="flex items-start gap-2.5">
-                              <span className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-emerald-50 text-xs">
+                              <span className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-xs">
                                 📍
                               </span>
                               <div className="min-w-0">
@@ -4763,33 +4867,38 @@ export default function EmployeeDashboard() {
                   </div>
                   )}
 
+                  {!selectedOriginAddress && !originLocationResolving && (
+                    <button
+                      type="button"
+                      onClick={useCurrentLocationForCommute}
+                      className="absolute bottom-1.5 right-1.5 z-20 flex h-11 w-11 items-center justify-center rounded-xl border border-blue-200 bg-white text-sm font-bold text-blue-700 shadow-sm transition hover:bg-blue-50 dark:border-blue-700 dark:bg-slate-900 dark:text-blue-300"
+                      title="Use my current location"
+                      aria-label="Use my current location"
+                    >
+                      ◎
+                    </button>
+                  )}
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={useCurrentLocationForCommute}
-                disabled={originLocationResolving}
-                className="flex w-10 h-11 mb-[1px] rounded-xl bg-white border border-slate-200 text-emerald-700 text-sm font-bold items-center justify-center hover:bg-emerald-50 hover:border-emerald-200 transition shadow-sm"
-                title="Use my current location"
-                aria-label="Use my current location"
-              >
-                ◎
-              </button>
+              <div className="relative flex h-12 items-center justify-center lg:h-14">
+                <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-blue-200 lg:hidden dark:bg-blue-800" aria-hidden="true" />
+                <button
+                  type="button"
+                  onClick={swapCommuteAddresses}
+                  disabled={!commuteOrigin && !commuteDestination}
+                  className="relative z-10 flex h-11 min-w-11 items-center justify-center rounded-full border border-blue-200 bg-white px-3 text-base font-extrabold text-blue-700 shadow-sm transition hover:bg-blue-50 disabled:opacity-40 dark:border-blue-700 dark:bg-slate-900 dark:text-blue-300"
+                  title="Swap starting point and destination"
+                  aria-label="Swap starting point and destination"
+                >
+                  ⇄
+                </button>
+              </div>
 
-              <div className="relative col-span-2">
+              <div className="relative">
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="label-branded mb-0">To</label>
-                  <button
-                    type="button"
-                    onClick={swapCommuteAddresses}
-                    disabled={!commuteOrigin && !commuteDestination}
-                    className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[9px] font-extrabold text-emerald-700 hover:bg-emerald-50 disabled:opacity-40 transition"
-                    title="Swap starting point and destination"
-                    aria-label="Swap starting point and destination"
-                  >
-                    ⇅ Swap
-                  </button>
+                  <span className="text-[9px] font-bold text-slate-400">Destination</span>
                 </div>
                 <div className="relative">
                   {selectedDestinationAddress ? (
@@ -4801,18 +4910,18 @@ export default function EmployeeDashboard() {
                         ? Number(commuteResult?.route_weather_summary?.highest_rain_probability ?? commuteResult?.weather?.rain_probability ?? 0) >= 70
                           ? 'border-orange-300 bg-orange-50/70 ring-2 ring-orange-200/70'
                           : 'border-amber-200 bg-amber-50 ring-2 ring-amber-200/70'
-                        : 'border-emerald-200 bg-emerald-50/70'
+                        : 'border-blue-200 bg-blue-50/70'
                     }`}>
-                      <span className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white text-[10px]" aria-hidden="true">✓</span>
+                      <span className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-blue-600 text-white text-[10px]" aria-hidden="true">✓</span>
                       <div className="min-w-0 flex-1">
-                        <p className="text-[10px] font-extrabold text-emerald-950 leading-tight">
+                        <p className="text-[10px] font-extrabold text-blue-950 leading-tight">
                           {getAddressPrimaryLabel(selectedDestinationAddress)}
                         </p>
-                        <p className="text-[9px] text-emerald-800/80 mt-1 leading-snug line-clamp-2" title={getAddressSecondaryLabel(selectedDestinationAddress)}>
+                        <p className="text-[9px] text-blue-800/80 mt-1 leading-snug line-clamp-2" title={getAddressSecondaryLabel(selectedDestinationAddress)}>
                           {getAddressSecondaryLabel(selectedDestinationAddress)}
                         </p>
                       </div>
-                      <button type="button" onClick={() => clearCommuteAddress('destination')} className="w-7 h-7 rounded-lg bg-white border border-emerald-200 text-emerald-700 hover:bg-emerald-100 transition" aria-label="Change destination">×</button>
+                      <button type="button" onClick={() => clearCommuteAddress('destination')} className="w-11 h-11 rounded-xl bg-white border border-blue-200 text-blue-700 hover:bg-blue-100 transition" aria-label="Change destination">×</button>
                     </div>
                   ) : (
                   <div className="relative" role="combobox" aria-expanded={showDestinationSuggestions} aria-haspopup="listbox" aria-owns="commute-destination-listbox">
@@ -4840,7 +4949,7 @@ export default function EmployeeDashboard() {
                       }, 180);
                     }}
                     autoComplete="off"
-                    className={`input-field w-full !pl-9 !pr-9 transition-shadow ${
+                    className={`input-field w-full !h-14 !pl-10 !pr-10 transition-shadow ${
                       commuteResult?.highlight_route_for_rain ||
                       commuteResult?.highlight_destination_for_rain ||
                       commuteResult?.weather?.rain_alert?.active ||
@@ -4858,10 +4967,10 @@ export default function EmployeeDashboard() {
                     aria-activedescendant={destinationActiveSuggestion >= 0 ? `commute-destination-option-${destinationActiveSuggestion}` : undefined}
                   />
 
-                  <span className="absolute left-3 top-[22px] -translate-y-1/2 text-emerald-700 text-xs pointer-events-none" aria-hidden="true">●</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-700 text-xs pointer-events-none" aria-hidden="true">●</span>
 
                   {destinationSearchLoading && (
-                    <div className="absolute right-3 top-[22px] -translate-y-1/2">
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
                       <Spinner size="sm" />
                     </div>
                   )}
@@ -4880,10 +4989,10 @@ export default function EmployeeDashboard() {
                           type="button"
                           onMouseDown={(e) => e.preventDefault()}
                           onClick={() => selectAddressSuggestion(place, 'destination')}
-                          className={`w-full px-3.5 py-3 text-left border-b border-slate-100 last:border-b-0 transition ${index === destinationActiveSuggestion ? 'bg-emerald-50' : 'hover:bg-slate-50'}`}
+                          className={`w-full px-3.5 py-3 text-left border-b border-slate-100 last:border-b-0 transition ${index === destinationActiveSuggestion ? 'bg-blue-50' : 'hover:bg-slate-50'}`}
                         >
                           <div className="flex items-start gap-2.5">
-                            <span className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-emerald-50 text-xs">
+                            <span className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-xs">
                               📍
                             </span>
                             <div className="min-w-0">
@@ -4946,14 +5055,6 @@ export default function EmployeeDashboard() {
               </div>
             </div>
 
-              <button
-                type="button"
-                onClick={useCurrentLocationForCommute}
-                className="hidden"
-              >
-                ◎ Use my current location
-              </button>
-
               <div className="grid grid-cols-2 gap-2.5 mt-3">
                 <div>
                   <label className="label-branded mb-1.5 block">Date</label>
@@ -4985,7 +5086,7 @@ export default function EmployeeDashboard() {
                 <p className="text-[9px] text-slate-400 mt-0.5">
                   Select only what you need. This keeps the AI request focused and smaller.
                 </p>
-                <div className="grid grid-cols-1 gap-1.5 mt-2">
+                <div className="grid grid-cols-2 gap-2 mt-2 sm:grid-cols-4">
                   {[
                     {
                       icon: '☁️',
@@ -5016,10 +5117,10 @@ export default function EmployeeDashboard() {
                     return (
                       <label
                         key={label}
-                        className={`min-h-11 rounded-xl border px-3 py-2 flex items-center gap-2.5 cursor-pointer transition ${
+                        className={`min-h-11 rounded-xl border px-3 py-2 flex items-center gap-2 cursor-pointer transition ${
                           selected
-                            ? 'bg-emerald-50 border-emerald-300 text-emerald-700 ring-1 ring-emerald-200'
-                            : 'bg-white border-slate-200 text-slate-600 hover:border-emerald-200 hover:bg-emerald-50/40'
+                            ? 'bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200 dark:bg-blue-950/40 dark:text-blue-300'
+                            : 'bg-white border-slate-200 text-slate-600 hover:border-blue-200 hover:bg-blue-50/40 dark:bg-slate-900 dark:text-slate-300'
                         }`}
                       >
                         <input
@@ -5029,7 +5130,7 @@ export default function EmployeeDashboard() {
                           onChange={() => toggleCommuteAdviceOption(value)}
                           className="sr-only"
                         />
-                        <span className={`w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 text-xs ${selected ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-500'}`} aria-hidden="true">
+                        <span className={`w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 text-xs ${selected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500'}`} aria-hidden="true">
                           {selected ? '✓' : icon}
                         </span>
                         <span className="min-w-0">
@@ -5042,7 +5143,7 @@ export default function EmployeeDashboard() {
                     );
                   })}
                 </div>
-                <div className={`mt-2.5 flex items-center gap-2 text-[9px] font-bold ${commuteAdviceOptions.length > 0 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                <div className={`mt-2.5 flex items-center gap-2 text-[9px] font-bold ${commuteAdviceOptions.length > 0 ? 'text-blue-700' : 'text-amber-700'}`}>
                   <span aria-hidden="true">{commuteAdviceOptions.length > 0 ? '✓' : '!'}</span>
                   <span>
                     {commuteAdviceOptions.length > 0
@@ -5074,7 +5175,7 @@ export default function EmployeeDashboard() {
                   type="button"
                   onClick={() => setCommuteLanguage('en')}
                   aria-pressed={commuteLanguage === 'en'}
-                  className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-[10px] font-extrabold transition-all ${
+                  className={`flex-1 sm:flex-none min-h-11 px-4 py-2 rounded-lg text-[10px] font-extrabold transition-all ${
                     commuteLanguage === 'en'
                       ? 'bg-white text-slate-950 shadow-sm'
                       : 'text-slate-500 hover:text-slate-800'
@@ -5086,7 +5187,7 @@ export default function EmployeeDashboard() {
                   type="button"
                   onClick={() => setCommuteLanguage('tl')}
                   aria-pressed={commuteLanguage === 'tl'}
-                  className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-[10px] font-extrabold transition-all ${
+                  className={`flex-1 sm:flex-none min-h-11 px-4 py-2 rounded-lg text-[10px] font-extrabold transition-all ${
                     commuteLanguage === 'tl'
                       ? 'bg-slate-900 text-white shadow-sm'
                       : 'text-slate-500 hover:text-slate-800'
@@ -5121,7 +5222,7 @@ export default function EmployeeDashboard() {
                   !commuteDepartureDate ||
                   !commuteDepartureTime
                 }
-                className="mt-3 w-full min-h-11 rounded-xl bg-emerald-700 text-white text-[10px] font-extrabold hover:bg-emerald-800 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-sm"
+                className="sticky bottom-2 z-20 mt-3 w-full min-h-11 rounded-xl bg-blue-700 text-white text-[10px] font-extrabold hover:bg-blue-800 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg sm:static sm:shadow-sm"
               >
                 <span aria-hidden="true">✨</span>
                 {commuteLoading ? 'Generating trip advice…' : 'Generate Trip Advice'}
@@ -5212,7 +5313,7 @@ export default function EmployeeDashboard() {
 
             {!commuteHasAttempted && !commuteLoading && (
               <div className="rounded-3xl border border-dashed border-slate-200 bg-white/70 p-8 sm:p-10 lg:min-h-[420px] flex flex-col items-center justify-center text-center">
-                <span className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-xl" aria-hidden="true">📍</span>
+                <span className="w-12 h-12 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center text-xl" aria-hidden="true">📍</span>
                 <p className="mt-3 text-xs font-extrabold text-slate-700">Your trip advice will appear here</p>
                 <p className="mt-1 text-[10px] text-slate-400">Choose your route, departure time, and advice options, then generate.</p>
               </div>
@@ -5221,18 +5322,18 @@ export default function EmployeeDashboard() {
             {commuteResult && (
               <div
                 aria-busy={commuteLoading}
-                className="space-y-3 rounded-3xl border border-slate-200 bg-white p-3.5 sm:p-4"
+                className="space-y-4 rounded-3xl border border-slate-200 bg-white p-3.5 sm:p-5 dark:border-slate-700 dark:bg-slate-900"
               >
                 <div
                   aria-live={commuteFailedAnnouncementAssertive ? 'assertive' : 'polite'}
-                  className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-2xl border px-3.5 py-3 ${
+                  className={`hidden sm:flex sm:flex-row sm:items-center sm:justify-between gap-2 border-b px-1 pb-4 ${
                     commuteUIState === 'partial'
-                      ? 'border-orange-200 bg-orange-50/70'
+                      ? 'border-orange-200'
                       : commuteUIState === 'failed'
-                        ? 'border-slate-200 bg-slate-50'
+                        ? 'border-slate-200'
                         : commuteUIState === 'updating'
-                          ? 'border-blue-200 bg-blue-50/70'
-                          : 'border-emerald-100 bg-emerald-50/60'
+                          ? 'border-blue-200'
+                          : 'border-slate-200 dark:border-slate-700'
                   }`}
                 >
                   <div className="min-w-0">
@@ -5245,7 +5346,7 @@ export default function EmployeeDashboard() {
                               ? 'bg-slate-200 text-slate-600'
                               : commuteUIState === 'updating'
                                 ? 'bg-blue-100 text-blue-700 animate-pulse'
-                                : 'bg-emerald-100 text-emerald-700'
+                                : 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
                         }`}
                         aria-hidden="true"
                       >
@@ -5264,7 +5365,7 @@ export default function EmployeeDashboard() {
                             ? 'text-slate-700'
                             : commuteUIState === 'updating'
                               ? 'text-blue-900'
-                              : 'text-emerald-800'
+                              : 'text-blue-700 dark:text-blue-300'
                       }`}>
                         {commuteUIState === 'updating'
                           ? 'UPDATING · Previous result shown'
@@ -5275,7 +5376,7 @@ export default function EmployeeDashboard() {
                               : `LIVE · Updated ${formatCommuteUpdatedAt(commuteResult.freshness?.overall_updated_at || commuteResult.generated_at)}`}
                       </p>
                     </div>
-                    <p className="text-base sm:text-lg font-black text-slate-950 mt-2 leading-tight">
+                    <p className="text-xl sm:text-3xl font-black text-slate-950 mt-2 leading-tight dark:text-white">
                       {selectedOriginAddress ? getAddressPrimaryLabel(selectedOriginAddress) : shortCommutePlace(commuteResult.origin?.name, 'Origin')} → {selectedDestinationAddress ? getAddressPrimaryLabel(selectedDestinationAddress) : shortCommutePlace(commuteResult.destination?.name, 'Destination')}
                     </p>
                     <p className="text-[9px] text-slate-500 mt-1">
@@ -5291,13 +5392,13 @@ export default function EmployeeDashboard() {
                     type="button"
                     onClick={checkCommuteRoute}
                     disabled={commuteLoading}
-                    className="min-h-9 px-3 rounded-xl bg-white border border-emerald-200 text-emerald-700 text-[9px] font-extrabold hover:bg-emerald-100 transition disabled:opacity-50"
+                    className="min-h-11 px-4 rounded-xl bg-blue-600 border border-blue-600 text-white text-[9px] font-extrabold hover:bg-blue-700 transition disabled:opacity-50"
                   >
                     {commuteLoading ? 'Refreshing…' : '↻ Refresh'}
                   </button>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2" aria-label="Requested advice availability">
+                <div className="grid grid-cols-2 gap-x-3 gap-y-2 border-b border-slate-200 pb-3 sm:flex sm:flex-wrap sm:items-center sm:justify-center sm:gap-0 dark:border-slate-700" aria-label="Requested advice availability">
                   {([
                     ['route_weather', '☁️', 'Route weather'],
                     ['rain_risk', '🌧️', 'Rain risk'],
@@ -5318,10 +5419,10 @@ export default function EmployeeDashboard() {
                     return (
                       <div
                         key={option}
-                        className={`rounded-xl border px-2.5 py-2 flex items-center gap-2 ${
+                        className={`min-h-10 px-2.5 py-2 flex items-center gap-2 sm:border-r sm:border-slate-200 sm:px-5 sm:last:border-r-0 dark:sm:border-slate-700 ${
                           availability === 'available'
-                            ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                            : 'border-slate-200 bg-slate-50 text-slate-600'
+                            ? 'text-blue-700 dark:text-blue-300'
+                            : 'text-slate-500 dark:text-slate-400'
                         }`}
                       >
                         <span className="text-xs" aria-hidden="true">
@@ -5341,34 +5442,28 @@ export default function EmployeeDashboard() {
                 </div>
 
                 {(commuteAdviceOptions.includes('traffic_delays') || commuteAdviceOptions.includes('best_departure')) && (commuteResult.partial?.traffic_available === true && commuteResult.route ? (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100">
-                    <p className="label-branded">ETA</p>
-                    <p className="stat-number text-lg text-slate-900">{formatCommuteMinutes(commuteResult.route?.eta_minutes)}</p>
-                  </div>
-                  <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100">
-                    <p className="label-branded">Distance</p>
-                    <p className="stat-number text-lg text-slate-900">{formatCommuteDistance(commuteResult.route?.distance_km)}</p>
-                  </div>
-                  <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100">
-                    <p className="label-branded">Traffic Delay</p>
-                    <p className="stat-number text-lg text-orange-600">+{formatCommuteMinutes(commuteResult.route?.delay_minutes)}</p>
-                    <p className="text-[8px] text-slate-400 mt-0.5">Compared with normal traffic</p>
-                  </div>
-                  <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100">
-                    <p className="label-branded">Traffic Level</p>
-                    <p
-                      className={`stat-number text-lg ${
-                        commuteResult.route?.traffic_level === 'Light'
-                          ? 'text-green-600'
-                          : commuteResult.route?.traffic_level === 'Moderate'
-                            ? 'text-orange-600'
-                            : 'text-red-600'
-                      }`}
-                    >
-                      {commuteResult.route?.traffic_level ?? 'Unknown'}
-                    </p>
-                  </div>
+                <div className="grid grid-cols-2 overflow-hidden rounded-2xl border border-slate-200 sm:grid-cols-4 dark:border-slate-700">
+                  <MetricCard icon="🕒" label="ETA" value={formatCommuteMinutes(commuteResult.route?.eta_minutes)} />
+                  <MetricCard icon="📍" label="Distance" value={formatCommuteDistance(commuteResult.route?.distance_km)} />
+                  <MetricCard
+                    icon="🚗"
+                    label="Traffic delay"
+                    value={`+${formatCommuteMinutes(commuteResult.route?.delay_minutes)}`}
+                    helper="Compared with normal traffic"
+                    valueClassName="text-orange-600 dark:text-orange-300"
+                  />
+                  <MetricCard
+                    icon="📶"
+                    label="Traffic level"
+                    value={commuteResult.route?.traffic_level ?? 'Unknown'}
+                    valueClassName={
+                      commuteResult.route?.traffic_level === 'Light'
+                        ? 'text-blue-600 dark:text-blue-300'
+                        : commuteResult.route?.traffic_level === 'Moderate'
+                          ? 'text-orange-600 dark:text-orange-300'
+                          : 'text-red-600 dark:text-red-300'
+                    }
+                  />
                 </div>
                 ) : (
                   <div className="rounded-2xl border border-orange-200 bg-orange-50 p-3.5 flex items-start gap-3">
@@ -5381,7 +5476,7 @@ export default function EmployeeDashboard() {
                 ))}
 
                 {(commuteAdviceOptions.includes('route_weather') || commuteAdviceOptions.includes('rain_risk')) && commuteResult.route_weather_summary?.available && commuteResult.route_weather_checkpoints && commuteResult.route_weather_checkpoints.length > 0 && (
-                  <section className="rounded-2xl border border-slate-200 bg-white overflow-hidden dark:border-slate-600 dark:bg-slate-900">
+                  <section className="overflow-hidden rounded-2xl bg-[#fcfbf8] dark:bg-slate-950/40">
                     <div className="px-3.5 py-3 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 dark:border-slate-700">
                       <div>
                         <p className="text-xs font-extrabold text-slate-900 dark:text-white">Weather along your route</p>
@@ -5390,7 +5485,7 @@ export default function EmployeeDashboard() {
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[8px] font-extrabold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
+                        <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[8px] font-extrabold text-blue-700 dark:bg-blue-950/60 dark:text-blue-300">
                           🗺️ {commuteResult.route_weather_checkpoints.length} checkpoints
                         </span>
                         <span className="text-[8px] font-bold text-slate-400">Tap a card</span>
@@ -5417,31 +5512,26 @@ export default function EmployeeDashboard() {
                                 const isHighRisk = rainChance >= 70;
                                 const isRainRisk = rainChance >= 50;
                                 const cardTone = !checkpoint.available
-                                  ? 'border-slate-200 bg-slate-50 dark:border-slate-600 dark:bg-slate-800/70'
+                                  ? 'border-slate-200 bg-slate-50/60 dark:border-slate-700 dark:bg-slate-800/40'
                                   : isHighRisk
-                                    ? 'border-orange-300 bg-orange-50 dark:border-orange-500/70 dark:bg-orange-950/30'
+                                    ? 'border-orange-300 bg-orange-50/40 dark:border-orange-600 dark:bg-orange-950/20'
                                     : isRainRisk
-                                      ? 'border-amber-200 bg-amber-50 dark:border-amber-500/60 dark:bg-amber-950/25'
-                                      : 'border-emerald-100 bg-emerald-50/60 dark:border-emerald-700/60 dark:bg-emerald-950/20';
+                                      ? 'border-amber-200 bg-amber-50/30 dark:border-amber-700 dark:bg-amber-950/20'
+                                      : 'border-slate-200 bg-transparent dark:border-slate-700';
 
                                 return (
                                   <div key={`${checkpoint.index}-${checkpoint.lat}-${checkpoint.lon}`} className="contents">
-                                    <button
-                                      type="button"
+                                    <CheckpointItem
+                                      selected={isSelected}
                                       onClick={() => setSelectedCommuteCheckpointIndex(checkpoint.index)}
-                                      aria-expanded={isSelected}
-                                      aria-label={`View forecast details for ${checkpoint.location_name}`}
-                                      className={`group relative flex-1 min-w-0 rounded-2xl border p-3 text-left lg:text-center transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 ${cardTone} ${
-                                        isSelected
-                                          ? 'ring-2 ring-emerald-500 shadow-md dark:ring-emerald-400'
-                                          : ''
-                                      }`}
+                                      label={`View forecast details for ${checkpoint.location_name}`}
+                                      className={cardTone}
                                     >
                                       <div className="flex items-start justify-between gap-3 lg:flex-col lg:items-center">
-                                        <span className={`flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl border text-2xl shadow-sm ${
+                                        <span className={`flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-full border text-3xl shadow-sm lg:h-20 lg:w-20 lg:text-4xl ${
                                           isHighRisk
                                             ? 'border-orange-200 bg-white dark:border-orange-700 dark:bg-slate-900'
-                                            : 'border-emerald-100 bg-white dark:border-slate-600 dark:bg-slate-900'
+                                            : 'border-blue-100 bg-white dark:border-slate-600 dark:bg-slate-900'
                                         }`} aria-hidden="true">
                                           {visual.icon}
                                         </span>
@@ -5455,7 +5545,7 @@ export default function EmployeeDashboard() {
                                                 ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/60 dark:text-orange-200'
                                                 : isRainRisk
                                                   ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/60 dark:text-amber-200'
-                                                  : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-200'
+                                                : 'bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-200'
                                             }`}>
                                               {checkpoint.available && checkpoint.rain_probability != null
                                                 ? `${Math.round(checkpoint.rain_probability)}%`
@@ -5475,18 +5565,18 @@ export default function EmployeeDashboard() {
                                           )}
                                         </div>
                                       </div>
-                                      <span className="mt-2 hidden text-[8px] font-bold text-emerald-700 dark:text-emerald-300 lg:block">
+                                      <span className="mt-2 hidden text-[8px] font-bold text-blue-700 dark:text-blue-300 lg:block">
                                         {isSelected ? 'Details shown below' : 'Click for details'}
                                       </span>
-                                    </button>
+                                    </CheckpointItem>
 
                                     {index < routeCheckpoints.length - 1 && (
                                       <>
                                         <div className="flex lg:hidden h-4 pl-5 items-stretch" aria-hidden="true">
-                                          <span className="w-0.5 h-full bg-emerald-300 dark:bg-emerald-700" />
+                                          <span className={`w-0.5 h-full ${isHighRisk || isRainRisk ? 'bg-orange-400' : 'bg-blue-500'}`} />
                                         </div>
                                         <div className="hidden lg:flex w-4 items-center justify-center" aria-hidden="true">
-                                          <span className="h-0.5 w-full bg-emerald-300 dark:bg-emerald-700" />
+                                          <span className={`h-0.5 w-full ${isHighRisk || isRainRisk ? 'bg-orange-400' : 'bg-blue-500'}`} />
                                         </div>
                                       </>
                                     )}
@@ -5496,7 +5586,7 @@ export default function EmployeeDashboard() {
                             </div>
 
                             {selectedCheckpoint && selectedVisual && (
-                              <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-3.5 dark:border-slate-600 dark:bg-slate-800/70" aria-live="polite">
+                              <div className="mt-3 rounded-2xl border border-blue-200 bg-white p-3.5 shadow-sm dark:border-blue-800 dark:bg-slate-900" aria-live="polite">
                                 <div className="flex items-start gap-3">
                                   <span className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-white text-3xl shadow-sm dark:bg-slate-900" aria-hidden="true">
                                     {selectedVisual.icon}
@@ -5520,7 +5610,7 @@ export default function EmployeeDashboard() {
 
                                 <div className="mt-3 flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between dark:border-slate-700 dark:bg-slate-900">
                                   <div className="flex min-w-0 items-start gap-2.5">
-                                    <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-base dark:bg-emerald-950/60" aria-hidden="true">
+                                    <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-blue-50 text-base dark:bg-blue-950/60" aria-hidden="true">
                                       📍
                                     </span>
                                     <div className="min-w-0">
@@ -5542,7 +5632,7 @@ export default function EmployeeDashboard() {
                                       href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${selectedCheckpoint.lat},${selectedCheckpoint.lon}`)}`}
                                       target="_blank"
                                       rel="noopener noreferrer"
-                                      className="inline-flex min-h-9 flex-shrink-0 items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-[9px] font-extrabold text-emerald-700 transition hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
+                                      className="inline-flex min-h-11 flex-shrink-0 items-center justify-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 text-[9px] font-extrabold text-blue-700 transition hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-300"
                                     >
                                       🗺️ Open in Maps
                                     </a>
@@ -5600,15 +5690,9 @@ export default function EmployeeDashboard() {
                       })()}
 
                       {commuteResult.route_weather_summary?.recommendation && (
-                        <div className="mt-3 rounded-2xl border border-emerald-100 bg-emerald-50/70 px-3.5 py-3 flex items-start gap-3 dark:border-emerald-700/60 dark:bg-emerald-950/30">
-                          <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-white text-lg shadow-sm dark:bg-slate-900" aria-hidden="true">☂️</span>
-                          <div>
-                            <p className="text-[8px] font-extrabold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Trip recommendation</p>
-                            <p className="mt-1 text-[10px] font-semibold text-slate-700 leading-relaxed dark:text-slate-200">
-                              {commuteResult.route_weather_summary.recommendation}
-                            </p>
-                          </div>
-                        </div>
+                        <AdvisoryBanner icon="☂️" title="Trip recommendation" className="mt-3">
+                          {commuteResult.route_weather_summary.recommendation}
+                        </AdvisoryBanner>
                       )}
 
                       <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[8px] text-slate-400">
@@ -5701,9 +5785,9 @@ export default function EmployeeDashboard() {
                           : {
                               icon: '🟢',
                               label: isTl ? 'MAAYOS ANG BIYAHE' : 'GOOD TO GO',
-                              card: 'bg-emerald-50 border-emerald-200',
-                              badge: 'bg-emerald-600 text-white',
-                              title: 'text-emerald-950',
+                              card: 'bg-blue-50 border-blue-200',
+                              badge: 'bg-blue-600 text-white',
+                              title: 'text-blue-950',
                             };
 
                   return (
@@ -5946,8 +6030,6 @@ export default function EmployeeDashboard() {
                   );
                 })()}
 
-                {commuteResult.route && (commuteAdviceOptions.includes('route_weather') || commuteAdviceOptions.includes('traffic_delays')) && <TrafficRouteMap result={commuteResult} />}
-
                 {commuteAdviceOptions.includes('traffic_delays') && (commuteResult.incidents?.length ?? 0) > 0 && (
                   <div className="rounded-2xl bg-white border border-slate-200 overflow-hidden">
                     <button
@@ -6072,6 +6154,24 @@ export default function EmployeeDashboard() {
                     <span className="ml-auto">{selectedOriginAddress ? getAddressPrimaryLabel(selectedOriginAddress) : commuteResult.origin?.name ?? 'Origin'} → {selectedDestinationAddress ? getAddressPrimaryLabel(selectedDestinationAddress) : commuteResult.destination?.name ?? 'Destination'}</span>
                   </div>
                 )}
+
+                <div className="sticky bottom-0 z-30 -mx-3.5 grid grid-cols-2 gap-2 border-t border-slate-200 bg-white/95 px-3.5 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:hidden dark:border-slate-700 dark:bg-slate-900/95">
+                  <button
+                    type="button"
+                    onClick={() => setIsCommuteFormCollapsed(false)}
+                    className="min-h-11 rounded-xl border border-blue-200 bg-white px-3 text-[10px] font-extrabold text-blue-700 transition hover:bg-blue-50 dark:border-blue-800 dark:bg-slate-950 dark:text-blue-300"
+                  >
+                    ✏️ Edit trip
+                  </button>
+                  <button
+                    type="button"
+                    onClick={checkCommuteRoute}
+                    disabled={commuteLoading}
+                    className="min-h-11 rounded-xl bg-blue-600 px-3 text-[10px] font-extrabold text-white transition hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {commuteLoading ? 'Refreshing…' : '↻ Refresh advice'}
+                  </button>
+                </div>
               </div>
             )}
             </div>
