@@ -4259,9 +4259,9 @@ export default function EmployeeDashboard() {
                       commuteResult?.highlight_destination_for_rain ||
                       commuteResult?.weather?.rain_alert?.active ||
                       Number(commuteResult?.weather?.rain_probability ?? 0) >= 50
-                        ? Number(commuteResult.route_weather_summary?.highest_rain_probability ?? commuteResult.weather?.rain_probability ?? 0) >= 85
+                        ? Number(commuteResult?.route_weather_summary?.highest_rain_probability ?? commuteResult?.weather?.rain_probability ?? 0) >= 85
                           ? '!border-red-400 ring-2 ring-red-200/70'
-                          : Number(commuteResult.route_weather_summary?.highest_rain_probability ?? commuteResult.weather?.rain_probability ?? 0) >= 70
+                          : Number(commuteResult?.route_weather_summary?.highest_rain_probability ?? commuteResult?.weather?.rain_probability ?? 0) >= 70
                             ? '!border-orange-400 ring-2 ring-orange-200/70'
                             : '!border-amber-400 ring-2 ring-amber-200/70'
                         : ''
@@ -5952,4 +5952,3 @@ export default function EmployeeDashboard() {
     </main>
   );
 }
-
