@@ -411,6 +411,17 @@ export default function PlanMyCommuteModal({
   // triggered the modal once it closes.
   const commuteTriggerElementRef = useRef<HTMLElement | null>(null);
 
+  // onClose is often passed as a new inline function on every parent
+  // render (e.g. onClose={() => setCommuteModalOpen(false)}). Keeping it
+  // out of the effect below (via a ref) means the effect only re-runs
+  // when `open` actually changes -- not on every parent re-render -- so
+  // it doesn't repeatedly re-run its setup (including the initial-focus
+  // step) while the user is typing.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
   useEffect(() => {
     if (!open) return;
 
@@ -418,13 +429,19 @@ export default function PlanMyCommuteModal({
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
     const focusTimer = window.setTimeout(() => {
-      commuteCloseButtonRef.current?.focus();
+      const container = commuteModalRef.current;
+      // Only steal focus to the close button if the user hasn't already
+      // manually focused something inside the modal (e.g. clicked into
+      // the origin field and started typing right as the modal opened).
+      if (container && !container.contains(document.activeElement)) {
+        commuteCloseButtonRef.current?.focus();
+      }
     }, 0);
 
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.stopPropagation();
-        onClose();
+        onCloseRef.current();
         return;
       }
 
@@ -460,7 +477,7 @@ export default function PlanMyCommuteModal({
       document.removeEventListener('keydown', handleKeyDown);
       commuteTriggerElementRef.current?.focus();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   const handleAddressSearchKeyDown = (
     event: KeyboardEvent<HTMLInputElement>,
