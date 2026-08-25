@@ -51,6 +51,49 @@ const FALLBACK_LATE_CUTOFF_MINUTE = 15;
 const FALLBACK_LEAVE_CREDITS = 10;
 const FALLBACK_TIME_OUT_REMINDER_HOUR = 19;
 
+const getManilaDateTimeInputs = () => {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date());
+  const get = (type: string) => parts.find((part) => part.type === type)?.value || '';
+  const minute = Number(get('minute'));
+  const roundedMinute = minute >= 30 ? '30' : '00';
+
+  return {
+    date: `${get('year')}-${get('month')}-${get('day')}`,
+    time: `${get('hour')}:${roundedMinute}`,
+  };
+};
+
+const formatManilaClockValue = (isoValue: string | null | undefined) => {
+  if (!isoValue) return '--';
+  const date = new Date(isoValue);
+  if (!Number.isFinite(date.getTime())) return '--';
+  return date.toLocaleTimeString('en-PH', {
+    timeZone: 'Asia/Manila',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+};
+
+const getManilaForecastMaxDate = () => {
+  const start = getManilaDateTimeInputs().date;
+  const date = new Date(`${start}T12:00:00+08:00`);
+  date.setUTCDate(date.getUTCDate() + 6);
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+};
+
 
 type CommutePoint = {
   name: string;
@@ -68,8 +111,45 @@ type AddressSuggestion = {
   type: string;
 };
 
+type CommuteRainAlert = {
+  active?: boolean;
+  threshold_percent?: number;
+  level?: 'none' | 'watch' | 'likely' | 'very_likely' | string;
+  tone?: 'neutral' | 'amber' | 'orange' | 'red' | string;
+  highlight_destination?: boolean;
+  message?: string | null;
+};
+
+type RouteWeatherCheckpoint = {
+  index: number;
+  total: number;
+  fraction: number;
+  lat: number;
+  lon: number;
+  location_name: string;
+  resolved_address?: string | null;
+  estimated_minutes_from_departure: number;
+  arrival_time: string;
+  available: boolean;
+  rain_probability?: number | null;
+  precipitation_mm?: number | null;
+  rain_intensity?: string | null;
+  rain_intensity_label?: string | null;
+  condition_label?: string | null;
+  weather_code?: number | null;
+  temperature_c?: number | null;
+  apparent_temperature_c?: number | null;
+  wind_speed_kmh?: number | null;
+  wind_gust_kmh?: number | null;
+  rain_alert?: boolean;
+  rain_alert_tone?: 'neutral' | 'amber' | 'orange' | 'red' | string;
+  forecast_method?: string | null;
+  source?: string | null;
+};
+
 type CommuteCheckResult = {
   success: boolean;
+  data_status?: 'complete' | 'partial' | 'unavailable' | string;
   origin: CommutePoint;
   destination: CommutePoint;
   route: {
@@ -79,13 +159,35 @@ type CommuteCheckResult = {
     distance_km: number;
     traffic_level: 'Light' | 'Moderate' | 'Heavy' | 'Severe' | string;
     coordinates: Array<{ lat: number; lon: number }>;
-  };
+    departure_time?: string | null;
+    arrival_time?: string | null;
+    weather_checkpoint_count?: number;
+  } | null;
   weather?: {
     temperature_c?: number | null;
     apparent_temperature_c?: number | null;
+    relative_humidity_percent?: number | null;
+    precipitation_mm?: number | null;
+    expected_precipitation_next_30_minutes_mm?: number | null;
+    expected_precipitation_next_hour_mm?: number | null;
+    is_raining?: boolean | null;
     rain_probability?: number | null;
+    rain_probability_time?: string | null;
+    rain_probability_method?: string | null;
+    rain_intensity?: 'none' | 'light' | 'moderate' | 'heavy' | 'very_heavy' | 'unknown' | string | null;
+    rain_intensity_label?: string | null;
+    possible_rain_amount?: string | null;
+    rain_alert?: CommuteRainAlert | null;
     weather_code?: number | null;
     wind_speed_kmh?: number | null;
+    wind_gust_kmh?: number | null;
+    is_day?: boolean | null;
+    weather_time?: string | null;
+    source_time?: string | null;
+    bucket_minutes?: number | null;
+    timezone?: string | null;
+    source?: string | null;
+    data_type?: string | null;
   } | null;
   incidents?: Array<{
     id?: string | null;
@@ -113,6 +215,33 @@ type CommuteCheckResult = {
     } | null;
   }>;
   advisory?: string | null;
+  partial?: {
+    traffic_available?: boolean;
+    destination_weather_available?: boolean;
+    route_weather_available?: boolean;
+    incidents_available?: boolean;
+  };
+  freshness?: {
+    overall_updated_at?: string | null;
+    traffic_updated_at?: string | null;
+    weather_updated_at?: string | null;
+  };
+  route_weather_checkpoints?: RouteWeatherCheckpoint[];
+  route_weather_summary?: {
+    available?: boolean;
+    checkpoint_count?: number;
+    highest_rain_probability?: number | null;
+    wettest_checkpoint?: RouteWeatherCheckpoint | null;
+    rain_alert?: boolean;
+    recommended_extra_minutes?: number | null;
+    recommendation?: string | null;
+    generated_for_departure_at?: string | null;
+    timezone?: string | null;
+    source?: string | null;
+  } | null;
+  destination_weather_alert?: CommuteRainAlert | null;
+  highlight_destination_for_rain?: boolean;
+  highlight_route_for_rain?: boolean;
   ai_advisory?: {
     status?: 'good_to_go' | 'leave_early' | 'expect_delays' | 'consider_alternate_route' | string | null;
     status_label?: string | null;
@@ -128,8 +257,9 @@ type CommuteCheckResult = {
   ai_request?: any;
   generated_at: string;
   sources?: {
-    traffic?: string;
-    weather?: string;
+    traffic?: string | null;
+    weather?: string | null;
+    ai?: string | null;
   };
 };
 
@@ -336,6 +466,15 @@ function TrafficRouteMap({ result }: { result: CommuteCheckResult }) {
     const routeScreen = route.map(toScreen);
     const originScreen = toScreen(origin);
     const destinationScreen = toScreen(destination);
+    const checkpointScreens = (result.route_weather_checkpoints ?? [])
+      .filter((checkpoint) =>
+        Number.isFinite(Number(checkpoint.lat)) &&
+        Number.isFinite(Number(checkpoint.lon))
+      )
+      .map((checkpoint) => ({
+        checkpoint,
+        screen: toScreen({ lat: Number(checkpoint.lat), lon: Number(checkpoint.lon) }),
+      }));
 
     const path =
       routeScreen.length > 1
@@ -353,6 +492,7 @@ function TrafficRouteMap({ result }: { result: CommuteCheckResult }) {
       path,
       originScreen,
       destinationScreen,
+      checkpointScreens,
     };
   }, [apiKey, result, size.height, size.width, zoomOffset]);
 
@@ -453,11 +593,43 @@ function TrafficRouteMap({ result }: { result: CommuteCheckResult }) {
             A
           </button>
 
+          {mapData.checkpointScreens
+            .filter(({ checkpoint }) => checkpoint.available && checkpoint.index > 0 && checkpoint.index < checkpoint.total - 1)
+            .map(({ checkpoint, screen }) => {
+              const rainChance = Number(checkpoint.rain_probability ?? 0);
+              const alertClass = rainChance >= 85
+                ? 'bg-red-600 ring-red-200'
+                : rainChance >= 70
+                  ? 'bg-orange-500 ring-orange-200'
+                  : rainChance >= 50
+                    ? 'bg-amber-500 ring-amber-200'
+                    : 'bg-emerald-600 ring-emerald-200';
+              return (
+                <button
+                  key={`map-checkpoint-${checkpoint.index}-${checkpoint.lat}-${checkpoint.lon}`}
+                  type="button"
+                  title={`${checkpoint.location_name} · ${formatManilaClockValue(checkpoint.arrival_time)} · ${checkpoint.rain_probability ?? 'N/A'}% rain`}
+                  className={`absolute z-20 -translate-x-1/2 -translate-y-1/2 min-w-7 h-7 px-1 rounded-full text-white border-2 border-white shadow-lg ring-4 text-[8px] font-extrabold flex items-center justify-center ${alertClass}`}
+                  style={{ left: `${screen.x}px`, top: `${screen.y}px` }}
+                >
+                  {checkpoint.rain_probability != null ? `${Math.round(checkpoint.rain_probability)}%` : '•'}
+                </button>
+              );
+            })}
+
           {/* Destination marker */}
           <button
             type="button"
-            title={result.destination?.name || 'Destination'}
-            className="absolute z-20 -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-green-600 text-white border-[3px] border-white shadow-lg text-[11px] font-extrabold flex items-center justify-center"
+            title={`${result.destination?.name || 'Destination'}${result.highlight_destination_for_rain ? ' · Rain alert' : ''}`}
+            className={`absolute z-20 -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full text-white border-[3px] border-white shadow-lg text-[11px] font-extrabold flex items-center justify-center ${
+              result.highlight_destination_for_rain
+                ? Number(result.weather?.rain_probability ?? 0) >= 85
+                  ? 'bg-red-600 ring-4 ring-red-300/70'
+                  : Number(result.weather?.rain_probability ?? 0) >= 70
+                    ? 'bg-orange-500 ring-4 ring-orange-300/70'
+                    : 'bg-amber-500 ring-4 ring-amber-300/70'
+                : 'bg-green-600'
+            }`}
             style={{
               left: `${mapData.destinationScreen.x}px`,
               top: `${mapData.destinationScreen.y}px`,
@@ -757,7 +929,10 @@ export default function EmployeeDashboard() {
   const [commuteModalOpen, setCommuteModalOpen] = useState(false);
   const [commuteOrigin, setCommuteOrigin] = useState('');
   const [commuteDestination, setCommuteDestination] = useState('');
+  const [commuteDepartureDate, setCommuteDepartureDate] = useState(() => getManilaDateTimeInputs().date);
+  const [commuteDepartureTime, setCommuteDepartureTime] = useState(() => getManilaDateTimeInputs().time);
   const [commuteLoading, setCommuteLoading] = useState(false);
+  const [commuteHasAttempted, setCommuteHasAttempted] = useState(false);
   const [showCommuteIncidents, setShowCommuteIncidents] = useState(false);
   const [commuteError, setCommuteError] = useState<string | null>(null);
   const [commuteResult, setCommuteResult] = useState<CommuteCheckResult | null>(null);
@@ -772,6 +947,8 @@ export default function EmployeeDashboard() {
   const [showDestinationSuggestions, setShowDestinationSuggestions] = useState(false);
   const originSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const destinationSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const commuteAutoRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const commuteRequestController = useRef<AbortController | null>(null);
 
   const fetchAddressSuggestions = async (
     query: string,
@@ -932,6 +1109,10 @@ export default function EmployeeDashboard() {
   const openCommuteChecker = () => {
     setCommuteError(null);
     setCommuteResult(null);
+    setCommuteHasAttempted(false);
+    const currentManila = getManilaDateTimeInputs();
+    setCommuteDepartureDate(currentManila.date);
+    setCommuteDepartureTime(currentManila.time);
     setOriginSuggestions([]);
     setDestinationSuggestions([]);
     setSelectedOriginAddress(null);
@@ -977,17 +1158,28 @@ export default function EmployeeDashboard() {
       setCommuteError('Enter both From and To locations.');
       return;
     }
+    commuteRequestController.current?.abort();
+    const controller = new AbortController();
+    commuteRequestController.current = controller;
     setCommuteLoading(true);
+    setCommuteHasAttempted(true);
     setCommuteError(null);
-    setCommuteResult(null);
     try {
+      const requestedDeparture = new Date(
+        `${commuteDepartureDate}T${commuteDepartureTime}:00+08:00`
+      );
       const response = await fetch('/api/commute-check', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           origin: commuteOrigin.trim(),
           destination: commuteDestination.trim(),
           language: commuteLanguage,
+          requested_departure_at: Number.isFinite(requestedDeparture.getTime())
+            ? requestedDeparture.toISOString()
+            : null,
+          advice_options: ['route_weather', 'rain_risk', 'traffic_delays', 'best_departure'],
           origin_position: selectedOriginAddress
             ? {
                 lat: selectedOriginAddress.latitude,
@@ -1004,16 +1196,50 @@ export default function EmployeeDashboard() {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.error || 'Unable to check this route.');
-      if (!payload?.success || !payload?.route || !payload?.origin || !payload?.destination) {
+      if (!payload?.success || (!payload?.route && !payload?.weather) || !payload?.origin || !payload?.destination) {
         throw new Error(payload?.error || 'The commute service returned an incomplete response.');
       }
       setCommuteResult(payload as CommuteCheckResult);
     } catch (err: any) {
+      if (err?.name === 'AbortError') return;
       setCommuteError(err?.message || 'Unable to check this route.');
     } finally {
-      setCommuteLoading(false);
+      if (commuteRequestController.current === controller) {
+        setCommuteLoading(false);
+      }
     }
   };
+
+  useEffect(() => {
+    if (!commuteModalOpen) return;
+    if (commuteOrigin.trim().length < 3 || commuteDestination.trim().length < 3) return;
+    if (!commuteDepartureDate || !commuteDepartureTime) return;
+
+    if (commuteAutoRefreshTimer.current) {
+      clearTimeout(commuteAutoRefreshTimer.current);
+    }
+
+    commuteAutoRefreshTimer.current = setTimeout(() => {
+      checkCommuteRoute();
+    }, 900);
+
+    return () => {
+      if (commuteAutoRefreshTimer.current) {
+        clearTimeout(commuteAutoRefreshTimer.current);
+      }
+    };
+    // Route checks are intentionally debounced from these user-controlled fields.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    commuteModalOpen,
+    commuteOrigin,
+    commuteDestination,
+    commuteDepartureDate,
+    commuteDepartureTime,
+    commuteLanguage,
+    selectedOriginAddress?.id,
+    selectedDestinationAddress?.id,
+  ]);
 
   const formatCommuteMinutes = (minutes: number | null | undefined) => {
     const value = Number(minutes ?? 0);
@@ -1025,28 +1251,73 @@ export default function EmployeeDashboard() {
     return `${value.toFixed(value >= 10 ? 0 : 1)} km`;
   };
 
+  const formatCommuteClock = (isoValue: string | null | undefined) => {
+    return formatManilaClockValue(isoValue);
+  };
+
+  const formatCommuteUpdatedAt = (isoValue: string | null | undefined) => {
+    if (!isoValue) return '--';
+    const date = new Date(isoValue);
+    if (!Number.isFinite(date.getTime())) return '--';
+    return date.toLocaleTimeString('en-PH', {
+      timeZone: 'Asia/Manila',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  };
+
+  const shortCommutePlace = (value: string | null | undefined, fallback: string) => {
+    const firstPart = String(value || '').split(',')[0]?.trim();
+    return firstPart || fallback;
+  };
+
   const getCommuteWeatherHighlight = (weather: CommuteCheckResult['weather']) => {
     const rain = Number(weather?.rain_probability ?? 0);
     const feels = Number(weather?.apparent_temperature_c ?? weather?.temperature_c ?? 0);
     const wind = Number(weather?.wind_speed_kmh ?? 0);
+    const alertActive = weather?.rain_alert?.active === true || rain >= 50;
 
-    if (rain >= 70) {
+    if (alertActive && rain >= 85) {
       return {
-        label: 'High chance of rain',
-        icon: '🌧️',
-        card: 'bg-blue-100 border-blue-300',
-        badge: 'bg-blue-600 text-white',
-        text: 'text-blue-950',
+        label: 'Very likely rain',
+        icon: '⛈️',
+        card: 'bg-red-50 border-red-200',
+        badge: 'bg-red-600 text-white',
+        text: 'text-red-950',
+        accent: 'bg-red-500',
       };
     }
 
-    if (rain >= 40) {
+    if (alertActive && rain >= 70) {
+      return {
+        label: 'Rain likely',
+        icon: '🌧️',
+        card: 'bg-orange-50 border-orange-200',
+        badge: 'bg-orange-500 text-white',
+        text: 'text-orange-950',
+        accent: 'bg-orange-500',
+      };
+    }
+
+    if (alertActive) {
+      return {
+        label: 'Rain watch',
+        icon: '🌦️',
+        card: 'bg-amber-50 border-amber-200',
+        badge: 'bg-amber-500 text-white',
+        text: 'text-amber-950',
+        accent: 'bg-amber-500',
+      };
+    }
+
+    if (rain >= 30) {
       return {
         label: 'Possible rain',
         icon: '🌦️',
-        card: 'bg-sky-50 border-sky-300',
+        card: 'bg-sky-50 border-sky-200',
         badge: 'bg-sky-600 text-white',
         text: 'text-sky-950',
+        accent: 'bg-sky-500',
       };
     }
 
@@ -1057,6 +1328,7 @@ export default function EmployeeDashboard() {
         card: 'bg-orange-50 border-orange-300',
         badge: 'bg-orange-500 text-white',
         text: 'text-orange-950',
+        accent: 'bg-orange-500',
       };
     }
 
@@ -1067,6 +1339,7 @@ export default function EmployeeDashboard() {
         card: 'bg-cyan-50 border-cyan-300',
         badge: 'bg-cyan-600 text-white',
         text: 'text-cyan-950',
+        accent: 'bg-cyan-500',
       };
     }
 
@@ -1076,7 +1349,24 @@ export default function EmployeeDashboard() {
       card: 'bg-emerald-50 border-emerald-200',
       badge: 'bg-emerald-600 text-white',
       text: 'text-emerald-950',
+      accent: 'bg-emerald-500',
     };
+  };
+
+  const formatWeatherBucketTime = (value?: string | null) => {
+    if (!value) return 'Latest available';
+    const time = String(value).match(/T(\d{2}):(\d{2})/);
+    if (!time) return value;
+    const hour = Number(time[1]);
+    const minute = time[2];
+    const displayHour = hour % 12 || 12;
+    return `${displayHour}:${minute} ${hour >= 12 ? 'PM' : 'AM'}`;
+  };
+
+  const formatRainAmount = (value?: number | null) => {
+    const amount = Number(value);
+    if (!Number.isFinite(amount)) return '—';
+    return `${amount < 10 ? amount.toFixed(1) : Math.round(amount)} mm`;
   };
 
   const getTrafficLevelStyle = (level?: string | null) => {
@@ -3106,7 +3396,7 @@ export default function EmployeeDashboard() {
                   <span className="w-10 h-10 rounded-2xl bg-sky-50 flex items-center justify-center text-lg">🌦️</span>
                   <span className="min-w-0">
                     <span className="block text-xs font-bold text-slate-900">Weather & Live Traffic</span>
-                    <span className="block text-[10px] text-slate-400 mt-0.5">Check any route in the Philippines.</span>
+                    <span className="block text-[10px] text-slate-400 mt-0.5">30-minute weather and live traffic for any PH route.</span>
                   </span>
                 </span>
                 <span className="text-slate-400">→</span>
@@ -3818,13 +4108,13 @@ export default function EmployeeDashboard() {
                 </div>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="mb-0">Commute Assistant</h3>
+                    <h3 className="mb-0">Plan My Commute</h3>
                     <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[8px] font-extrabold uppercase tracking-wider">
                       Live
                     </span>
                   </div>
                   <p className="text-slate-400 text-xs mt-1">
-                    Route, traffic, weather, and AI travel advice in one view.
+                    Weather and traffic advice across your selected route.
                   </p>
                 </div>
               </div>
@@ -3866,7 +4156,6 @@ export default function EmployeeDashboard() {
                         const value = e.target.value;
                         setCommuteOrigin(value);
                         setSelectedOriginAddress(null);
-                        setCommuteResult(null);
                         setShowOriginSuggestions(true);
                         scheduleAddressSearch(value, 'origin');
                       }}
@@ -3949,7 +4238,6 @@ export default function EmployeeDashboard() {
                       const value = e.target.value;
                       setCommuteDestination(value);
                       setSelectedDestinationAddress(null);
-                      setCommuteResult(null);
                       setShowDestinationSuggestions(true);
                       scheduleAddressSearch(value, 'destination');
                     }}
@@ -3966,7 +4254,18 @@ export default function EmployeeDashboard() {
                       }, 180);
                     }}
                     autoComplete="off"
-                    className="input-field w-full"
+                    className={`input-field w-full transition-shadow ${
+                      commuteResult?.highlight_route_for_rain ||
+                      commuteResult?.highlight_destination_for_rain ||
+                      commuteResult?.weather?.rain_alert?.active ||
+                      Number(commuteResult?.weather?.rain_probability ?? 0) >= 50
+                        ? Number(commuteResult.route_weather_summary?.highest_rain_probability ?? commuteResult.weather?.rain_probability ?? 0) >= 85
+                          ? '!border-red-400 ring-2 ring-red-200/70'
+                          : Number(commuteResult.route_weather_summary?.highest_rain_probability ?? commuteResult.weather?.rain_probability ?? 0) >= 70
+                            ? '!border-orange-400 ring-2 ring-orange-200/70'
+                            : '!border-amber-400 ring-2 ring-amber-200/70'
+                        : ''
+                    }`}
                     placeholder="Type an exact address..."
                   />
 
@@ -4005,6 +4304,38 @@ export default function EmployeeDashboard() {
                       ))}
                     </div>
                   )}
+                  {commuteResult && (() => {
+                    const routeWettest = commuteResult.route_weather_summary?.wettest_checkpoint;
+                    const rainChance = Number(
+                      routeWettest?.rain_probability ?? commuteResult.weather?.rain_probability ?? 0
+                    );
+                    const active = commuteResult.highlight_route_for_rain ||
+                      commuteResult.destination_weather_alert?.active ||
+                      commuteResult.weather?.rain_alert?.active ||
+                      rainChance >= 50;
+                    if (!active) return null;
+                    return (
+                      <div className={`mt-2 rounded-xl border px-3 py-2 ${
+                        rainChance >= 85
+                          ? 'bg-red-50 border-red-200'
+                          : rainChance >= 70
+                            ? 'bg-orange-50 border-orange-200'
+                            : 'bg-amber-50 border-amber-200'
+                      }`}>
+                        <p className="text-[10px] font-extrabold text-slate-900">
+                          ☔ {Math.round(rainChance)}% rain chance
+                          {routeWettest?.location_name ? ` near ${shortCommutePlace(routeWettest.location_name, 'your route')}` : ' at the destination'}
+                        </p>
+                        <p className="text-[9px] text-slate-600 mt-0.5">
+                          {routeWettest?.rain_intensity_label || commuteResult.weather?.rain_intensity_label || 'Rain possible'}
+                          {routeWettest?.arrival_time ? ` · around ${formatCommuteClock(routeWettest.arrival_time)}` : ''}
+                          {routeWettest?.precipitation_mm != null
+                            ? ` · ${formatRainAmount(routeWettest.precipitation_mm)} possible`
+                            : ''}
+                        </p>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
@@ -4016,6 +4347,64 @@ export default function EmployeeDashboard() {
               >
                 ◎ Use my current location
               </button>
+
+              <div className="grid grid-cols-2 gap-2.5 mt-3">
+                <div>
+                  <label className="label-branded mb-1.5 block">Date</label>
+                  <input
+                    type="date"
+                    value={commuteDepartureDate}
+                    min={getManilaDateTimeInputs().date}
+                    max={getManilaForecastMaxDate()}
+                    onChange={(event) => setCommuteDepartureDate(event.target.value)}
+                    className="input-field w-full"
+                  />
+                </div>
+                <div>
+                  <label className="label-branded mb-1.5 block">Departure</label>
+                  <input
+                    type="time"
+                    step="1800"
+                    value={commuteDepartureTime}
+                    onChange={(event) => setCommuteDepartureTime(event.target.value)}
+                    className="input-field w-full"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-3 pt-3 border-t border-slate-200/80">
+                <p className="text-[9px] uppercase tracking-[0.16em] font-extrabold text-slate-500">
+                  Advice includes
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
+                  {[
+                    ['☁️', 'Route weather'],
+                    ['🌧️', 'Rain risk'],
+                    ['🚗', 'Traffic delays'],
+                    ['◷', 'Best departure'],
+                  ].map(([icon, label]) => {
+                    const trafficUnavailable = label === 'Traffic delays' && commuteResult?.partial?.traffic_available === false;
+                    return (
+                      <div
+                        key={label}
+                        className={`min-h-10 rounded-xl border px-2.5 py-2 flex items-center gap-2 text-[9px] font-extrabold ${
+                          trafficUnavailable
+                            ? 'bg-slate-100 border-slate-200 text-slate-400'
+                            : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                        }`}
+                      >
+                        <span aria-hidden="true">{icon}</span>
+                        <span>{label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-2.5 flex items-center gap-2 text-[9px] font-bold text-emerald-700">
+                  <span className={commuteLoading ? 'animate-spin' : ''} aria-hidden="true">↻</span>
+                  <span>{commuteLoading ? 'Updating your route…' : 'Auto-updates when your trip changes'}</span>
+                </div>
+              </div>
+
             <div className="mt-3 pt-3 border-t border-slate-200/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
@@ -4063,28 +4452,99 @@ export default function EmployeeDashboard() {
 
             </section>
 
-            {commuteError && <div className="mt-3 p-3 rounded-xl bg-red-50 text-red-700 text-xs font-medium">{commuteError}</div>}
-            <button
-              type="button"
-              onClick={checkCommuteRoute}
-              disabled={commuteLoading}
-              className="mt-3 w-full min-h-12 rounded-2xl bg-slate-950 text-white text-xs font-extrabold flex items-center justify-center gap-2 shadow-sm hover:bg-slate-800 active:scale-[0.995] transition disabled:opacity-50"
-            >
-              {commuteLoading ? (
-                <>
-                  <Spinner size="sm" />
-                  Checking route...
-                </>
-              ) : (
-                <>
-                  <span>Check Route</span>
-                  <span className="text-white/50">→</span>
-                </>
-              )}
-            </button>
+            {commuteError && (
+              <div className={`mt-3 rounded-2xl border p-3.5 ${commuteResult ? 'bg-orange-50 border-orange-200' : 'bg-red-50 border-red-200'}`}>
+                <div className="flex items-start gap-2.5">
+                  <span className={`w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0 ${commuteResult ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`} aria-hidden="true">
+                    {commuteResult ? '!' : '×'}
+                  </span>
+                  <div className="min-w-0">
+                    <p className={`text-xs font-extrabold ${commuteResult ? 'text-orange-900' : 'text-red-900'}`}>
+                      {commuteResult ? 'Some live data could not be refreshed' : 'Unable to load this trip'}
+                    </p>
+                    <p className={`text-[10px] mt-1 ${commuteResult ? 'text-orange-700' : 'text-red-700'}`}>{commuteError}</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={checkCommuteRoute}
+                  disabled={commuteLoading}
+                  className={`mt-3 w-full min-h-10 rounded-xl text-[10px] font-extrabold transition disabled:opacity-50 ${
+                    commuteResult
+                      ? 'bg-orange-600 text-white hover:bg-orange-700'
+                      : 'bg-red-600 text-white hover:bg-red-700'
+                  }`}
+                >
+                  {commuteLoading ? 'Retrying…' : 'Retry live update'}
+                </button>
+              </div>
+            )}
+
+            {commuteLoading && !commuteResult && (
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4" aria-live="polite">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-xs font-extrabold text-slate-700">
+                    <Spinner size="sm" />
+                    Updating route…
+                  </div>
+                  <span className="text-[9px] font-bold text-slate-400">Live forecast</span>
+                </div>
+                <div className="mt-4 space-y-3 animate-pulse">
+                  <div className="h-3 w-2/3 rounded-full bg-slate-200" />
+                  <div className="h-2.5 w-1/3 rounded-full bg-slate-100" />
+                  <div className="flex items-center gap-2 py-3">
+                    {[0, 1, 2].map((index) => (
+                      <div key={index} className="flex-1 flex items-center gap-2">
+                        <div className="h-9 w-9 rounded-full bg-slate-200 flex-shrink-0" />
+                        {index < 2 && <div className="h-1 flex-1 rounded-full bg-slate-200" />}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="h-14 rounded-xl bg-slate-100" />
+                </div>
+                <p className="text-[9px] text-slate-400 mt-3">TomTom route · Open-Meteo forecast</p>
+              </div>
+            )}
+
+            {!commuteHasAttempted && !commuteLoading && (
+              <p className="mt-3 text-center text-[9px] text-slate-400">
+                Select your route and departure time. Advice will load automatically.
+              </p>
+            )}
 
             {commuteResult && (
               <div className="mt-5 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-2xl border border-emerald-100 bg-emerald-50/60 px-3.5 py-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className={`h-2 w-2 rounded-full ${
+                        commuteLoading || commuteResult.data_status === 'partial'
+                          ? 'bg-orange-500 animate-pulse'
+                          : 'bg-emerald-500'
+                      }`} />
+                      <p className="text-[10px] font-extrabold text-emerald-800">
+                        {commuteLoading
+                          ? 'Updating route…'
+                          : commuteResult.data_status === 'partial'
+                            ? `Partial data · Updated ${formatCommuteUpdatedAt(commuteResult.freshness?.overall_updated_at || commuteResult.generated_at)}`
+                            : `Live · Updated ${formatCommuteUpdatedAt(commuteResult.freshness?.overall_updated_at || commuteResult.generated_at)}`}
+                      </p>
+                    </div>
+                    <p className="text-[9px] text-slate-500 mt-1 truncate">
+                      {shortCommutePlace(commuteResult.origin?.name, 'Origin')} → {shortCommutePlace(commuteResult.destination?.name, 'Destination')}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={checkCommuteRoute}
+                    disabled={commuteLoading}
+                    className="min-h-9 px-3 rounded-xl bg-white border border-emerald-200 text-emerald-700 text-[9px] font-extrabold hover:bg-emerald-100 transition disabled:opacity-50"
+                  >
+                    {commuteLoading ? 'Refreshing…' : '↻ Refresh'}
+                  </button>
+                </div>
+
+                {commuteResult.route ? (
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100">
                     <p className="label-branded">ETA</p>
@@ -4113,6 +4573,125 @@ export default function EmployeeDashboard() {
                     </p>
                   </div>
                 </div>
+                ) : (
+                  <div className="rounded-2xl border border-orange-200 bg-orange-50 p-3.5 flex items-start gap-3">
+                    <span className="w-8 h-8 rounded-xl bg-orange-100 text-orange-700 flex items-center justify-center flex-shrink-0" aria-hidden="true">🚗</span>
+                    <div>
+                      <p className="text-xs font-extrabold text-orange-900">Live traffic unavailable</p>
+                      <p className="text-[10px] text-orange-700 mt-1">Destination weather is available, but ETA and traffic delay could not be refreshed.</p>
+                    </div>
+                  </div>
+                )}
+
+                {commuteResult.route_weather_summary?.available && commuteResult.route_weather_checkpoints && commuteResult.route_weather_checkpoints.length > 0 && (
+                  <section className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+                    <div className="px-3.5 py-3 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5">
+                      <div>
+                        <p className="text-xs font-extrabold text-slate-900">Weather along your route</p>
+                        <p className="text-[9px] text-slate-400 mt-0.5">
+                          Forecast matched to your estimated passing time
+                        </p>
+                      </div>
+                      <span className="text-[8px] font-extrabold text-slate-500">
+                        {commuteResult.route_weather_checkpoints.length} checkpoints · max 5
+                      </span>
+                    </div>
+
+                    <div className="p-3 sm:p-3.5">
+                      <div className="flex flex-col sm:flex-row sm:items-stretch gap-2">
+                        {commuteResult.route_weather_checkpoints.map((checkpoint, index) => {
+                          const rainChance = Number(checkpoint.rain_probability ?? 0);
+                          const isAlert = checkpoint.rain_alert === true || rainChance >= 50;
+                          const isStrongAlert = rainChance >= 70;
+                          return (
+                            <div key={`${checkpoint.index}-${checkpoint.lat}-${checkpoint.lon}`} className="contents">
+                              <div
+                                className={`relative flex-1 min-w-0 rounded-2xl border p-3 ${
+                                  !checkpoint.available
+                                    ? 'bg-slate-50 border-slate-200'
+                                    : isStrongAlert
+                                      ? 'bg-orange-50 border-orange-300'
+                                      : isAlert
+                                        ? 'bg-amber-50 border-amber-200'
+                                        : 'bg-emerald-50/50 border-emerald-100'
+                                }`}
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <span className="text-base" aria-hidden="true">
+                                    {!checkpoint.available ? '–' : isStrongAlert ? '🌧️' : isAlert ? '🌦️' : '☁️'}
+                                  </span>
+                                  <span className={`text-[9px] font-extrabold ${isStrongAlert ? 'text-orange-700' : isAlert ? 'text-amber-700' : 'text-emerald-700'}`}>
+                                    {checkpoint.available && checkpoint.rain_probability != null ? `${Math.round(checkpoint.rain_probability)}%` : 'N/A'}
+                                  </span>
+                                </div>
+                                <p className={`text-[10px] font-extrabold mt-2 truncate ${isStrongAlert ? 'text-orange-900' : 'text-slate-900'}`} title={checkpoint.location_name}>
+                                  {shortCommutePlace(checkpoint.location_name, `Checkpoint ${index + 1}`)}
+                                </p>
+                                <p className="text-[9px] text-slate-500 mt-0.5">{formatCommuteClock(checkpoint.arrival_time)}</p>
+                                <p className="text-[9px] font-semibold text-slate-600 mt-2">
+                                  {checkpoint.available ? checkpoint.condition_label || checkpoint.rain_intensity_label || 'Forecast available' : 'Forecast unavailable'}
+                                </p>
+                                {checkpoint.available && checkpoint.precipitation_mm != null && checkpoint.precipitation_mm >= 0.1 && (
+                                  <p className={`text-[9px] font-extrabold mt-1 ${isStrongAlert ? 'text-orange-700' : 'text-amber-700'}`}>
+                                    {formatRainAmount(checkpoint.precipitation_mm)} possible
+                                  </p>
+                                )}
+                              </div>
+                              {index < commuteResult.route_weather_checkpoints!.length - 1 && (
+                                <div className="hidden sm:flex w-4 items-center justify-center" aria-hidden="true">
+                                  <span className="h-0.5 w-full bg-emerald-300" />
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {commuteResult.route_weather_summary?.recommendation && (
+                        <div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50/70 px-3 py-2.5 flex items-start gap-2">
+                          <span className="text-base flex-shrink-0" aria-hidden="true">☂️</span>
+                          <p className="text-[10px] font-semibold text-slate-700 leading-relaxed">
+                            {commuteResult.route_weather_summary.recommendation}
+                          </p>
+                        </div>
+                      )}
+
+                      <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[8px] text-slate-400">
+                        <span>TomTom route</span>
+                        <span>·</span>
+                        <span>Open-Meteo forecast</span>
+                        <span>·</span>
+                        <span>Asia/Manila</span>
+                        <span className="sm:ml-auto">Forecast may change.</span>
+                      </div>
+                    </div>
+                  </section>
+                )}
+
+                {commuteResult.data_status === 'partial' && (
+                  <div className="rounded-2xl border border-orange-200 bg-orange-50 p-3.5">
+                    <p className="text-xs font-extrabold text-orange-900">Partial data</p>
+                    <p className="text-[10px] text-orange-700 mt-1">
+                      {commuteResult.partial?.traffic_available === false
+                        ? 'Weather is available, but live traffic could not be refreshed. ETA may be less accurate.'
+                        : commuteResult.partial?.route_weather_available === false
+                          ? 'Live traffic is available, but weather checkpoints could not be refreshed. ETA remains usable.'
+                          : 'Some destination weather details could not be refreshed. Available route data remains usable.'}
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[8px] font-bold text-orange-700/80">
+                      <span>Traffic updated {formatCommuteUpdatedAt(commuteResult.freshness?.traffic_updated_at)}</span>
+                      <span>Weather updated {formatCommuteUpdatedAt(commuteResult.freshness?.weather_updated_at)}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={checkCommuteRoute}
+                      disabled={commuteLoading}
+                      className="mt-3 w-full min-h-10 rounded-xl bg-orange-600 text-white text-[10px] font-extrabold hover:bg-orange-700 transition disabled:opacity-50"
+                    >
+                      {commuteLoading ? 'Retrying…' : 'Retry missing live data'}
+                    </button>
+                  </div>
+                )}
 
                 {commuteResult.ai_advisory && (() => {
                   const advisory = commuteResult.ai_advisory;
@@ -4255,16 +4834,20 @@ export default function EmployeeDashboard() {
                   );
                 })()}
 
-                {commuteResult.weather && (() => {
+                {commuteResult.weather && (!commuteResult.route_weather_checkpoints || commuteResult.route_weather_checkpoints.length === 0) && (() => {
                   const weatherHighlight = getCommuteWeatherHighlight(commuteResult.weather);
+                  const rainChance = Number(commuteResult.weather.rain_probability ?? 0);
+                  const rainAlertActive = commuteResult.weather.rain_alert?.active === true || rainChance >= 50;
                   return (
-                    <div className={`p-3.5 rounded-2xl border ${weatherHighlight.card}`}>
-                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                    <section className={`relative overflow-hidden p-3.5 sm:p-4 rounded-2xl border ${weatherHighlight.card}`}>
+                      <span className={`absolute inset-y-0 left-0 w-1 ${weatherHighlight.accent}`} aria-hidden="true" />
+
+                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 pl-1">
                         <div className="flex items-center gap-2">
-                          <span className="text-xl" aria-hidden="true">{weatherHighlight.icon}</span>
-                          <div>
+                          <span className="w-9 h-9 rounded-xl bg-white/70 border border-white/70 flex items-center justify-center text-lg flex-shrink-0" aria-hidden="true">{weatherHighlight.icon}</span>
+                          <div className="min-w-0">
                             <p className={`text-xs font-extrabold ${weatherHighlight.text}`}>Destination Weather</p>
-                            <p className={`text-[10px] font-semibold mt-0.5 ${weatherHighlight.text} opacity-75`}>
+                            <p className={`text-[10px] font-semibold mt-0.5 truncate ${weatherHighlight.text} opacity-75`}>
                               {commuteResult.destination?.name || 'Destination'}
                             </p>
                           </div>
@@ -4275,9 +4858,32 @@ export default function EmployeeDashboard() {
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
+                      {rainAlertActive && (
+                        <div className="mt-3 ml-1 rounded-xl bg-white/80 border border-white/70 px-3 py-2.5">
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5">
+                            <div>
+                              <p className={`text-xs font-extrabold ${weatherHighlight.text}`}>
+                                ☔ {Math.round(rainChance)}% chance of rain
+                              </p>
+                              <p className="text-[10px] text-slate-600 mt-0.5">
+                                {commuteResult.weather.rain_intensity_label || 'Rain possible at the destination.'}
+                              </p>
+                            </div>
+                            {commuteResult.weather.expected_precipitation_next_hour_mm != null && (
+                              <div className="sm:text-right">
+                                <p className="text-[8px] uppercase tracking-wider font-extrabold text-slate-500">Possible next hour</p>
+                                <p className={`text-sm font-black ${weatherHighlight.text}`}>
+                                  {formatRainAmount(commuteResult.weather.expected_precipitation_next_hour_mm)}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-3 ml-1">
                         {commuteResult.weather.temperature_c != null && (
-                          <div className="rounded-xl bg-white/70 border border-white/70 px-3 py-2">
+                          <div className="rounded-xl bg-white/70 border border-white/70 px-2.5 py-2">
                             <p className="text-[9px] uppercase tracking-wider font-bold text-slate-500">Temperature</p>
                             <p className="text-sm font-extrabold text-slate-900 mt-0.5">
                               🌡️ {Math.round(commuteResult.weather.temperature_c)}°C
@@ -4286,7 +4892,7 @@ export default function EmployeeDashboard() {
                         )}
 
                         {commuteResult.weather.apparent_temperature_c != null && (
-                          <div className="rounded-xl bg-white/70 border border-white/70 px-3 py-2">
+                          <div className="rounded-xl bg-white/70 border border-white/70 px-2.5 py-2">
                             <p className="text-[9px] uppercase tracking-wider font-bold text-slate-500">Feels Like</p>
                             <p className={`text-sm font-extrabold mt-0.5 ${
                               Number(commuteResult.weather.apparent_temperature_c) >= 35
@@ -4299,20 +4905,42 @@ export default function EmployeeDashboard() {
                         )}
 
                         {commuteResult.weather.rain_probability != null && (
-                          <div className="rounded-xl bg-white/70 border border-white/70 px-3 py-2">
+                          <div className="rounded-xl bg-white/70 border border-white/70 px-2.5 py-2">
                             <p className="text-[9px] uppercase tracking-wider font-bold text-slate-500">Rain Chance</p>
                             <p className={`text-sm font-extrabold mt-0.5 ${
-                              Number(commuteResult.weather.rain_probability) >= 40
-                                ? 'text-blue-600'
-                                : 'text-slate-900'
+                              Number(commuteResult.weather.rain_probability) >= 85
+                                ? 'text-red-600'
+                                : Number(commuteResult.weather.rain_probability) >= 70
+                                  ? 'text-orange-600'
+                                  : Number(commuteResult.weather.rain_probability) >= 50
+                                    ? 'text-amber-700'
+                                    : 'text-slate-900'
                             }`}>
                               ☔ {Math.round(commuteResult.weather.rain_probability)}%
                             </p>
                           </div>
                         )}
 
+                        {commuteResult.weather.expected_precipitation_next_30_minutes_mm != null && (
+                          <div className="rounded-xl bg-white/70 border border-white/70 px-2.5 py-2">
+                            <p className="text-[9px] uppercase tracking-wider font-bold text-slate-500">Next 30 Min</p>
+                            <p className="text-sm font-extrabold text-slate-900 mt-0.5">
+                              🌧️ {formatRainAmount(commuteResult.weather.expected_precipitation_next_30_minutes_mm)}
+                            </p>
+                          </div>
+                        )}
+
+                        {commuteResult.weather.expected_precipitation_next_hour_mm != null && (
+                          <div className="rounded-xl bg-white/70 border border-white/70 px-2.5 py-2">
+                            <p className="text-[9px] uppercase tracking-wider font-bold text-slate-500">Next Hour</p>
+                            <p className={`text-sm font-extrabold mt-0.5 ${rainAlertActive ? weatherHighlight.text : 'text-slate-900'}`}>
+                              💧 {formatRainAmount(commuteResult.weather.expected_precipitation_next_hour_mm)}
+                            </p>
+                          </div>
+                        )}
+
                         {commuteResult.weather.wind_speed_kmh != null && (
-                          <div className="rounded-xl bg-white/70 border border-white/70 px-3 py-2">
+                          <div className="rounded-xl bg-white/70 border border-white/70 px-2.5 py-2">
                             <p className="text-[9px] uppercase tracking-wider font-bold text-slate-500">Wind</p>
                             <p className={`text-sm font-extrabold mt-0.5 ${
                               Number(commuteResult.weather.wind_speed_kmh) >= 35
@@ -4324,11 +4952,25 @@ export default function EmployeeDashboard() {
                           </div>
                         )}
                       </div>
-                    </div>
+
+                      <div className="mt-2.5 ml-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] text-slate-500">
+                        <span className="font-bold">Updated {formatWeatherBucketTime(commuteResult.weather.weather_time)}</span>
+                        <span>· {commuteResult.weather.bucket_minutes || 30}-minute weather bucket</span>
+                        {commuteResult.weather.relative_humidity_percent != null && (
+                          <span>· Humidity {Math.round(commuteResult.weather.relative_humidity_percent)}%</span>
+                        )}
+                        {commuteResult.weather.wind_gust_kmh != null && (
+                          <span>· Gusts {Math.round(commuteResult.weather.wind_gust_kmh)} km/h</span>
+                        )}
+                        {commuteResult.weather.rain_probability_method?.includes('estimate') && (
+                          <span className="w-full text-slate-400">The :30 rain chance is estimated from the surrounding hourly ensemble forecast.</span>
+                        )}
+                      </div>
+                    </section>
                   );
                 })()}
 
-                <TrafficRouteMap result={commuteResult} />
+                {commuteResult.route && <TrafficRouteMap result={commuteResult} />}
 
                 {(commuteResult.incidents?.length ?? 0) > 0 && (
                   <div className="rounded-2xl bg-white border border-slate-200 overflow-hidden">

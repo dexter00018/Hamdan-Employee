@@ -1,89 +1,112 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// app/api/address-search/route.ts
-//
-// Address autocomplete using Photon (OpenStreetMap-based).
-// No TomTom Search entitlement/key is required for this route.
-//
-// IMPORTANT:
-// photon.komoot.io is a public demo/fair-use service. It is fine for light testing
-// and modest use, but it does not provide uptime/SLA guarantees. For a larger
-// production deployment, use a dedicated geocoding provider or self-host Photon.
+// Copy this file to: app/api/address-search/route.ts
+// Photon is a public fair-use service, so this route limits duplicate traffic,
+// times out cleanly, and returns stable error codes to the Employee page.
+
+export const runtime = 'nodejs';
+
+const PHOTON_ENDPOINT = 'https://photon.komoot.io/api/';
+const REQUEST_TIMEOUT_MS = 8_000;
+
+type PhotonPayload = {
+  features?: any[];
+};
+
+const parseJson = (value: string): PhotonPayload | null => {
+  try {
+    return value ? JSON.parse(value) : null;
+  } catch {
+    return null;
+  }
+};
 
 export async function GET(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const query = String(searchParams.get('q') ?? '').trim();
+  const { searchParams } = new URL(request.url);
+  const query = String(searchParams.get('q') ?? '').trim();
 
-    if (query.length < 3) {
+  if (query.length < 3) {
+    return NextResponse.json(
+      { results: [] },
+      {
+        status: 200,
+        headers: { 'Cache-Control': 'no-store' },
+      }
+    );
+  }
+
+  const url = new URL(PHOTON_ENDPOINT);
+  url.searchParams.set('q', query);
+  url.searchParams.set('limit', '8');
+  url.searchParams.set('lat', '14.5547');
+  url.searchParams.set('lon', '121.0244');
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    // Next.js caches identical queries briefly. This reduces calls to Photon's
+    // shared endpoint while keeping autocomplete results reasonably fresh.
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      signal: controller.signal,
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': 'Hamdan-Employee-Commute/1.0',
+      },
+      next: { revalidate: 300 },
+    });
+
+    const raw = await response.text();
+    const payload = parseJson(raw);
+
+    if (!response.ok) {
+      console.warn('Photon address search unavailable:', response.status);
+
       return NextResponse.json(
-        { results: [] },
         {
-          status: 200,
+          error: 'Address suggestions are temporarily unavailable. You can still type the complete address.',
+          code: response.status === 429 ? 'ADDRESS_SEARCH_RATE_LIMITED' : 'ADDRESS_PROVIDER_UNAVAILABLE',
+        },
+        {
+          status: response.status === 429 ? 503 : 502,
+          headers: {
+            'Cache-Control': 'no-store',
+            ...(response.status === 429 ? { 'Retry-After': '30' } : {}),
+          },
+        }
+      );
+    }
+
+    if (!payload || !Array.isArray(payload.features)) {
+      return NextResponse.json(
+        {
+          error: 'The address provider returned an invalid response. You can still type the complete address.',
+          code: 'INVALID_ADDRESS_PROVIDER_RESPONSE',
+        },
+        {
+          status: 502,
           headers: { 'Cache-Control': 'no-store' },
         }
       );
     }
 
-    const url = new URL('https://photon.komoot.io/api/');
-    url.searchParams.set('q', query);
-    url.searchParams.set('limit', '6');
-
-    // Bias results toward Metro Manila while still allowing searches elsewhere
-    // in the Philippines.
-    url.searchParams.set('lat', '14.5547');
-    url.searchParams.set('lon', '121.0244');
-
-    const response = await fetch(url.toString(), {
-      method: 'GET',
-      cache: 'no-store',
-      headers: {
-        Accept: 'application/json',
-        'User-Agent': 'Hamdan-Employee-Commute/1.0',
-      },
-    });
-
-    const payload = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      console.error(
-        'Photon address search failed:',
-        response.status,
-        payload
-      );
-
-      return NextResponse.json(
-        { error: 'Unable to search addresses right now.' },
-        { status: response.status }
-      );
-    }
-
-    const features = Array.isArray(payload?.features)
-      ? payload.features
-      : [];
-
-    const results = features
+    const seen = new Set<string>();
+    const results = payload.features
       .map((feature: any) => {
         const props = feature?.properties ?? {};
         const coordinates = feature?.geometry?.coordinates ?? [];
-
         const longitude = Number(coordinates?.[0]);
         const latitude = Number(coordinates?.[1]);
 
-        if (
-          !Number.isFinite(latitude) ||
-          !Number.isFinite(longitude)
-        ) {
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
           return null;
         }
 
         const countryCode = String(
-          props.countrycode ??
-          props.country_code ??
-          ''
+          props.countrycode ?? props.country_code ?? ''
         ).toLowerCase();
 
-        // Keep Philippine results when Photon supplies a country code.
         if (countryCode && countryCode !== 'ph') {
           return null;
         }
@@ -108,32 +131,27 @@ export async function GET(request: NextRequest) {
           props.country,
         ].filter(
           (part, index, array) =>
-            Boolean(part) &&
-            array.indexOf(part) === index
+            Boolean(part) && array.indexOf(part) === index
         );
 
-        const address =
-          addressParts.join(', ') ||
-          name;
+        const address = addressParts.join(', ') || name;
+        const id = `${props.osm_type || 'osm'}-${props.osm_id || ''}-${latitude}-${longitude}`;
+        const duplicateKey = `${id}|${String(address).toLowerCase()}`;
+
+        if (seen.has(duplicateKey)) return null;
+        seen.add(duplicateKey);
 
         return {
-          id:
-            `${props.osm_type || 'osm'}-${props.osm_id || ''}-${latitude}-${longitude}`,
+          id,
           name: String(name),
           address: String(address),
           municipality: String(
-            props.city ||
-            props.locality ||
-            props.district ||
-            ''
+            props.city || props.locality || props.district || ''
           ),
           latitude,
           longitude,
           type: String(
-            props.type ||
-            props.osm_value ||
-            props.osm_key ||
-            ''
+            props.type || props.osm_value || props.osm_key || ''
           ),
         };
       })
@@ -148,20 +166,33 @@ export async function GET(request: NextRequest) {
       {
         status: 200,
         headers: {
-          'Cache-Control':
-            'public, s-maxage=60, stale-while-revalidate=300',
+          'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
         },
       }
     );
-  } catch (error) {
-    console.error(
-      'Address autocomplete API error:',
-      error
+  } catch (error: any) {
+    const timedOut = error?.name === 'AbortError';
+
+    console.warn(
+      timedOut
+        ? 'Photon address search timed out.'
+        : 'Address autocomplete API unavailable:',
+      timedOut ? undefined : error instanceof Error ? error.message : error
     );
 
     return NextResponse.json(
-      { error: 'Unable to search addresses right now.' },
-      { status: 500 }
+      {
+        error: timedOut
+          ? 'Address search timed out. You can still type the complete address.'
+          : 'Address suggestions are temporarily unavailable. You can still type the complete address.',
+        code: timedOut ? 'ADDRESS_SEARCH_TIMEOUT' : 'ADDRESS_PROVIDER_UNAVAILABLE',
+      },
+      {
+        status: timedOut ? 504 : 503,
+        headers: { 'Cache-Control': 'no-store' },
+      }
     );
+  } finally {
+    clearTimeout(timeout);
   }
 }
