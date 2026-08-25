@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 export const runtime = 'nodejs';
 
 const PHOTON_ENDPOINT = 'https://photon.komoot.io/api/';
+const PHOTON_REVERSE_ENDPOINT = 'https://photon.komoot.io/reverse';
 const REQUEST_TIMEOUT_MS = 8_000;
 
 type PhotonPayload = {
@@ -24,6 +25,87 @@ const parseJson = (value: string): PhotonPayload | null => {
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const query = String(searchParams.get('q') ?? '').trim();
+  const reverseLatParam = searchParams.get('lat');
+  const reverseLonParam = searchParams.get('lon');
+  const reverseLat = Number(reverseLatParam);
+  const reverseLon = Number(reverseLonParam);
+  const isReverseLookup =
+    reverseLatParam !== null &&
+    reverseLonParam !== null &&
+    Number.isFinite(reverseLat) &&
+    Number.isFinite(reverseLon) &&
+    reverseLat >= -90 && reverseLat <= 90 &&
+    reverseLon >= -180 && reverseLon <= 180;
+
+  if (isReverseLookup) {
+    const reverseUrl = new URL(PHOTON_REVERSE_ENDPOINT);
+    reverseUrl.searchParams.set('lat', String(reverseLat));
+    reverseUrl.searchParams.set('lon', String(reverseLon));
+    const reverseController = new AbortController();
+    const reverseTimeout = setTimeout(
+      () => reverseController.abort(),
+      REQUEST_TIMEOUT_MS
+    );
+
+    try {
+      const response = await fetch(reverseUrl.toString(), {
+        signal: reverseController.signal,
+        headers: {
+          Accept: 'application/json',
+          'User-Agent': 'Hamdan-Employee-Commute/1.0',
+        },
+        cache: 'no-store',
+      });
+      const payload = parseJson(await response.text());
+      const feature = payload?.features?.[0];
+      const props = feature?.properties ?? {};
+
+      if (!response.ok || !feature) {
+        return NextResponse.json(
+          { error: 'Unable to identify the current location.', code: 'REVERSE_GEOCODE_UNAVAILABLE' },
+          { status: response.ok ? 404 : 502, headers: { 'Cache-Control': 'no-store' } }
+        );
+      }
+
+      const name = props.name || props.street || props.locality || props.city || 'Current location';
+      const addressParts = [
+        props.housenumber && props.street ? `${props.housenumber} ${props.street}` : props.street,
+        props.district,
+        props.locality,
+        props.city,
+        props.county,
+        props.state,
+        props.postcode,
+        props.country,
+      ].filter((part, index, array) => Boolean(part) && array.indexOf(part) === index);
+      const result = {
+        id: `reverse-${reverseLat}-${reverseLon}`,
+        name: String(name),
+        address: String(addressParts.join(', ') || name),
+        municipality: String(props.city || props.locality || props.district || ''),
+        latitude: reverseLat,
+        longitude: reverseLon,
+        type: 'reverse_geocoded',
+      };
+
+      return NextResponse.json(
+        { result, results: [result], provider: 'Photon / OpenStreetMap' },
+        { status: 200, headers: { 'Cache-Control': 'no-store' } }
+      );
+    } catch (error: any) {
+      return NextResponse.json(
+        {
+          error: error?.name === 'AbortError'
+            ? 'Current-location lookup timed out.'
+            : 'Unable to identify the current location.',
+          code: error?.name === 'AbortError' ? 'REVERSE_GEOCODE_TIMEOUT' : 'REVERSE_GEOCODE_UNAVAILABLE',
+        },
+        { status: error?.name === 'AbortError' ? 504 : 503, headers: { 'Cache-Control': 'no-store' } }
+      );
+    } finally {
+      clearTimeout(reverseTimeout);
+    }
+  }
 
   if (query.length < 3) {
     return NextResponse.json(

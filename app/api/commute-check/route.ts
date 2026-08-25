@@ -9,6 +9,57 @@ const ALLOWED_ADVICE_OPTIONS = new Set([
   'best_departure',
 ]);
 
+const inputError = (error: string, status = 400) =>
+  NextResponse.json(
+    { success: false, error_type: 'input_error', error },
+    { status }
+  );
+
+const serviceError = (
+  error: string,
+  status: number,
+  errorType: 'route_failed' | 'timeout' | 'configuration_error' | 'service_error'
+) =>
+  NextResponse.json(
+    { success: false, error_type: errorType, error },
+    { status }
+  );
+
+const unwrapWorkflowPayload = (rawPayload: unknown): any => {
+  let current: any = rawPayload;
+
+  for (let depth = 0; depth < 5; depth += 1) {
+    if (Array.isArray(current)) {
+      current = current[0];
+      continue;
+    }
+
+    if (!current || typeof current !== 'object') break;
+    if (current.data_status || current.error || current.error_type) break;
+
+    const wrapped =
+      current.data ??
+      current.body ??
+      current.result ??
+      current.json ??
+      current.output;
+
+    if (wrapped == null || wrapped === current) break;
+
+    if (typeof wrapped === 'string') {
+      try {
+        current = JSON.parse(wrapped);
+      } catch {
+        break;
+      }
+    } else {
+      current = wrapped;
+    }
+  }
+
+  return current && typeof current === 'object' ? current : {};
+};
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -51,24 +102,15 @@ export async function POST(request: NextRequest) {
     const destinationPosition = normalizePosition(body?.destination_position);
 
     if (!origin || !destination) {
-      return NextResponse.json(
-        { error: 'Both origin and destination are required.' },
-        { status: 400 }
-      );
+      return inputError('Both origin and destination are required.');
     }
 
     if (origin.length > 250 || destination.length > 250) {
-      return NextResponse.json(
-        { error: 'Origin or destination is too long.' },
-        { status: 400 }
-      );
+      return inputError('Origin or destination is too long.');
     }
 
     if (!body?.requested_departure_at) {
-      return NextResponse.json(
-        { error: 'A departure date and time are required.' },
-        { status: 400 }
-      );
+      return inputError('A departure date and time are required.');
     }
 
     const requestedDate = new Date(
@@ -76,10 +118,7 @@ export async function POST(request: NextRequest) {
     );
 
     if (!Number.isFinite(requestedDate.getTime())) {
-      return NextResponse.json(
-        { error: 'Invalid departure date or time.' },
-        { status: 400 }
-      );
+      return inputError('Invalid departure date or time.');
     }
 
     const now = Date.now();
@@ -90,12 +129,8 @@ export async function POST(request: NextRequest) {
       requestedDate.getTime() < earliestAllowed ||
       requestedDate.getTime() > latestAllowed
     ) {
-      return NextResponse.json(
-        {
-          error:
-            'Departure time must be within the available seven-day forecast.',
-        },
-        { status: 400 }
+      return inputError(
+        'Departure time must be within the available seven-day forecast.'
       );
     }
 
@@ -116,19 +151,17 @@ export async function POST(request: NextRequest) {
     // Do not silently default to every topic. Requiring a real selection is
     // what keeps the downstream AI prompt focused and smaller.
     if (normalizedAdviceOptions.length === 0) {
-      return NextResponse.json(
-        { error: 'Select at least one advice option.' },
-        { status: 400 }
-      );
+      return inputError('Select at least one advice option.');
     }
 
     const webhookUrl = process.env.N8N_COMMUTE_WEBHOOK_URL;
     const webhookSecret = process.env.N8N_COMMUTE_WEBHOOK_SECRET;
 
     if (!webhookUrl) {
-      return NextResponse.json(
-        { error: 'Commute checker is not configured yet.' },
-        { status: 503 }
+      return serviceError(
+        'Commute checker is not configured yet.',
+        503,
+        'configuration_error'
       );
     }
 
@@ -161,23 +194,37 @@ export async function POST(request: NextRequest) {
 
       const raw = await n8nResponse.text();
 
-      let payload: any = {};
+      let parsedPayload: any = {};
       try {
-        payload = raw ? JSON.parse(raw) : {};
+        parsedPayload = raw ? JSON.parse(raw) : {};
       } catch {
-        payload = {
+        parsedPayload = {
           error: raw || 'Invalid response from commute workflow.',
         };
       }
+      const payload = unwrapWorkflowPayload(parsedPayload);
 
       if (!n8nResponse.ok) {
-        return NextResponse.json(
-          {
-            error:
-              payload?.error ||
-              'Unable to check this route right now.',
-          },
-          { status: n8nResponse.status }
+        const message =
+          payload?.error || 'Unable to check this route right now.';
+
+        if (n8nResponse.status === 400 || n8nResponse.status === 422) {
+          return inputError(message, n8nResponse.status);
+        }
+
+        return serviceError(
+          message,
+          n8nResponse.status,
+          n8nResponse.status === 502 ? 'route_failed' : 'service_error'
+        );
+      }
+
+      if (!payload?.data_status || !payload?.origin || !payload?.destination) {
+        return serviceError(
+          payload?.error ||
+            'The commute workflow returned an incomplete response. Check that the active n8n workflow ends at Format Response or Format Weather Only Partial.',
+          502,
+          'route_failed'
         );
       }
 
@@ -193,20 +240,19 @@ export async function POST(request: NextRequest) {
     }
   } catch (error: any) {
     if (error?.name === 'AbortError') {
-      return NextResponse.json(
-        {
-          error:
-            'Traffic and weather services timed out. Please try again.',
-        },
-        { status: 504 }
+      return serviceError(
+        'Traffic and weather services timed out. Please try again.',
+        504,
+        'timeout'
       );
     }
 
     console.error('Commute check API error:', error);
 
-    return NextResponse.json(
-      { error: 'Unable to check the route right now.' },
-      { status: 500 }
+    return serviceError(
+      'Unable to check the route right now.',
+      500,
+      'service_error'
     );
   }
 }

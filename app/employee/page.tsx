@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, type KeyboardEvent } from 'react';
 import { supabase } from '@/lib/supabase';
 import Image from 'next/image';
 import Spinner, { LoadingRow } from '@/components/Spinner';
@@ -111,6 +111,164 @@ type AddressSuggestion = {
   type: string;
 };
 
+const getAddressPrimaryLabel = (place: AddressSuggestion) => {
+  if (place.type === 'geolocation') return 'Current location';
+
+  const originalName = String(place.name || '').trim();
+  const municipality = String(place.municipality || '').trim();
+  const addressParts = String(place.address || '')
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const genericName = /^(district|zone|region)\b/i.test(originalName);
+  const usefulPart = addressParts.find(
+    (part) =>
+      part.toLowerCase() !== originalName.toLowerCase() &&
+      !/^(metro manila|southern manila district|national capital region|philippines|\d{4,6})$/i.test(part)
+  );
+  const primary = genericName ? usefulPart || municipality || originalName : originalName || usefulPart || municipality || 'Location';
+
+  if (
+    municipality &&
+    !primary.toLowerCase().includes(municipality.toLowerCase())
+  ) {
+    return `${primary}, ${municipality}`;
+  }
+  return primary;
+};
+
+const getAddressSecondaryLabel = (place: AddressSuggestion) =>
+  String(place.address || place.municipality || '').trim();
+
+type CommuteAdviceOption =
+  | 'route_weather'
+  | 'rain_risk'
+  | 'traffic_delays'
+  | 'best_departure';
+
+type CommuteUIState =
+  | 'idle'
+  | 'updating'
+  | 'live'
+  | 'partial'
+  | 'input_error'
+  | 'failed';
+
+type CommuteErrorPayload = {
+  success?: boolean;
+  error_type?: string;
+  error?: string;
+};
+
+type CommuteStateMappingInput = {
+  requestInFlight?: boolean;
+  responseOk?: boolean;
+  responseStatus?: number;
+  payload?: (CommuteCheckResult & CommuteErrorPayload) | CommuteErrorPayload | null;
+  thrownError?: unknown;
+};
+
+type CommuteStateMappingResult = {
+  state: CommuteUIState;
+  message: string | null;
+};
+
+// n8n normally returns the response object directly, but test webhooks,
+// proxy nodes, and older workflow versions can wrap it in an array or under
+// data/body/result/json. Normalize those harmless transport wrappers before
+// applying the four-state UI rules.
+const unwrapCommutePayload = (rawPayload: unknown): any => {
+  let current: any = rawPayload;
+
+  for (let depth = 0; depth < 5; depth += 1) {
+    if (Array.isArray(current)) {
+      current = current[0];
+      continue;
+    }
+
+    if (!current || typeof current !== 'object') break;
+    if (current.data_status || current.error || current.error_type) break;
+
+    const wrapped =
+      current.data ??
+      current.body ??
+      current.result ??
+      current.json ??
+      current.output;
+
+    if (wrapped == null || wrapped === current) break;
+
+    if (typeof wrapped === 'string') {
+      try {
+        current = JSON.parse(wrapped);
+      } catch {
+        break;
+      }
+    } else {
+      current = wrapped;
+    }
+  }
+
+  return current && typeof current === 'object' ? current : {};
+};
+
+const getCommuteErrorMessage = (error: unknown) => {
+  if (error instanceof Error && error.message) return error.message;
+  return 'Unable to check this route right now.';
+};
+
+// Pure mapping used by the fetch handler and easy to unit-test independently.
+const mapCommuteUIState = ({
+  requestInFlight = false,
+  responseOk,
+  responseStatus,
+  payload,
+  thrownError,
+}: CommuteStateMappingInput): CommuteStateMappingResult => {
+  if (requestInFlight) return { state: 'updating', message: null };
+
+  if (thrownError) {
+    return { state: 'failed', message: getCommuteErrorMessage(thrownError) };
+  }
+
+  if (responseOk === false) {
+    const message =
+      payload?.error ||
+      (responseStatus === 400 || responseStatus === 422
+        ? 'Please review the commute form and try again.'
+        : 'Unable to check this route right now.');
+
+    return {
+      state:
+        responseStatus === 400 ||
+        responseStatus === 422 ||
+        payload?.error_type === 'input_error'
+          ? 'input_error'
+          : 'failed',
+      message,
+    };
+  }
+
+  const dataStatus = (payload as CommuteCheckResult | null)?.data_status;
+  if (responseOk === true && dataStatus === 'complete') {
+    return { state: 'live', message: null };
+  }
+  if (responseOk === true && dataStatus === 'partial') {
+    return { state: 'partial', message: null };
+  }
+  if (responseOk === true && dataStatus === 'unavailable') {
+    return {
+      state: 'failed',
+      message: payload?.error || 'No usable route or weather data was returned.',
+    };
+  }
+
+  return {
+    state: 'failed',
+    message: payload?.error || 'The commute service returned an incomplete response.',
+  };
+};
+
 type CommuteRainAlert = {
   active?: boolean;
   threshold_percent?: number;
@@ -147,9 +305,39 @@ type RouteWeatherCheckpoint = {
   source?: string | null;
 };
 
+const getRouteCheckpointVisual = (checkpoint: RouteWeatherCheckpoint) => {
+  const rainChance = Number(checkpoint.rain_probability ?? 0);
+  const weatherCode = Number(checkpoint.weather_code ?? -1);
+  const condition = String(checkpoint.condition_label || '').toLowerCase();
+
+  if (!checkpoint.available) {
+    return { icon: '❔', label: 'Forecast unavailable', tone: 'slate' as const };
+  }
+  if ([95, 96, 99].includes(weatherCode)) {
+    return { icon: '⛈️', label: 'Thunderstorm risk', tone: 'red' as const };
+  }
+  if (rainChance >= 70 || condition.includes('rain')) {
+    return { icon: '🌧️', label: checkpoint.rain_intensity_label || 'Rain likely', tone: 'orange' as const };
+  }
+  if (rainChance >= 50) {
+    return { icon: '🌦️', label: checkpoint.rain_intensity_label || 'Possible showers', tone: 'amber' as const };
+  }
+  if ([0, 1].includes(weatherCode) || condition.includes('clear')) {
+    return { icon: '☀️', label: 'Clear', tone: 'emerald' as const };
+  }
+  if ([45, 48].includes(weatherCode)) {
+    return { icon: '🌫️', label: 'Foggy', tone: 'slate' as const };
+  }
+  if ([2, 3].includes(weatherCode) || condition.includes('cloud')) {
+    return { icon: '☁️', label: 'Cloudy', tone: 'slate' as const };
+  }
+  return { icon: '🌤️', label: checkpoint.condition_label || 'Forecast available', tone: 'emerald' as const };
+};
+
 type CommuteCheckResult = {
   success: boolean;
   data_status?: 'complete' | 'partial' | 'unavailable' | string;
+  advice_options?: CommuteAdviceOption[];
   origin: CommutePoint;
   destination: CommutePoint;
   route: {
@@ -261,6 +449,92 @@ type CommuteCheckResult = {
     weather?: string | null;
     ai?: string | null;
   };
+};
+
+const buildPartialCommuteMessage = (
+  partial: CommuteCheckResult['partial'],
+  requestedOptions: CommuteAdviceOption[]
+) => {
+  const wantsTraffic =
+    requestedOptions.includes('traffic_delays') ||
+    requestedOptions.includes('best_departure');
+  const wantsWeather =
+    requestedOptions.includes('route_weather') ||
+    requestedOptions.includes('rain_risk');
+  const missing: string[] = [];
+
+  if (wantsTraffic && partial?.traffic_available === false) {
+    missing.push('live traffic');
+  }
+  if (wantsWeather && partial?.destination_weather_available === false) {
+    missing.push('destination weather');
+  }
+  if (wantsWeather && partial?.route_weather_available === false) {
+    missing.push('route waypoint weather');
+  }
+  if (wantsTraffic && partial?.incidents_available === false) {
+    missing.push('traffic incident details');
+  }
+
+  if (
+    wantsTraffic &&
+    partial?.traffic_available === false &&
+    partial?.destination_weather_available === true &&
+    missing.length === 1
+  ) {
+    return 'Weather is available, but live traffic could not be refreshed.';
+  }
+
+  if (
+    wantsWeather &&
+    partial?.route_weather_available === false &&
+    partial?.destination_weather_available === true &&
+    missing.length === 1
+  ) {
+    return 'Route waypoint weather is unavailable, but destination-level weather is still available.';
+  }
+
+  if (missing.length === 0) {
+    return 'Some requested live details could not be refreshed. The available information is still shown.';
+  }
+
+  const missingText =
+    missing.length === 1
+      ? missing[0]
+      : `${missing.slice(0, -1).join(', ')} and ${missing[missing.length - 1]}`;
+
+  return `The following requested data could not be refreshed: ${missingText}. Available results are still shown.`;
+};
+
+const getAdviceAvailability = (
+  option: CommuteAdviceOption,
+  requestedOptions: CommuteAdviceOption[],
+  result: CommuteCheckResult
+): 'available' | 'unavailable' | 'not_requested' => {
+  if (!requestedOptions.includes(option)) return 'not_requested';
+
+  if (option === 'traffic_delays') {
+    return result.partial?.traffic_available === true && result.route
+      ? 'available'
+      : 'unavailable';
+  }
+
+  if (option === 'best_departure') {
+    return result.partial?.traffic_available === true && result.route
+      ? 'available'
+      : 'unavailable';
+  }
+
+  if (option === 'route_weather') {
+    return result.partial?.route_weather_available === true
+      ? 'available'
+      : 'unavailable';
+  }
+
+  return result.partial?.destination_weather_available === true ||
+    result.partial?.route_weather_available === true
+    ? 'available'
+    : 'unavailable';
 };
 
 function TrafficRouteMap({ result }: { result: CommuteCheckResult }) {
@@ -932,23 +1206,57 @@ export default function EmployeeDashboard() {
   const [commuteDepartureDate, setCommuteDepartureDate] = useState(() => getManilaDateTimeInputs().date);
   const [commuteDepartureTime, setCommuteDepartureTime] = useState(() => getManilaDateTimeInputs().time);
   const [commuteLoading, setCommuteLoading] = useState(false);
+  const [commuteUIState, setCommuteUIState] = useState<CommuteUIState>('idle');
+  const [commuteFailedAnnouncementAssertive, setCommuteFailedAnnouncementAssertive] = useState(false);
   const [commuteHasAttempted, setCommuteHasAttempted] = useState(false);
   const [showCommuteIncidents, setShowCommuteIncidents] = useState(false);
   const [commuteError, setCommuteError] = useState<string | null>(null);
   const [commuteResult, setCommuteResult] = useState<CommuteCheckResult | null>(null);
+  const [selectedCommuteCheckpointIndex, setSelectedCommuteCheckpointIndex] = useState<number | null>(null);
   const [commuteLanguage, setCommuteLanguage] = useState<'en' | 'tl'>('en');
+  const [commuteAdviceOptions, setCommuteAdviceOptions] = useState<CommuteAdviceOption[]>([]);
   const [originSuggestions, setOriginSuggestions] = useState<AddressSuggestion[]>([]);
   const [destinationSuggestions, setDestinationSuggestions] = useState<AddressSuggestion[]>([]);
   const [selectedOriginAddress, setSelectedOriginAddress] = useState<AddressSuggestion | null>(null);
   const [selectedDestinationAddress, setSelectedDestinationAddress] = useState<AddressSuggestion | null>(null);
   const [originSearchLoading, setOriginSearchLoading] = useState(false);
+  const [originLocationResolving, setOriginLocationResolving] = useState(false);
   const [destinationSearchLoading, setDestinationSearchLoading] = useState(false);
+  const [originSearchError, setOriginSearchError] = useState<string | null>(null);
+  const [destinationSearchError, setDestinationSearchError] = useState<string | null>(null);
+  const [originActiveSuggestion, setOriginActiveSuggestion] = useState(-1);
+  const [destinationActiveSuggestion, setDestinationActiveSuggestion] = useState(-1);
   const [showOriginSuggestions, setShowOriginSuggestions] = useState(false);
   const [showDestinationSuggestions, setShowDestinationSuggestions] = useState(false);
   const originSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const destinationSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const commuteAutoRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const originSearchController = useRef<AbortController | null>(null);
+  const destinationSearchController = useRef<AbortController | null>(null);
   const commuteRequestController = useRef<AbortController | null>(null);
+  const previousCommuteUIState = useRef<CommuteUIState>('idle');
+
+  useEffect(() => {
+    const enteredFailedState =
+      commuteUIState === 'failed' && previousCommuteUIState.current !== 'failed';
+    previousCommuteUIState.current = commuteUIState;
+
+    if (!enteredFailedState) return;
+    setCommuteFailedAnnouncementAssertive(true);
+    const timer = window.setTimeout(
+      () => setCommuteFailedAnnouncementAssertive(false),
+      1200
+    );
+    return () => window.clearTimeout(timer);
+  }, [commuteUIState]);
+
+  useEffect(() => {
+    return () => {
+      if (originSearchTimer.current) clearTimeout(originSearchTimer.current);
+      if (destinationSearchTimer.current) clearTimeout(destinationSearchTimer.current);
+      originSearchController.current?.abort();
+      destinationSearchController.current?.abort();
+    };
+  }, []);
 
   const fetchAddressSuggestions = async (
     query: string,
@@ -960,26 +1268,53 @@ export default function EmployeeDashboard() {
       if (kind === 'origin') {
         setOriginSuggestions([]);
         setOriginSearchLoading(false);
+        setOriginSearchError(null);
+        setOriginActiveSuggestion(-1);
       } else {
         setDestinationSuggestions([]);
         setDestinationSearchLoading(false);
+        setDestinationSearchError(null);
+        setDestinationActiveSuggestion(-1);
       }
       return;
     }
 
     if (kind === 'origin') {
       setOriginSearchLoading(true);
+      setOriginSearchError(null);
     } else {
       setDestinationSearchLoading(true);
+      setDestinationSearchError(null);
     }
+
+    const controllerRef =
+      kind === 'origin'
+        ? originSearchController
+        : destinationSearchController;
+
+    // Cancel the previous request for this field. This avoids stale results and
+    // reduces unnecessary calls to the public Photon fair-use endpoint.
+    controllerRef.current?.abort();
+    const controller = new AbortController();
+    controllerRef.current = controller;
 
     try {
       const response = await fetch(
         `/api/address-search?q=${encodeURIComponent(trimmed)}`,
-        { cache: 'no-store' }
+        {
+          cache: 'no-store',
+          signal: controller.signal,
+        }
       );
 
-      const payload = await response.json();
+      const raw = await response.text();
+      let payload: any = {};
+
+      try {
+        payload = raw ? JSON.parse(raw) : {};
+      } catch {
+        payload = {};
+      }
 
       if (!response.ok) {
         throw new Error(payload?.error || 'Unable to search addresses.');
@@ -1007,24 +1342,42 @@ export default function EmployeeDashboard() {
 
       if (kind === 'origin') {
         setOriginSuggestions(results);
+        setOriginActiveSuggestion(results.length > 0 ? 0 : -1);
         setShowOriginSuggestions(true);
       } else {
         setDestinationSuggestions(results);
+        setDestinationActiveSuggestion(results.length > 0 ? 0 : -1);
         setShowDestinationSuggestions(true);
       }
-    } catch (error) {
-      console.error('Address autocomplete error:', error);
+    } catch (error: any) {
+      if (error?.name === 'AbortError') return;
+
+      // Autocomplete is an enhancement. A temporary provider interruption
+      // should not trigger Next.js' red development overlay or block manual
+      // entry of a complete address.
+      console.warn(
+        'Address autocomplete temporarily unavailable:',
+        error instanceof Error ? error.message : error
+      );
 
       if (kind === 'origin') {
         setOriginSuggestions([]);
+        setOriginSearchError('Address search is temporarily unavailable. Try again.');
+        setShowOriginSuggestions(true);
       } else {
         setDestinationSuggestions([]);
+        setDestinationSearchError('Address search is temporarily unavailable. Try again.');
+        setShowDestinationSuggestions(true);
       }
     } finally {
-      if (kind === 'origin') {
-        setOriginSearchLoading(false);
-      } else {
-        setDestinationSearchLoading(false);
+      if (controllerRef.current === controller) {
+        controllerRef.current = null;
+
+        if (kind === 'origin') {
+          setOriginSearchLoading(false);
+        } else {
+          setDestinationSearchLoading(false);
+        }
       }
     }
   };
@@ -1046,11 +1399,23 @@ export default function EmployeeDashboard() {
       if (kind === 'origin') {
         setOriginSuggestions([]);
         setShowOriginSuggestions(false);
+        setOriginSearchLoading(false);
+        setOriginSearchError(null);
       } else {
         setDestinationSuggestions([]);
         setShowDestinationSuggestions(false);
+        setDestinationSearchLoading(false);
+        setDestinationSearchError(null);
       }
       return;
+    }
+
+    if (kind === 'origin') {
+      setOriginSearchLoading(true);
+      setOriginSearchError(null);
+    } else {
+      setDestinationSearchLoading(true);
+      setDestinationSearchError(null);
     }
 
     timer.current = setTimeout(() => {
@@ -1074,12 +1439,90 @@ export default function EmployeeDashboard() {
       setCommuteOrigin(exactAddress);
       setSelectedOriginAddress(suggestion);
       setOriginSuggestions([]);
+      setOriginSearchError(null);
+      setOriginActiveSuggestion(-1);
       setShowOriginSuggestions(false);
     } else {
       setCommuteDestination(exactAddress);
       setSelectedDestinationAddress(suggestion);
       setDestinationSuggestions([]);
+      setDestinationSearchError(null);
+      setDestinationActiveSuggestion(-1);
       setShowDestinationSuggestions(false);
+    }
+  };
+
+  const clearCommuteAddress = (kind: 'origin' | 'destination') => {
+    if (kind === 'origin') {
+      setCommuteOrigin('');
+      setSelectedOriginAddress(null);
+      setOriginSuggestions([]);
+      setOriginSearchError(null);
+      setOriginActiveSuggestion(-1);
+      setShowOriginSuggestions(false);
+    } else {
+      setCommuteDestination('');
+      setSelectedDestinationAddress(null);
+      setDestinationSuggestions([]);
+      setDestinationSearchError(null);
+      setDestinationActiveSuggestion(-1);
+      setShowDestinationSuggestions(false);
+    }
+    setCommuteError(null);
+    setCommuteResult(null);
+    setCommuteUIState('idle');
+    setCommuteHasAttempted(false);
+  };
+
+  const swapCommuteAddresses = () => {
+    setCommuteOrigin(commuteDestination);
+    setCommuteDestination(commuteOrigin);
+    setSelectedOriginAddress(selectedDestinationAddress);
+    setSelectedDestinationAddress(selectedOriginAddress);
+    setOriginSuggestions([]);
+    setDestinationSuggestions([]);
+    setOriginSearchError(null);
+    setDestinationSearchError(null);
+    setOriginActiveSuggestion(-1);
+    setDestinationActiveSuggestion(-1);
+    setShowOriginSuggestions(false);
+    setShowDestinationSuggestions(false);
+    setCommuteError(null);
+    setCommuteResult(null);
+    setCommuteUIState('idle');
+    setCommuteHasAttempted(false);
+  };
+
+  const handleAddressSearchKeyDown = (
+    event: KeyboardEvent<HTMLInputElement>,
+    kind: 'origin' | 'destination'
+  ) => {
+    const suggestions =
+      kind === 'origin' ? originSuggestions : destinationSuggestions;
+    const activeIndex =
+      kind === 'origin' ? originActiveSuggestion : destinationActiveSuggestion;
+    const setActiveIndex =
+      kind === 'origin' ? setOriginActiveSuggestion : setDestinationActiveSuggestion;
+    const setVisible =
+      kind === 'origin' ? setShowOriginSuggestions : setShowDestinationSuggestions;
+
+    if (event.key === 'Escape') {
+      setVisible(false);
+      return;
+    }
+    if (suggestions.length === 0) return;
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setVisible(true);
+      setActiveIndex((activeIndex + 1) % suggestions.length);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setVisible(true);
+      setActiveIndex((activeIndex - 1 + suggestions.length) % suggestions.length);
+    } else if (event.key === 'Enter' && activeIndex >= 0) {
+      event.preventDefault();
+      selectAddressSuggestion(suggestions[activeIndex], kind);
     }
   };
 
@@ -1109,14 +1552,13 @@ export default function EmployeeDashboard() {
   const openCommuteChecker = () => {
     setCommuteError(null);
     setCommuteResult(null);
+    setCommuteUIState('idle');
     setCommuteHasAttempted(false);
     const currentManila = getManilaDateTimeInputs();
     setCommuteDepartureDate(currentManila.date);
     setCommuteDepartureTime(currentManila.time);
     setOriginSuggestions([]);
     setDestinationSuggestions([]);
-    setSelectedOriginAddress(null);
-    setSelectedDestinationAddress(null);
     setShowOriginSuggestions(false);
     setShowDestinationSuggestions(false);
     setCommuteDestination((current) => current || weatherAdvisory?.location_name || 'Makati City');
@@ -1129,25 +1571,52 @@ export default function EmployeeDashboard() {
       return;
     }
     setCommuteError(null);
+    setOriginLocationResolving(true);
+    setSelectedOriginAddress(null);
     navigator.geolocation.getCurrentPosition(
-      (position) => {
+      async (position) => {
         const latitude = Number(position.coords.latitude);
         const longitude = Number(position.coords.longitude);
+        const coordinateFallback = `${latitude.toFixed(6)},${longitude.toFixed(6)}`;
 
-        setCommuteOrigin(`${latitude.toFixed(6)},${longitude.toFixed(6)}`);
-        setSelectedOriginAddress({
-          id: `browser-geolocation-${latitude}-${longitude}`,
-          name: 'Current location',
-          address: `${latitude.toFixed(6)},${longitude.toFixed(6)}`,
-          municipality: '',
-          latitude,
-          longitude,
-          type: 'geolocation',
-        });
-        setOriginSuggestions([]);
-        setShowOriginSuggestions(false);
+        try {
+          const response = await fetch(
+            `/api/address-search?lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}`,
+            { cache: 'no-store' }
+          );
+          const payload = await response.json().catch(() => ({}));
+          const resolved = payload?.result || payload?.results?.[0];
+          if (!response.ok || !resolved) throw new Error(payload?.error || 'Reverse geocoding failed.');
+
+          const suggestion: AddressSuggestion = {
+            ...resolved,
+            latitude,
+            longitude,
+          };
+          setCommuteOrigin(suggestion.address || suggestion.name);
+          setSelectedOriginAddress(suggestion);
+        } catch {
+          setCommuteOrigin(coordinateFallback);
+          setSelectedOriginAddress({
+            id: `browser-geolocation-${latitude}-${longitude}`,
+            name: 'Current location',
+            address: coordinateFallback,
+            municipality: '',
+            latitude,
+            longitude,
+            type: 'geolocation',
+          });
+        } finally {
+          setOriginLocationResolving(false);
+          setOriginSuggestions([]);
+          setOriginSearchError(null);
+          setShowOriginSuggestions(false);
+        }
       },
-      () => setCommuteError('Unable to read your current location. You can type your starting place instead.'),
+      () => {
+        setOriginLocationResolving(false);
+        setCommuteError('Unable to read your current location. You can type your starting place instead.');
+      },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
     );
   };
@@ -1156,12 +1625,27 @@ export default function EmployeeDashboard() {
     setShowCommuteIncidents(false);
     if (!commuteOrigin.trim() || !commuteDestination.trim()) {
       setCommuteError('Enter both From and To locations.');
+      setCommuteUIState('input_error');
+      setCommuteHasAttempted(true);
+      return;
+    }
+    if (!selectedOriginAddress || !selectedDestinationAddress) {
+      setCommuteError('Select both locations from the address suggestions so exact coordinates can be verified.');
+      setCommuteUIState('input_error');
+      setCommuteHasAttempted(true);
+      return;
+    }
+    if (commuteAdviceOptions.length === 0) {
+      setCommuteError('Select at least one advice option.');
+      setCommuteUIState('input_error');
+      setCommuteHasAttempted(true);
       return;
     }
     commuteRequestController.current?.abort();
     const controller = new AbortController();
     commuteRequestController.current = controller;
     setCommuteLoading(true);
+    setCommuteUIState('updating');
     setCommuteHasAttempted(true);
     setCommuteError(null);
     try {
@@ -1179,7 +1663,7 @@ export default function EmployeeDashboard() {
           requested_departure_at: Number.isFinite(requestedDeparture.getTime())
             ? requestedDeparture.toISOString()
             : null,
-          advice_options: ['route_weather', 'rain_risk', 'traffic_delays', 'best_departure'],
+          advice_options: commuteAdviceOptions,
           origin_position: selectedOriginAddress
             ? {
                 lat: selectedOriginAddress.latitude,
@@ -1194,15 +1678,60 @@ export default function EmployeeDashboard() {
             : null,
         }),
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload?.error || 'Unable to check this route.');
-      if (!payload?.success || (!payload?.route && !payload?.weather) || !payload?.origin || !payload?.destination) {
-        throw new Error(payload?.error || 'The commute service returned an incomplete response.');
+      const rawPayload = await response.json().catch(() => ({
+        success: false,
+        error: 'The commute service returned an invalid response.',
+      }));
+      const payload = unwrapCommutePayload(rawPayload) as CommuteCheckResult & CommuteErrorPayload;
+
+      const mapped = mapCommuteUIState({
+        responseOk: response.ok,
+        responseStatus: response.status,
+        payload,
+      });
+
+      if (mapped.state === 'input_error' || mapped.state === 'failed') {
+        setCommuteUIState(mapped.state);
+        setCommuteError(mapped.message);
+        return;
       }
-      setCommuteResult(payload as CommuteCheckResult);
+
+      if (!payload?.success || !payload?.origin || !payload?.destination) {
+        const incomplete = mapCommuteUIState({
+          responseOk: true,
+          payload: {
+            ...payload,
+            data_status: 'unavailable',
+            error:
+              payload?.error ||
+              'The commute service returned an incomplete response.',
+          },
+        });
+        setCommuteUIState(incomplete.state);
+        setCommuteError(incomplete.message);
+        return;
+      }
+
+      setCommuteResult(payload);
+      setSelectedCommuteCheckpointIndex(
+        payload.route_weather_summary?.wettest_checkpoint?.index ??
+          payload.route_weather_checkpoints?.[0]?.index ??
+          null
+      );
+      setCommuteUIState(mapped.state);
+      setCommuteError(null);
     } catch (err: any) {
-      if (err?.name === 'AbortError') return;
-      setCommuteError(err?.message || 'Unable to check this route.');
+      // A previous request aborted because a newer one replaced it should not
+      // overwrite the newer request's state.
+      if (
+        err?.name === 'AbortError' &&
+        commuteRequestController.current !== controller
+      ) {
+        return;
+      }
+      const mapped = mapCommuteUIState({ thrownError: err });
+      setCommuteUIState(mapped.state);
+      setCommuteError(mapped.message);
     } finally {
       if (commuteRequestController.current === controller) {
         setCommuteLoading(false);
@@ -1210,36 +1739,18 @@ export default function EmployeeDashboard() {
     }
   };
 
-  useEffect(() => {
-    if (!commuteModalOpen) return;
-    if (commuteOrigin.trim().length < 3 || commuteDestination.trim().length < 3) return;
-    if (!commuteDepartureDate || !commuteDepartureTime) return;
-
-    if (commuteAutoRefreshTimer.current) {
-      clearTimeout(commuteAutoRefreshTimer.current);
-    }
-
-    commuteAutoRefreshTimer.current = setTimeout(() => {
-      checkCommuteRoute();
-    }, 900);
-
-    return () => {
-      if (commuteAutoRefreshTimer.current) {
-        clearTimeout(commuteAutoRefreshTimer.current);
-      }
-    };
-    // Route checks are intentionally debounced from these user-controlled fields.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    commuteModalOpen,
-    commuteOrigin,
-    commuteDestination,
-    commuteDepartureDate,
-    commuteDepartureTime,
-    commuteLanguage,
-    selectedOriginAddress?.id,
-    selectedDestinationAddress?.id,
-  ]);
+  const toggleCommuteAdviceOption = (option: CommuteAdviceOption) => {
+    setCommuteAdviceOptions((current) =>
+      current.includes(option)
+        ? current.filter((value) => value !== option)
+        : [...current, option]
+    );
+    setCommuteError(null);
+    setCommuteResult(null);
+    setSelectedCommuteCheckpointIndex(null);
+    setCommuteUIState('idle');
+    setCommuteHasAttempted(false);
+  };
 
   const formatCommuteMinutes = (minutes: number | null | undefined) => {
     const value = Number(minutes ?? 0);
@@ -2983,25 +3494,25 @@ export default function EmployeeDashboard() {
         .dark .hover\:bg-slate-100:hover { background-color: #3b433d !important; }
         .dark .hover\:bg-slate-200:hover { background-color: #48514a !important; }
 
-        .dark .bg-green-50, .dark .bg-emerald-50 { background-color: #263b2f !important; }
+        .dark .bg-green-50, .dark .bg-emerald-50, .dark .bg-emerald-50\/70 { background-color: #263b2f !important; }
         .dark .bg-green-100, .dark .bg-emerald-100 { background-color: #31503c !important; }
         .dark .border-green-100, .dark .border-green-200, .dark .border-emerald-100, .dark .border-emerald-200 { border-color: #4b7458 !important; }
         .dark .text-green-950, .dark .text-green-900, .dark .text-green-800, .dark .text-green-700,
         .dark .text-emerald-950, .dark .text-emerald-900, .dark .text-emerald-800, .dark .text-emerald-700 { color: #c8f2d3 !important; }
         .dark .text-green-600, .dark .text-emerald-600 { color: #8ee6a7 !important; }
 
-        .dark .bg-blue-50, .dark .bg-sky-50 { background-color: #263443 !important; }
+        .dark .bg-blue-50, .dark .bg-blue-50\/70, .dark .bg-sky-50 { background-color: #263443 !important; }
         .dark .bg-sky-50\/40 { background-color: rgba(38, 52, 67, .94) !important; }
         .dark .bg-blue-100, .dark .bg-sky-100 { background-color: #304760 !important; }
         .dark .border-blue-100, .dark .border-blue-200, .dark .border-sky-100, .dark .border-sky-200 { border-color: #4b6f94 !important; }
         .dark .text-blue-950, .dark .text-blue-900, .dark .text-blue-800, .dark .text-blue-700, .dark .text-blue-600,
         .dark .text-sky-950, .dark .text-sky-900, .dark .text-sky-800, .dark .text-sky-700, .dark .text-sky-600 { color: #c5ddff !important; }
 
-        .dark .bg-amber-50, .dark .bg-orange-50 { background-color: #403525 !important; }
+        .dark .bg-amber-50, .dark .bg-orange-50, .dark .bg-orange-50\/70 { background-color: #403525 !important; }
         .dark .bg-amber-50\/60 { background-color: rgba(64, 53, 37, .96) !important; }
         .dark .bg-orange-50\/60 { background-color: rgba(64, 53, 37, .96) !important; }
         .dark .bg-amber-100, .dark .bg-orange-100 { background-color: #57432b !important; }
-        .dark .border-amber-100, .dark .border-amber-200, .dark .border-orange-100, .dark .border-orange-200 { border-color: #84633a !important; }
+        .dark .border-amber-100, .dark .border-amber-200, .dark .border-orange-100, .dark .border-orange-200, .dark .border-orange-300 { border-color: #84633a !important; }
         .dark .text-amber-950, .dark .text-amber-900, .dark .text-amber-800, .dark .text-amber-700, .dark .text-amber-600,
         .dark .text-orange-950, .dark .text-orange-900, .dark .text-orange-800, .dark .text-orange-700, .dark .text-orange-600 { color: #ffe2a3 !important; }
 
@@ -3010,7 +3521,7 @@ export default function EmployeeDashboard() {
         .dark .bg-red-50\/60 { background-color: rgba(68, 41, 43, .96) !important; }
         .dark .bg-red-100, .dark .bg-rose-100 { background-color: #5a3034 !important; }
         .dark .bg-red-200, .dark .bg-rose-200 { background-color: #67373c !important; }
-        .dark .border-red-100, .dark .border-red-200, .dark .border-rose-100, .dark .border-rose-200 { border-color: #8b4d53 !important; }
+        .dark .border-red-100, .dark .border-red-200, .dark .border-red-300, .dark .border-rose-100, .dark .border-rose-200 { border-color: #8b4d53 !important; }
         .dark .text-red-950, .dark .text-red-900, .dark .text-red-800, .dark .text-red-700, .dark .text-red-600, .dark .text-red-500,
         .dark .text-rose-950, .dark .text-rose-900, .dark .text-rose-800, .dark .text-rose-700, .dark .text-rose-600, .dark .text-rose-500 { color: #ffd1d5 !important; }
 
@@ -4100,18 +4611,15 @@ export default function EmployeeDashboard() {
       {/* Weather + Live Traffic Route Checker */}
       {commuteModalOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/30 backdrop-blur-sm p-3 sm:p-4">
-          <div className="w-full max-w-2xl card-style shadow-2xl max-h-[92vh] overflow-y-auto !p-4 sm:!p-5">
+          <div className="w-full max-w-7xl card-style shadow-2xl max-h-[94vh] overflow-y-auto !p-3.5 sm:!p-5 lg:!p-6">
             <div className="flex items-start justify-between gap-4 mb-4">
               <div className="flex items-start gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center flex-shrink-0 text-lg">
-                  🚗
+                <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center flex-shrink-0 text-xl">
+                  🌦️
                 </div>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="mb-0">Plan My Commute</h3>
-                    <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[8px] font-extrabold uppercase tracking-wider">
-                      Live
-                    </span>
                   </div>
                   <p className="text-slate-400 text-xs mt-1">
                     Weather and traffic advice across your selected route.
@@ -4128,7 +4636,9 @@ export default function EmployeeDashboard() {
               </button>
             </div>
 
-            <section className="rounded-3xl bg-slate-50/80 border border-slate-200 p-3.5 sm:p-4">
+            <div className="grid grid-cols-1 lg:grid-cols-[minmax(300px,0.72fr)_minmax(0,1.35fr)] gap-4 lg:gap-5 items-start">
+            <div className="min-w-0">
+            <section className="rounded-3xl bg-white border border-slate-200 p-3.5 sm:p-4 lg:p-5 shadow-sm">
               <div className="flex items-center justify-between gap-3 mb-3">
                 <div>
                   <p className="text-[9px] uppercase tracking-[0.16em] font-extrabold text-slate-500">
@@ -4138,27 +4648,48 @@ export default function EmployeeDashboard() {
                     Select an exact address for better route accuracy.
                   </p>
                 </div>
-                <span className="hidden sm:inline-flex rounded-full bg-white border border-slate-200 px-2.5 py-1 text-[8px] font-extrabold text-slate-500">
-                  PH
+                <span title="Address results are limited to the Philippines" className="hidden sm:inline-flex rounded-full bg-white border border-slate-200 px-2.5 py-1 text-[8px] font-extrabold text-slate-500">
+                  PH · Philippines only
                 </span>
               </div>
-            <div className="grid sm:grid-cols-[1fr_auto_1fr] gap-2.5 items-end">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2.5 items-end">
               <div className="relative">
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="label-branded mb-0">From</label>
                   <span className="text-[9px] font-bold text-slate-400">Starting point</span>
                 </div>
                 <div className="relative">
-                  <div className="relative">
+                  {originLocationResolving ? (
+                    <div className="min-h-14 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 flex items-center gap-2.5" role="status" aria-live="polite">
+                      <Spinner size="sm" />
+                      <div><p className="text-[10px] font-extrabold text-slate-700">Locating…</p><p className="text-[9px] text-slate-400 mt-0.5">Finding a readable address for your GPS position.</p></div>
+                    </div>
+                  ) : selectedOriginAddress ? (
+                    <div className="min-h-14 rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-2.5 flex items-start gap-2.5">
+                      <span className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white text-[10px]" aria-hidden="true">✓</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[10px] font-extrabold text-emerald-950 leading-tight">
+                          {getAddressPrimaryLabel(selectedOriginAddress)}
+                        </p>
+                        <p className="text-[9px] text-emerald-800/80 mt-1 leading-snug line-clamp-2" title={getAddressSecondaryLabel(selectedOriginAddress)}>
+                          {getAddressSecondaryLabel(selectedOriginAddress)}
+                        </p>
+                      </div>
+                      <button type="button" onClick={() => clearCommuteAddress('origin')} className="w-7 h-7 rounded-lg bg-white border border-emerald-200 text-emerald-700 hover:bg-emerald-100 transition" aria-label="Change starting point">×</button>
+                    </div>
+                  ) : (
+                  <div className="relative" role="combobox" aria-expanded={showOriginSuggestions} aria-haspopup="listbox" aria-owns="commute-origin-listbox">
                     <input
                       value={commuteOrigin}
                       onChange={(e) => {
                         const value = e.target.value;
                         setCommuteOrigin(value);
                         setSelectedOriginAddress(null);
+                        setOriginSearchError(null);
                         setShowOriginSuggestions(true);
                         scheduleAddressSearch(value, 'origin');
                       }}
+                      onKeyDown={(event) => handleAddressSearchKeyDown(event, 'origin')}
                       onFocus={() => {
                         if (originSuggestions.length > 0) {
                           setShowOriginSuggestions(true);
@@ -4172,25 +4703,36 @@ export default function EmployeeDashboard() {
                         }, 180);
                       }}
                       autoComplete="off"
-                      className="input-field w-full"
-                      placeholder="Type an exact address..."
+                      className="input-field w-full !pl-9 !pr-9"
+                      placeholder="Search landmark, street, or barangay..."
+                      aria-autocomplete="list"
+                      aria-controls="commute-origin-listbox"
+                      aria-activedescendant={originActiveSuggestion >= 0 ? `commute-origin-option-${originActiveSuggestion}` : undefined}
                     />
 
+                    <span className="absolute left-3 top-[22px] -translate-y-1/2 text-emerald-700 text-xs pointer-events-none" aria-hidden="true">⌖</span>
+
                     {originSearchLoading && (
-                      <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                      <div className="absolute right-3 top-[22px] -translate-y-1/2">
                         <Spinner size="sm" />
                       </div>
                     )}
 
-                    {showOriginSuggestions && originSuggestions.length > 0 && (
-                      <div className="absolute left-0 right-0 top-full z-[100] mt-1.5 max-h-64 overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl">
+                    {showOriginSuggestions && commuteOrigin.trim().length >= 3 && (
+                      <div id="commute-origin-listbox" role="listbox" className="absolute left-0 right-0 top-full z-[100] mt-1.5 max-h-72 overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl">
+                        {originSearchLoading && originSuggestions.length === 0 && (
+                          <div className="px-3.5 py-4 flex items-center justify-center gap-2 text-[10px] font-bold text-slate-500"><Spinner size="sm" /> Searching addresses…</div>
+                        )}
                         {originSuggestions.map((place, index) => (
                           <button
                             key={`origin-${place.id}-${place.latitude}-${place.longitude}-${index}`}
+                            id={`commute-origin-option-${index}`}
+                            role="option"
+                            aria-selected={index === originActiveSuggestion}
                             type="button"
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={() => selectAddressSuggestion(place, 'origin')}
-                            className="w-full px-3.5 py-3 text-left border-b border-slate-100 last:border-b-0 hover:bg-slate-50 transition"
+                            className={`w-full px-3.5 py-3 text-left border-b border-slate-100 last:border-b-0 transition ${index === originActiveSuggestion ? 'bg-emerald-50' : 'hover:bg-slate-50'}`}
                           >
                             <div className="flex items-start gap-2.5">
                               <span className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-emerald-50 text-xs">
@@ -4198,20 +4740,28 @@ export default function EmployeeDashboard() {
                               </span>
                               <div className="min-w-0">
                                 <p className="text-xs font-extrabold text-slate-900 truncate">
-                                  {place.name}
+                                  {getAddressPrimaryLabel(place)}
                                 </p>
                                 {place.address && (
                                   <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
-                                    {place.address}
+                                    {getAddressSecondaryLabel(place)}
                                   </p>
                                 )}
                               </div>
                             </div>
                           </button>
                         ))}
+                        {!originSearchLoading && originSuggestions.length === 0 && (
+                          <div className="px-3.5 py-4 text-center">
+                            <p className="text-[10px] font-extrabold text-slate-700">{originSearchError ? 'Address search unavailable' : 'No matching Philippine address found'}</p>
+                            <p className="text-[9px] text-slate-400 mt-1">{originSearchError || 'Try a landmark, street, barangay, or city name.'}</p>
+                          </div>
+                        )}
+                        <div className="sticky bottom-0 border-t border-slate-100 bg-slate-50 px-3.5 py-2 text-[8px] font-semibold text-slate-400">Location data: OpenStreetMap</div>
                       </div>
                     )}
                   </div>
+                  )}
 
                 </div>
               </div>
@@ -4219,28 +4769,64 @@ export default function EmployeeDashboard() {
               <button
                 type="button"
                 onClick={useCurrentLocationForCommute}
-                className="hidden sm:flex w-10 h-11 mb-[1px] rounded-2xl bg-white border border-slate-200 text-slate-600 text-sm font-bold items-center justify-center hover:bg-emerald-50 hover:border-emerald-200 hover:text-emerald-700 transition shadow-sm"
+                disabled={originLocationResolving}
+                className="flex w-10 h-11 mb-[1px] rounded-xl bg-white border border-slate-200 text-emerald-700 text-sm font-bold items-center justify-center hover:bg-emerald-50 hover:border-emerald-200 transition shadow-sm"
                 title="Use my current location"
                 aria-label="Use my current location"
               >
                 ◎
               </button>
 
-              <div className="relative">
+              <div className="relative col-span-2">
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="label-branded mb-0">To</label>
-                  <span className="text-[9px] font-bold text-slate-400">Destination</span>
+                  <button
+                    type="button"
+                    onClick={swapCommuteAddresses}
+                    disabled={!commuteOrigin && !commuteDestination}
+                    className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[9px] font-extrabold text-emerald-700 hover:bg-emerald-50 disabled:opacity-40 transition"
+                    title="Swap starting point and destination"
+                    aria-label="Swap starting point and destination"
+                  >
+                    ⇅ Swap
+                  </button>
                 </div>
                 <div className="relative">
+                  {selectedDestinationAddress ? (
+                    <div className={`min-h-14 rounded-xl border px-3 py-2.5 flex items-start gap-2.5 transition-shadow ${
+                      commuteResult?.highlight_route_for_rain ||
+                      commuteResult?.highlight_destination_for_rain ||
+                      commuteResult?.weather?.rain_alert?.active ||
+                      Number(commuteResult?.weather?.rain_probability ?? 0) >= 50
+                        ? Number(commuteResult?.route_weather_summary?.highest_rain_probability ?? commuteResult?.weather?.rain_probability ?? 0) >= 70
+                          ? 'border-orange-300 bg-orange-50/70 ring-2 ring-orange-200/70'
+                          : 'border-amber-200 bg-amber-50 ring-2 ring-amber-200/70'
+                        : 'border-emerald-200 bg-emerald-50/70'
+                    }`}>
+                      <span className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white text-[10px]" aria-hidden="true">✓</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[10px] font-extrabold text-emerald-950 leading-tight">
+                          {getAddressPrimaryLabel(selectedDestinationAddress)}
+                        </p>
+                        <p className="text-[9px] text-emerald-800/80 mt-1 leading-snug line-clamp-2" title={getAddressSecondaryLabel(selectedDestinationAddress)}>
+                          {getAddressSecondaryLabel(selectedDestinationAddress)}
+                        </p>
+                      </div>
+                      <button type="button" onClick={() => clearCommuteAddress('destination')} className="w-7 h-7 rounded-lg bg-white border border-emerald-200 text-emerald-700 hover:bg-emerald-100 transition" aria-label="Change destination">×</button>
+                    </div>
+                  ) : (
+                  <div className="relative" role="combobox" aria-expanded={showDestinationSuggestions} aria-haspopup="listbox" aria-owns="commute-destination-listbox">
                   <input
                     value={commuteDestination}
                     onChange={(e) => {
                       const value = e.target.value;
                       setCommuteDestination(value);
                       setSelectedDestinationAddress(null);
+                      setDestinationSearchError(null);
                       setShowDestinationSuggestions(true);
                       scheduleAddressSearch(value, 'destination');
                     }}
+                    onKeyDown={(event) => handleAddressSearchKeyDown(event, 'destination')}
                     onFocus={() => {
                       if (destinationSuggestions.length > 0) {
                         setShowDestinationSuggestions(true);
@@ -4254,7 +4840,7 @@ export default function EmployeeDashboard() {
                       }, 180);
                     }}
                     autoComplete="off"
-                    className={`input-field w-full transition-shadow ${
+                    className={`input-field w-full !pl-9 !pr-9 transition-shadow ${
                       commuteResult?.highlight_route_for_rain ||
                       commuteResult?.highlight_destination_for_rain ||
                       commuteResult?.weather?.rain_alert?.active ||
@@ -4266,24 +4852,35 @@ export default function EmployeeDashboard() {
                             : '!border-amber-400 ring-2 ring-amber-200/70'
                         : ''
                     }`}
-                    placeholder="Type an exact address..."
+                    placeholder="Search landmark, street, or barangay..."
+                    aria-autocomplete="list"
+                    aria-controls="commute-destination-listbox"
+                    aria-activedescendant={destinationActiveSuggestion >= 0 ? `commute-destination-option-${destinationActiveSuggestion}` : undefined}
                   />
 
+                  <span className="absolute left-3 top-[22px] -translate-y-1/2 text-emerald-700 text-xs pointer-events-none" aria-hidden="true">●</span>
+
                   {destinationSearchLoading && (
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <div className="absolute right-3 top-[22px] -translate-y-1/2">
                       <Spinner size="sm" />
                     </div>
                   )}
 
-                  {showDestinationSuggestions && destinationSuggestions.length > 0 && (
-                    <div className="absolute left-0 right-0 top-full z-[100] mt-1.5 max-h-64 overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl">
+                  {showDestinationSuggestions && commuteDestination.trim().length >= 3 && (
+                    <div id="commute-destination-listbox" role="listbox" className="absolute left-0 right-0 top-full z-[100] mt-1.5 max-h-72 overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl">
+                      {destinationSearchLoading && destinationSuggestions.length === 0 && (
+                        <div className="px-3.5 py-4 flex items-center justify-center gap-2 text-[10px] font-bold text-slate-500"><Spinner size="sm" /> Searching addresses…</div>
+                      )}
                       {destinationSuggestions.map((place, index) => (
                         <button
                           key={`destination-${place.id}-${place.latitude}-${place.longitude}-${index}`}
+                          id={`commute-destination-option-${index}`}
+                          role="option"
+                          aria-selected={index === destinationActiveSuggestion}
                           type="button"
                           onMouseDown={(e) => e.preventDefault()}
                           onClick={() => selectAddressSuggestion(place, 'destination')}
-                          className="w-full px-3.5 py-3 text-left border-b border-slate-100 last:border-b-0 hover:bg-slate-50 transition"
+                          className={`w-full px-3.5 py-3 text-left border-b border-slate-100 last:border-b-0 transition ${index === destinationActiveSuggestion ? 'bg-emerald-50' : 'hover:bg-slate-50'}`}
                         >
                           <div className="flex items-start gap-2.5">
                             <span className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-emerald-50 text-xs">
@@ -4291,18 +4888,27 @@ export default function EmployeeDashboard() {
                             </span>
                             <div className="min-w-0">
                               <p className="text-xs font-extrabold text-slate-900 truncate">
-                                {place.name}
+                                {getAddressPrimaryLabel(place)}
                               </p>
                               {place.address && (
                                 <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
-                                  {place.address}
+                                  {getAddressSecondaryLabel(place)}
                                 </p>
                               )}
                             </div>
                           </div>
                         </button>
                       ))}
+                      {!destinationSearchLoading && destinationSuggestions.length === 0 && (
+                        <div className="px-3.5 py-4 text-center">
+                          <p className="text-[10px] font-extrabold text-slate-700">{destinationSearchError ? 'Address search unavailable' : 'No matching Philippine address found'}</p>
+                          <p className="text-[9px] text-slate-400 mt-1">{destinationSearchError || 'Try a landmark, street, barangay, or city name.'}</p>
+                        </div>
+                      )}
+                      <div className="sticky bottom-0 border-t border-slate-100 bg-slate-50 px-3.5 py-2 text-[8px] font-semibold text-slate-400">Location data: OpenStreetMap</div>
                     </div>
+                  )}
+                  </div>
                   )}
                   {commuteResult && (() => {
                     const routeWettest = commuteResult.route_weather_summary?.wettest_checkpoint;
@@ -4343,7 +4949,7 @@ export default function EmployeeDashboard() {
               <button
                 type="button"
                 onClick={useCurrentLocationForCommute}
-                className="sm:hidden mt-2 w-full py-2 rounded-xl bg-white border border-slate-200 text-[10px] font-extrabold text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 transition"
+                className="hidden"
               >
                 ◎ Use my current location
               </button>
@@ -4374,34 +4980,75 @@ export default function EmployeeDashboard() {
 
               <div className="mt-3 pt-3 border-t border-slate-200/80">
                 <p className="text-[9px] uppercase tracking-[0.16em] font-extrabold text-slate-500">
-                  Advice includes
+                  What do you want to know?
                 </p>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
+                <p className="text-[9px] text-slate-400 mt-0.5">
+                  Select only what you need. This keeps the AI request focused and smaller.
+                </p>
+                <div className="grid grid-cols-1 gap-1.5 mt-2">
                   {[
-                    ['☁️', 'Route weather'],
-                    ['🌧️', 'Rain risk'],
-                    ['🚗', 'Traffic delays'],
-                    ['◷', 'Best departure'],
-                  ].map(([icon, label]) => {
-                    const trafficUnavailable = label === 'Traffic delays' && commuteResult?.partial?.traffic_available === false;
+                    {
+                      icon: '☁️',
+                      value: 'route_weather' as CommuteAdviceOption,
+                      label: 'Route weather',
+                      detail: 'Weather along route',
+                    },
+                    {
+                      icon: '🌧️',
+                      value: 'rain_risk' as CommuteAdviceOption,
+                      label: 'Rain risk',
+                      detail: 'Chance and rainfall',
+                    },
+                    {
+                      icon: '🚗',
+                      value: 'traffic_delays' as CommuteAdviceOption,
+                      label: 'Traffic delays',
+                      detail: 'ETA and congestion',
+                    },
+                    {
+                      icon: '◷',
+                      value: 'best_departure' as CommuteAdviceOption,
+                      label: 'Best departure',
+                      detail: 'When to leave',
+                    },
+                  ].map(({ icon, value, label, detail }) => {
+                    const selected = commuteAdviceOptions.includes(value);
                     return (
-                      <div
+                      <label
                         key={label}
-                        className={`min-h-10 rounded-xl border px-2.5 py-2 flex items-center gap-2 text-[9px] font-extrabold ${
-                          trafficUnavailable
-                            ? 'bg-slate-100 border-slate-200 text-slate-400'
-                            : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                        className={`min-h-11 rounded-xl border px-3 py-2 flex items-center gap-2.5 cursor-pointer transition ${
+                          selected
+                            ? 'bg-emerald-50 border-emerald-300 text-emerald-700 ring-1 ring-emerald-200'
+                            : 'bg-white border-slate-200 text-slate-600 hover:border-emerald-200 hover:bg-emerald-50/40'
                         }`}
                       >
-                        <span aria-hidden="true">{icon}</span>
-                        <span>{label}</span>
-                      </div>
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          disabled={commuteLoading}
+                          onChange={() => toggleCommuteAdviceOption(value)}
+                          className="sr-only"
+                        />
+                        <span className={`w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 text-xs ${selected ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-500'}`} aria-hidden="true">
+                          {selected ? '✓' : icon}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block text-[9px] font-extrabold leading-tight">{label}</span>
+                          <span className="block text-[8px] font-semibold mt-0.5 text-slate-400 leading-tight sm:hidden">
+                            {detail}
+                          </span>
+                        </span>
+                      </label>
                     );
                   })}
                 </div>
-                <div className="mt-2.5 flex items-center gap-2 text-[9px] font-bold text-emerald-700">
-                  <span className={commuteLoading ? 'animate-spin' : ''} aria-hidden="true">↻</span>
-                  <span>{commuteLoading ? 'Updating your route…' : 'Auto-updates when your trip changes'}</span>
+                <div className={`mt-2.5 flex items-center gap-2 text-[9px] font-bold ${commuteAdviceOptions.length > 0 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                  <span aria-hidden="true">{commuteAdviceOptions.length > 0 ? '✓' : '!'}</span>
+                  <span>
+                    {commuteAdviceOptions.length > 0
+                      ? `${commuteAdviceOptions.length} option${commuteAdviceOptions.length === 1 ? '' : 's'} selected`
+                      : 'Select at least one option'}
+                  </span>
                 </div>
               </div>
 
@@ -4450,38 +5097,92 @@ export default function EmployeeDashboard() {
               </div>
             </div>
 
-            </section>
+              {((commuteOrigin.trim() && !selectedOriginAddress) ||
+                (commuteDestination.trim() && !selectedDestinationAddress)) && (
+                <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 flex items-start gap-2">
+                  <span className="text-amber-700 font-black" aria-hidden="true">!</span>
+                  <p className="text-[9px] font-semibold text-amber-800">
+                    Select each location from the address suggestions to verify its exact map coordinates.
+                  </p>
+                </div>
+              )}
 
-            {commuteError && (
-              <div className={`mt-3 rounded-2xl border p-3.5 ${commuteResult ? 'bg-orange-50 border-orange-200' : 'bg-red-50 border-red-200'}`}>
+              <button
+                type="button"
+                onClick={checkCommuteRoute}
+                disabled={
+                  commuteLoading ||
+                  originLocationResolving ||
+                  commuteAdviceOptions.length === 0 ||
+                  !commuteOrigin.trim() ||
+                  !commuteDestination.trim() ||
+                  !selectedOriginAddress ||
+                  !selectedDestinationAddress ||
+                  !commuteDepartureDate ||
+                  !commuteDepartureTime
+                }
+                className="mt-3 w-full min-h-11 rounded-xl bg-emerald-700 text-white text-[10px] font-extrabold hover:bg-emerald-800 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-sm"
+              >
+                <span aria-hidden="true">✨</span>
+                {commuteLoading ? 'Generating trip advice…' : 'Generate Trip Advice'}
+              </button>
+
+            </section>
+            </div>
+
+            <div className="min-w-0">
+
+            {commuteUIState === 'input_error' && commuteError && (
+              <div
+                role="alert"
+                aria-live="polite"
+                className="rounded-2xl border border-amber-200 bg-amber-50 p-3.5 mb-3"
+              >
                 <div className="flex items-start gap-2.5">
-                  <span className={`w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0 ${commuteResult ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`} aria-hidden="true">
-                    {commuteResult ? '!' : '×'}
+                  <span className="w-7 h-7 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center flex-shrink-0 font-black" aria-hidden="true">
+                    !
                   </span>
                   <div className="min-w-0">
-                    <p className={`text-xs font-extrabold ${commuteResult ? 'text-orange-900' : 'text-red-900'}`}>
-                      {commuteResult ? 'Some live data could not be refreshed' : 'Unable to load this trip'}
+                    <p className="text-xs font-extrabold uppercase tracking-wide text-amber-950">
+                      Check your trip details
                     </p>
-                    <p className={`text-[10px] mt-1 ${commuteResult ? 'text-orange-700' : 'text-red-700'}`}>{commuteError}</p>
+                    <p className="text-[10px] mt-1 text-amber-800">{commuteError}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {commuteUIState === 'failed' && commuteError && (
+              <div
+                role="alert"
+                aria-live={commuteFailedAnnouncementAssertive ? 'assertive' : 'polite'}
+                className="rounded-2xl border border-red-300 bg-red-50 p-3.5 mb-3"
+              >
+                <div className="flex items-start gap-2.5">
+                  <span className="w-7 h-7 rounded-xl bg-red-100 text-red-700 flex items-center justify-center flex-shrink-0 font-black" aria-hidden="true">×</span>
+                  <div className="min-w-0">
+                    <p className="text-xs font-extrabold uppercase tracking-wide text-red-950">ROUTE CHECK FAILED</p>
+                    <p className="text-[10px] mt-1 text-red-800">{commuteError}</p>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={checkCommuteRoute}
                   disabled={commuteLoading}
-                  className={`mt-3 w-full min-h-10 rounded-xl text-[10px] font-extrabold transition disabled:opacity-50 ${
-                    commuteResult
-                      ? 'bg-orange-600 text-white hover:bg-orange-700'
-                      : 'bg-red-600 text-white hover:bg-red-700'
-                  }`}
+                  className="mt-3 w-full min-h-10 rounded-xl bg-red-600 text-white text-[10px] font-extrabold hover:bg-red-700 transition disabled:opacity-50"
                 >
-                  {commuteLoading ? 'Retrying…' : 'Retry live update'}
+                  {commuteLoading ? 'Retrying…' : 'Retry route check'}
                 </button>
               </div>
             )}
 
-            {commuteLoading && !commuteResult && (
-              <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4" aria-live="polite">
+            {commuteUIState === 'updating' && (
+              <div
+                role="status"
+                aria-live="polite"
+                aria-busy="true"
+                className={`rounded-3xl border border-slate-200 bg-white p-4 sm:p-5 ${commuteResult ? 'mb-3' : 'lg:min-h-[420px]'}`}
+              >
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2 text-xs font-extrabold text-slate-700">
                     <Spinner size="sm" />
@@ -4489,7 +5190,7 @@ export default function EmployeeDashboard() {
                   </div>
                   <span className="text-[9px] font-bold text-slate-400">Live forecast</span>
                 </div>
-                <div className="mt-4 space-y-3 animate-pulse">
+                <div className="mt-4 space-y-3 animate-pulse" aria-hidden="true">
                   <div className="h-3 w-2/3 rounded-full bg-slate-200" />
                   <div className="h-2.5 w-1/3 rounded-full bg-slate-100" />
                   <div className="flex items-center gap-2 py-3">
@@ -4502,36 +5203,88 @@ export default function EmployeeDashboard() {
                   </div>
                   <div className="h-14 rounded-xl bg-slate-100" />
                 </div>
-                <p className="text-[9px] text-slate-400 mt-3">TomTom route · Open-Meteo forecast</p>
+                <p className="text-[9px] text-slate-400 mt-3">
+                  TomTom route · Open-Meteo forecast
+                  {commuteResult ? ' · Previous successful result remains visible below.' : ''}
+                </p>
               </div>
             )}
 
             {!commuteHasAttempted && !commuteLoading && (
-              <p className="mt-3 text-center text-[9px] text-slate-400">
-                Select your route and departure time. Advice will load automatically.
-              </p>
+              <div className="rounded-3xl border border-dashed border-slate-200 bg-white/70 p-8 sm:p-10 lg:min-h-[420px] flex flex-col items-center justify-center text-center">
+                <span className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-xl" aria-hidden="true">📍</span>
+                <p className="mt-3 text-xs font-extrabold text-slate-700">Your trip advice will appear here</p>
+                <p className="mt-1 text-[10px] text-slate-400">Choose your route, departure time, and advice options, then generate.</p>
+              </div>
             )}
 
             {commuteResult && (
-              <div className="mt-5 space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-2xl border border-emerald-100 bg-emerald-50/60 px-3.5 py-3">
+              <div
+                aria-busy={commuteLoading}
+                className="space-y-3 rounded-3xl border border-slate-200 bg-white p-3.5 sm:p-4"
+              >
+                <div
+                  aria-live={commuteFailedAnnouncementAssertive ? 'assertive' : 'polite'}
+                  className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-2xl border px-3.5 py-3 ${
+                    commuteUIState === 'partial'
+                      ? 'border-orange-200 bg-orange-50/70'
+                      : commuteUIState === 'failed'
+                        ? 'border-slate-200 bg-slate-50'
+                        : commuteUIState === 'updating'
+                          ? 'border-blue-200 bg-blue-50/70'
+                          : 'border-emerald-100 bg-emerald-50/60'
+                  }`}
+                >
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className={`h-2 w-2 rounded-full ${
-                        commuteLoading || commuteResult.data_status === 'partial'
-                          ? 'bg-orange-500 animate-pulse'
-                          : 'bg-emerald-500'
-                      }`} />
-                      <p className="text-[10px] font-extrabold text-emerald-800">
-                        {commuteLoading
-                          ? 'Updating route…'
-                          : commuteResult.data_status === 'partial'
-                            ? `Partial data · Updated ${formatCommuteUpdatedAt(commuteResult.freshness?.overall_updated_at || commuteResult.generated_at)}`
-                            : `Live · Updated ${formatCommuteUpdatedAt(commuteResult.freshness?.overall_updated_at || commuteResult.generated_at)}`}
+                      <span
+                        className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-black ${
+                          commuteUIState === 'partial'
+                            ? 'bg-orange-100 text-orange-700'
+                            : commuteUIState === 'failed'
+                              ? 'bg-slate-200 text-slate-600'
+                              : commuteUIState === 'updating'
+                                ? 'bg-blue-100 text-blue-700 animate-pulse'
+                                : 'bg-emerald-100 text-emerald-700'
+                        }`}
+                        aria-hidden="true"
+                      >
+                        {commuteUIState === 'partial'
+                          ? '!'
+                          : commuteUIState === 'failed'
+                            ? '↺'
+                            : commuteUIState === 'updating'
+                              ? '…'
+                              : '●'}
+                      </span>
+                      <p className={`text-[10px] font-extrabold uppercase tracking-wide ${
+                        commuteUIState === 'partial'
+                          ? 'text-orange-900'
+                          : commuteUIState === 'failed'
+                            ? 'text-slate-700'
+                            : commuteUIState === 'updating'
+                              ? 'text-blue-900'
+                              : 'text-emerald-800'
+                      }`}>
+                        {commuteUIState === 'updating'
+                          ? 'UPDATING · Previous result shown'
+                          : commuteUIState === 'partial'
+                            ? `PARTIAL DATA · Updated ${formatCommuteUpdatedAt(commuteResult.freshness?.overall_updated_at || commuteResult.generated_at)}`
+                            : commuteUIState === 'failed'
+                              ? `LAST SUCCESSFUL RESULT · Updated ${formatCommuteUpdatedAt(commuteResult.freshness?.overall_updated_at || commuteResult.generated_at)}`
+                              : `LIVE · Updated ${formatCommuteUpdatedAt(commuteResult.freshness?.overall_updated_at || commuteResult.generated_at)}`}
                       </p>
                     </div>
-                    <p className="text-[9px] text-slate-500 mt-1 truncate">
-                      {shortCommutePlace(commuteResult.origin?.name, 'Origin')} → {shortCommutePlace(commuteResult.destination?.name, 'Destination')}
+                    <p className="text-base sm:text-lg font-black text-slate-950 mt-2 leading-tight">
+                      {selectedOriginAddress ? getAddressPrimaryLabel(selectedOriginAddress) : shortCommutePlace(commuteResult.origin?.name, 'Origin')} → {selectedDestinationAddress ? getAddressPrimaryLabel(selectedDestinationAddress) : shortCommutePlace(commuteResult.destination?.name, 'Destination')}
+                    </p>
+                    <p className="text-[9px] text-slate-500 mt-1">
+                      Depart {formatCommuteClock(commuteResult.route?.departure_time || commuteResult.route_weather_checkpoints?.[0]?.arrival_time)}
+                      {(commuteAdviceOptions.includes('traffic_delays') || commuteAdviceOptions.includes('best_departure'))
+                        ? commuteResult.partial?.traffic_available === true && commuteResult.route?.arrival_time
+                          ? ` · ETA ${formatCommuteClock(commuteResult.route.arrival_time)}`
+                          : ' · Traffic ETA unavailable'
+                        : ' · Forecast matched to route passing times'}
                     </p>
                   </div>
                   <button
@@ -4544,7 +5297,50 @@ export default function EmployeeDashboard() {
                   </button>
                 </div>
 
-                {commuteResult.route ? (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2" aria-label="Requested advice availability">
+                  {([
+                    ['route_weather', '☁️', 'Route weather'],
+                    ['rain_risk', '🌧️', 'Rain risk'],
+                    ['traffic_delays', '🚗', 'Traffic delays'],
+                    ['best_departure', '◷', 'Best departure'],
+                  ] as Array<[CommuteAdviceOption, string, string]>).map(([option, icon, label]) => {
+                    const availability = getAdviceAvailability(
+                      option,
+                      commuteAdviceOptions,
+                      commuteResult
+                    );
+                    const statusLabel =
+                      availability === 'available'
+                        ? 'Available'
+                        : availability === 'unavailable'
+                          ? 'Unavailable'
+                          : 'Not requested';
+                    return (
+                      <div
+                        key={option}
+                        className={`rounded-xl border px-2.5 py-2 flex items-center gap-2 ${
+                          availability === 'available'
+                            ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                            : 'border-slate-200 bg-slate-50 text-slate-600'
+                        }`}
+                      >
+                        <span className="text-xs" aria-hidden="true">
+                          {availability === 'available'
+                            ? '✓'
+                            : availability === 'unavailable'
+                              ? '!'
+                              : icon}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block text-[9px] font-extrabold truncate">{label}</span>
+                          <span className="block text-[8px] font-semibold mt-0.5">{statusLabel}</span>
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {(commuteAdviceOptions.includes('traffic_delays') || commuteAdviceOptions.includes('best_departure')) && (commuteResult.partial?.traffic_available === true && commuteResult.route ? (
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100">
                     <p className="label-branded">ETA</p>
@@ -4557,9 +5353,10 @@ export default function EmployeeDashboard() {
                   <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100">
                     <p className="label-branded">Traffic Delay</p>
                     <p className="stat-number text-lg text-orange-600">+{formatCommuteMinutes(commuteResult.route?.delay_minutes)}</p>
+                    <p className="text-[8px] text-slate-400 mt-0.5">Compared with normal traffic</p>
                   </div>
                   <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100">
-                    <p className="label-branded">Traffic</p>
+                    <p className="label-branded">Traffic Level</p>
                     <p
                       className={`stat-number text-lg ${
                         commuteResult.route?.traffic_level === 'Light'
@@ -4581,78 +5378,236 @@ export default function EmployeeDashboard() {
                       <p className="text-[10px] text-orange-700 mt-1">Destination weather is available, but ETA and traffic delay could not be refreshed.</p>
                     </div>
                   </div>
-                )}
+                ))}
 
-                {commuteResult.route_weather_summary?.available && commuteResult.route_weather_checkpoints && commuteResult.route_weather_checkpoints.length > 0 && (
-                  <section className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-                    <div className="px-3.5 py-3 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5">
+                {(commuteAdviceOptions.includes('route_weather') || commuteAdviceOptions.includes('rain_risk')) && commuteResult.route_weather_summary?.available && commuteResult.route_weather_checkpoints && commuteResult.route_weather_checkpoints.length > 0 && (
+                  <section className="rounded-2xl border border-slate-200 bg-white overflow-hidden dark:border-slate-600 dark:bg-slate-900">
+                    <div className="px-3.5 py-3 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 dark:border-slate-700">
                       <div>
-                        <p className="text-xs font-extrabold text-slate-900">Weather along your route</p>
-                        <p className="text-[9px] text-slate-400 mt-0.5">
+                        <p className="text-xs font-extrabold text-slate-900 dark:text-white">Weather along your route</p>
+                        <p className="text-[9px] text-slate-400 mt-0.5 dark:text-slate-300">
                           Forecast matched to your estimated passing time
                         </p>
                       </div>
-                      <span className="text-[8px] font-extrabold text-slate-500">
-                        {commuteResult.route_weather_checkpoints.length} checkpoints · max 5
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[8px] font-extrabold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
+                          🗺️ {commuteResult.route_weather_checkpoints.length} checkpoints
+                        </span>
+                        <span className="text-[8px] font-bold text-slate-400">Tap a card</span>
+                      </div>
                     </div>
 
                     <div className="p-3 sm:p-3.5">
-                      <div className="flex flex-col sm:flex-row sm:items-stretch gap-2">
-                        {commuteResult.route_weather_checkpoints.map((checkpoint, index) => {
-                          const rainChance = Number(checkpoint.rain_probability ?? 0);
-                          const isAlert = checkpoint.rain_alert === true || rainChance >= 50;
-                          const isStrongAlert = rainChance >= 70;
-                          return (
-                            <div key={`${checkpoint.index}-${checkpoint.lat}-${checkpoint.lon}`} className="contents">
-                              <div
-                                className={`relative flex-1 min-w-0 rounded-2xl border p-3 ${
-                                  !checkpoint.available
-                                    ? 'bg-slate-50 border-slate-200'
-                                    : isStrongAlert
-                                      ? 'bg-orange-50 border-orange-300'
-                                      : isAlert
-                                        ? 'bg-amber-50 border-amber-200'
-                                        : 'bg-emerald-50/50 border-emerald-100'
-                                }`}
-                              >
-                                <div className="flex items-start justify-between gap-2">
-                                  <span className="text-base" aria-hidden="true">
-                                    {!checkpoint.available ? '–' : isStrongAlert ? '🌧️' : isAlert ? '🌦️' : '☁️'}
-                                  </span>
-                                  <span className={`text-[9px] font-extrabold ${isStrongAlert ? 'text-orange-700' : isAlert ? 'text-amber-700' : 'text-emerald-700'}`}>
-                                    {checkpoint.available && checkpoint.rain_probability != null ? `${Math.round(checkpoint.rain_probability)}%` : 'N/A'}
-                                  </span>
-                                </div>
-                                <p className={`text-[10px] font-extrabold mt-2 truncate ${isStrongAlert ? 'text-orange-900' : 'text-slate-900'}`} title={checkpoint.location_name}>
-                                  {shortCommutePlace(checkpoint.location_name, `Checkpoint ${index + 1}`)}
-                                </p>
-                                <p className="text-[9px] text-slate-500 mt-0.5">{formatCommuteClock(checkpoint.arrival_time)}</p>
-                                <p className="text-[9px] font-semibold text-slate-600 mt-2">
-                                  {checkpoint.available ? checkpoint.condition_label || checkpoint.rain_intensity_label || 'Forecast available' : 'Forecast unavailable'}
-                                </p>
-                                {checkpoint.available && checkpoint.precipitation_mm != null && checkpoint.precipitation_mm >= 0.1 && (
-                                  <p className={`text-[9px] font-extrabold mt-1 ${isStrongAlert ? 'text-orange-700' : 'text-amber-700'}`}>
-                                    {formatRainAmount(checkpoint.precipitation_mm)} possible
-                                  </p>
-                                )}
-                              </div>
-                              {index < commuteResult.route_weather_checkpoints!.length - 1 && (
-                                <div className="hidden sm:flex w-4 items-center justify-center" aria-hidden="true">
-                                  <span className="h-0.5 w-full bg-emerald-300" />
-                                </div>
-                              )}
+                      {(() => {
+                        const routeCheckpoints = commuteResult.route_weather_checkpoints || [];
+                        const selectedCheckpoint =
+                          routeCheckpoints.find((checkpoint) => checkpoint.index === selectedCommuteCheckpointIndex) ||
+                          routeCheckpoints[0];
+                        const selectedVisual = selectedCheckpoint
+                          ? getRouteCheckpointVisual(selectedCheckpoint)
+                          : null;
+
+                        return (
+                          <>
+                            <div className="flex flex-col lg:flex-row lg:items-stretch gap-0 lg:gap-2">
+                              {routeCheckpoints.map((checkpoint, index) => {
+                                const visual = getRouteCheckpointVisual(checkpoint);
+                                const rainChance = Number(checkpoint.rain_probability ?? 0);
+                                const isSelected = checkpoint.index === selectedCheckpoint?.index;
+                                const isHighRisk = rainChance >= 70;
+                                const isRainRisk = rainChance >= 50;
+                                const cardTone = !checkpoint.available
+                                  ? 'border-slate-200 bg-slate-50 dark:border-slate-600 dark:bg-slate-800/70'
+                                  : isHighRisk
+                                    ? 'border-orange-300 bg-orange-50 dark:border-orange-500/70 dark:bg-orange-950/30'
+                                    : isRainRisk
+                                      ? 'border-amber-200 bg-amber-50 dark:border-amber-500/60 dark:bg-amber-950/25'
+                                      : 'border-emerald-100 bg-emerald-50/60 dark:border-emerald-700/60 dark:bg-emerald-950/20';
+
+                                return (
+                                  <div key={`${checkpoint.index}-${checkpoint.lat}-${checkpoint.lon}`} className="contents">
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedCommuteCheckpointIndex(checkpoint.index)}
+                                      aria-expanded={isSelected}
+                                      aria-label={`View forecast details for ${checkpoint.location_name}`}
+                                      className={`group relative flex-1 min-w-0 rounded-2xl border p-3 text-left lg:text-center transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 ${cardTone} ${
+                                        isSelected
+                                          ? 'ring-2 ring-emerald-500 shadow-md dark:ring-emerald-400'
+                                          : ''
+                                      }`}
+                                    >
+                                      <div className="flex items-start justify-between gap-3 lg:flex-col lg:items-center">
+                                        <span className={`flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl border text-2xl shadow-sm ${
+                                          isHighRisk
+                                            ? 'border-orange-200 bg-white dark:border-orange-700 dark:bg-slate-900'
+                                            : 'border-emerald-100 bg-white dark:border-slate-600 dark:bg-slate-900'
+                                        }`} aria-hidden="true">
+                                          {visual.icon}
+                                        </span>
+                                        <div className="min-w-0 flex-1 lg:w-full">
+                                          <div className="flex items-center justify-between gap-2 lg:justify-center">
+                                            <p className={`text-[11px] font-extrabold truncate ${isHighRisk ? 'text-orange-900 dark:text-orange-200' : 'text-slate-900 dark:text-slate-100'}`} title={checkpoint.location_name}>
+                                              {shortCommutePlace(checkpoint.location_name, `Checkpoint ${index + 1}`)}
+                                            </p>
+                                            <span className={`rounded-full px-2 py-1 text-[9px] font-black ${
+                                              isHighRisk
+                                                ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/60 dark:text-orange-200'
+                                                : isRainRisk
+                                                  ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/60 dark:text-amber-200'
+                                                  : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-200'
+                                            }`}>
+                                              {checkpoint.available && checkpoint.rain_probability != null
+                                                ? `${Math.round(checkpoint.rain_probability)}%`
+                                                : 'N/A'}
+                                            </span>
+                                          </div>
+                                          <p className="mt-1 text-[9px] font-semibold text-slate-500 dark:text-slate-300">
+                                            🕒 {formatCommuteClock(checkpoint.arrival_time)}
+                                          </p>
+                                          <p className="mt-1.5 text-[9px] font-bold text-slate-700 dark:text-slate-200">
+                                            {visual.label}
+                                          </p>
+                                          {checkpoint.available && checkpoint.precipitation_mm != null && (
+                                            <p className="mt-1 text-[9px] font-extrabold text-sky-700 dark:text-sky-300">
+                                              💧 {formatRainAmount(checkpoint.precipitation_mm)} possible
+                                            </p>
+                                          )}
+                                        </div>
+                                      </div>
+                                      <span className="mt-2 hidden text-[8px] font-bold text-emerald-700 dark:text-emerald-300 lg:block">
+                                        {isSelected ? 'Details shown below' : 'Click for details'}
+                                      </span>
+                                    </button>
+
+                                    {index < routeCheckpoints.length - 1 && (
+                                      <>
+                                        <div className="flex lg:hidden h-4 pl-5 items-stretch" aria-hidden="true">
+                                          <span className="w-0.5 h-full bg-emerald-300 dark:bg-emerald-700" />
+                                        </div>
+                                        <div className="hidden lg:flex w-4 items-center justify-center" aria-hidden="true">
+                                          <span className="h-0.5 w-full bg-emerald-300 dark:bg-emerald-700" />
+                                        </div>
+                                      </>
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </div>
-                          );
-                        })}
-                      </div>
+
+                            {selectedCheckpoint && selectedVisual && (
+                              <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-3.5 dark:border-slate-600 dark:bg-slate-800/70" aria-live="polite">
+                                <div className="flex items-start gap-3">
+                                  <span className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-white text-3xl shadow-sm dark:bg-slate-900" aria-hidden="true">
+                                    {selectedVisual.icon}
+                                  </span>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                      <div>
+                                        <p className="text-xs font-extrabold text-slate-900 dark:text-white">
+                                          {shortCommutePlace(selectedCheckpoint.location_name, 'Route checkpoint')}
+                                        </p>
+                                        <p className="mt-0.5 text-[9px] text-slate-500 dark:text-slate-300">
+                                          Estimated passing time · {formatCommuteClock(selectedCheckpoint.arrival_time)}
+                                        </p>
+                                      </div>
+                                      <span className="rounded-full bg-white px-2.5 py-1 text-[8px] font-extrabold text-slate-600 shadow-sm dark:bg-slate-900 dark:text-slate-200">
+                                        {selectedVisual.label}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="mt-3 flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between dark:border-slate-700 dark:bg-slate-900">
+                                  <div className="flex min-w-0 items-start gap-2.5">
+                                    <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-base dark:bg-emerald-950/60" aria-hidden="true">
+                                      📍
+                                    </span>
+                                    <div className="min-w-0">
+                                      <p className="text-[8px] font-extrabold uppercase tracking-wider text-slate-400">
+                                        Checkpoint address
+                                      </p>
+                                      <p className="mt-1 text-[10px] font-bold leading-relaxed text-slate-700 dark:text-slate-200">
+                                        {selectedCheckpoint.resolved_address || selectedCheckpoint.location_name || 'Approximate route checkpoint'}
+                                      </p>
+                                      {!selectedCheckpoint.resolved_address && (
+                                        <p className="mt-0.5 text-[8px] text-slate-400">
+                                          Approximate route area; a street-level address was not returned.
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                  {Number.isFinite(Number(selectedCheckpoint.lat)) && Number.isFinite(Number(selectedCheckpoint.lon)) && (
+                                    <a
+                                      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${selectedCheckpoint.lat},${selectedCheckpoint.lon}`)}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex min-h-9 flex-shrink-0 items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-[9px] font-extrabold text-emerald-700 transition hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
+                                    >
+                                      🗺️ Open in Maps
+                                    </a>
+                                  )}
+                                </div>
+
+                                {selectedCheckpoint.available ? (
+                                  <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                    <div className="rounded-xl bg-white p-2.5 dark:bg-slate-900">
+                                      <p className="text-[8px] font-bold uppercase tracking-wide text-slate-400">☔ Rain chance</p>
+                                      <p className="mt-1 text-sm font-black text-sky-700 dark:text-sky-300">
+                                        {selectedCheckpoint.rain_probability != null ? `${Math.round(selectedCheckpoint.rain_probability)}%` : 'N/A'}
+                                      </p>
+                                    </div>
+                                    <div className="rounded-xl bg-white p-2.5 dark:bg-slate-900">
+                                      <p className="text-[8px] font-bold uppercase tracking-wide text-slate-400">💧 Expected rain</p>
+                                      <p className="mt-1 text-sm font-black text-slate-900 dark:text-white">
+                                        {selectedCheckpoint.precipitation_mm != null ? formatRainAmount(selectedCheckpoint.precipitation_mm) : 'N/A'}
+                                      </p>
+                                    </div>
+                                    <div className="rounded-xl bg-white p-2.5 dark:bg-slate-900">
+                                      <p className="text-[8px] font-bold uppercase tracking-wide text-slate-400">🌡️ Temperature</p>
+                                      <p className="mt-1 text-sm font-black text-slate-900 dark:text-white">
+                                        {selectedCheckpoint.temperature_c != null ? `${Math.round(selectedCheckpoint.temperature_c)}°C` : 'N/A'}
+                                      </p>
+                                      {selectedCheckpoint.apparent_temperature_c != null && (
+                                        <p className="text-[8px] text-slate-400">Feels {Math.round(selectedCheckpoint.apparent_temperature_c)}°C</p>
+                                      )}
+                                    </div>
+                                    <div className="rounded-xl bg-white p-2.5 dark:bg-slate-900">
+                                      <p className="text-[8px] font-bold uppercase tracking-wide text-slate-400">💨 Wind</p>
+                                      <p className="mt-1 text-sm font-black text-slate-900 dark:text-white">
+                                        {selectedCheckpoint.wind_speed_kmh != null ? `${Math.round(selectedCheckpoint.wind_speed_kmh)} km/h` : 'N/A'}
+                                      </p>
+                                      {selectedCheckpoint.wind_gust_kmh != null && (
+                                        <p className="text-[8px] text-slate-400">Gusts {Math.round(selectedCheckpoint.wind_gust_kmh)} km/h</p>
+                                      )}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="mt-3 rounded-xl bg-white p-3 text-[10px] font-semibold text-slate-600 dark:bg-slate-900 dark:text-slate-300">
+                                    Forecast detail is unavailable for this passing time. Try refreshing the route.
+                                  </div>
+                                )}
+
+                                <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[8px] font-semibold text-slate-400">
+                                  <span className="rounded-full bg-sky-50 px-2 py-1 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300">Open-Meteo</span>
+                                  <span>{String(selectedCheckpoint.forecast_method || 'hourly forecast').replace(/_/g, ' ')}</span>
+                                  <span className="sm:ml-auto">Tap another checkpoint to compare.</span>
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
 
                       {commuteResult.route_weather_summary?.recommendation && (
-                        <div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50/70 px-3 py-2.5 flex items-start gap-2">
-                          <span className="text-base flex-shrink-0" aria-hidden="true">☂️</span>
-                          <p className="text-[10px] font-semibold text-slate-700 leading-relaxed">
-                            {commuteResult.route_weather_summary.recommendation}
-                          </p>
+                        <div className="mt-3 rounded-2xl border border-emerald-100 bg-emerald-50/70 px-3.5 py-3 flex items-start gap-3 dark:border-emerald-700/60 dark:bg-emerald-950/30">
+                          <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-white text-lg shadow-sm dark:bg-slate-900" aria-hidden="true">☂️</span>
+                          <div>
+                            <p className="text-[8px] font-extrabold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Trip recommendation</p>
+                            <p className="mt-1 text-[10px] font-semibold text-slate-700 leading-relaxed dark:text-slate-200">
+                              {commuteResult.route_weather_summary.recommendation}
+                            </p>
+                          </div>
                         </div>
                       )}
 
@@ -4668,15 +5623,17 @@ export default function EmployeeDashboard() {
                   </section>
                 )}
 
-                {commuteResult.data_status === 'partial' && (
-                  <div className="rounded-2xl border border-orange-200 bg-orange-50 p-3.5">
-                    <p className="text-xs font-extrabold text-orange-900">Partial data</p>
+                {commuteUIState === 'partial' && (
+                  <div role="status" aria-live="polite" className="rounded-2xl border border-orange-200 bg-orange-50 p-3.5">
+                    <div className="flex items-center gap-2">
+                      <span className="w-7 h-7 rounded-xl bg-orange-100 text-orange-700 flex items-center justify-center font-black" aria-hidden="true">!</span>
+                      <p className="text-xs font-extrabold uppercase tracking-wide text-orange-900">PARTIAL DATA</p>
+                    </div>
                     <p className="text-[10px] text-orange-700 mt-1">
-                      {commuteResult.partial?.traffic_available === false
-                        ? 'Weather is available, but live traffic could not be refreshed. ETA may be less accurate.'
-                        : commuteResult.partial?.route_weather_available === false
-                          ? 'Live traffic is available, but weather checkpoints could not be refreshed. ETA remains usable.'
-                          : 'Some destination weather details could not be refreshed. Available route data remains usable.'}
+                      {buildPartialCommuteMessage(
+                        commuteResult.partial,
+                        commuteAdviceOptions
+                      )}
                     </p>
                     <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[8px] font-bold text-orange-700/80">
                       <span>Traffic updated {formatCommuteUpdatedAt(commuteResult.freshness?.traffic_updated_at)}</span>
@@ -4696,6 +5653,24 @@ export default function EmployeeDashboard() {
                 {commuteResult.ai_advisory && (() => {
                   const advisory = commuteResult.ai_advisory;
                   const isTl = advisory.language === 'tl';
+                  const readableOrigin = selectedOriginAddress
+                    ? getAddressPrimaryLabel(selectedOriginAddress)
+                    : shortCommutePlace(commuteResult.origin?.name, 'Origin');
+                  const readableDestination = selectedDestinationAddress
+                    ? getAddressPrimaryLabel(selectedDestinationAddress)
+                    : shortCommutePlace(commuteResult.destination?.name, 'Destination');
+                  const readableRoute = `${readableOrigin} → ${readableDestination}`;
+                  const cleanAdvisoryText = (value: string | null | undefined) => {
+                    let text = String(value || '');
+                    const replacements: Array<[string | undefined, string]> = [
+                      [commuteResult.origin?.name, readableOrigin],
+                      [commuteResult.destination?.name, readableDestination],
+                    ];
+                    replacements.forEach(([source, replacement]) => {
+                      if (source) text = text.split(source).join(replacement);
+                    });
+                    return text.replace(/-?\d{1,2}\.\d{4,},\s*-?\d{1,3}\.\d{4,}/g, readableOrigin);
+                  };
 
                   const status = advisory.status || 'good_to_go';
                   const statusMeta =
@@ -4751,26 +5726,27 @@ export default function EmployeeDashboard() {
                           </div>
 
                           <p className={`text-sm font-extrabold mt-2 ${statusMeta.title}`}>
-                            {advisory.headline || (isTl ? 'Abiso sa Biyahe' : 'Commute Advisory')}
+                            {readableRoute}
                           </p>
                         </div>
 
                         {Number(advisory.recommended_extra_minutes ?? 0) > 0 && (
                           <div className="flex-shrink-0 rounded-2xl bg-white/80 border border-black/5 px-3 py-2 text-center shadow-sm">
                             <p className="text-[8px] uppercase tracking-wider font-extrabold text-slate-400">
-                              {isTl ? 'Allowance' : 'Extra Time'}
+                              {isTl ? 'Inirerekomendang allowance' : 'Recommended Buffer'}
                             </p>
                             <p className="text-lg font-black text-slate-900 leading-none mt-1">
                               +{Math.round(Number(advisory.recommended_extra_minutes))}
                               <span className="text-[9px] ml-0.5">min</span>
                             </p>
+                            <p className="text-[7px] text-slate-400 mt-1 max-w-[110px] leading-tight">Includes weather and incidents, not traffic alone.</p>
                           </div>
                         )}
                       </div>
 
                       {advisory.summary && (
                         <p className="text-xs text-slate-700 leading-relaxed mt-3">
-                          {advisory.summary}
+                          {cleanAdvisoryText(advisory.summary)}
                         </p>
                       )}
 
@@ -4783,7 +5759,7 @@ export default function EmployeeDashboard() {
                             {advisory.key_reasons.slice(0, 3).map((reason, index) => (
                               <div key={`${reason}-${index}`} className="flex items-start gap-2 text-[10px] text-slate-700 leading-relaxed">
                                 <span className="mt-[5px] h-1.5 w-1.5 rounded-full bg-slate-400 flex-shrink-0" />
-                                <span>{reason}</span>
+                                <span>{cleanAdvisoryText(reason)}</span>
                               </div>
                             ))}
                           </div>
@@ -4797,7 +5773,7 @@ export default function EmployeeDashboard() {
                               {isTl ? 'Trapiko' : 'Traffic'}
                             </p>
                             <p className="text-[10px] text-slate-700 mt-1 leading-relaxed">
-                              {advisory.traffic_summary}
+                              {cleanAdvisoryText(advisory.traffic_summary)}
                             </p>
                           </div>
                         )}
@@ -4808,7 +5784,7 @@ export default function EmployeeDashboard() {
                               {isTl ? 'Panahon' : 'Weather'}
                             </p>
                             <p className="text-[10px] text-slate-700 mt-1 leading-relaxed">
-                              {advisory.weather_summary}
+                              {cleanAdvisoryText(advisory.weather_summary)}
                             </p>
                           </div>
                         )}
@@ -4820,7 +5796,7 @@ export default function EmployeeDashboard() {
                             {isTl ? 'Gawin ngayon' : 'What to do'}
                           </p>
                           <p className="text-xs font-semibold mt-1 leading-relaxed">
-                            {advisory.recommendation}
+                            {cleanAdvisoryText(advisory.recommendation)}
                           </p>
                         </div>
                       )}
@@ -4834,7 +5810,7 @@ export default function EmployeeDashboard() {
                   );
                 })()}
 
-                {commuteResult.weather && (!commuteResult.route_weather_checkpoints || commuteResult.route_weather_checkpoints.length === 0) && (() => {
+                {(commuteAdviceOptions.includes('route_weather') || commuteAdviceOptions.includes('rain_risk')) && commuteResult.weather && (!commuteResult.route_weather_checkpoints || commuteResult.route_weather_checkpoints.length === 0) && (() => {
                   const weatherHighlight = getCommuteWeatherHighlight(commuteResult.weather);
                   const rainChance = Number(commuteResult.weather.rain_probability ?? 0);
                   const rainAlertActive = commuteResult.weather.rain_alert?.active === true || rainChance >= 50;
@@ -4848,7 +5824,7 @@ export default function EmployeeDashboard() {
                           <div className="min-w-0">
                             <p className={`text-xs font-extrabold ${weatherHighlight.text}`}>Destination Weather</p>
                             <p className={`text-[10px] font-semibold mt-0.5 truncate ${weatherHighlight.text} opacity-75`}>
-                              {commuteResult.destination?.name || 'Destination'}
+                              {selectedDestinationAddress ? getAddressPrimaryLabel(selectedDestinationAddress) : commuteResult.destination?.name || 'Destination'}
                             </p>
                           </div>
                         </div>
@@ -4858,7 +5834,7 @@ export default function EmployeeDashboard() {
                         </span>
                       </div>
 
-                      {rainAlertActive && (
+                      {commuteAdviceOptions.includes('rain_risk') && rainAlertActive && (
                         <div className="mt-3 ml-1 rounded-xl bg-white/80 border border-white/70 px-3 py-2.5">
                           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5">
                             <div>
@@ -4882,7 +5858,7 @@ export default function EmployeeDashboard() {
                       )}
 
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-3 ml-1">
-                        {commuteResult.weather.temperature_c != null && (
+                        {commuteAdviceOptions.includes('route_weather') && commuteResult.weather.temperature_c != null && (
                           <div className="rounded-xl bg-white/70 border border-white/70 px-2.5 py-2">
                             <p className="text-[9px] uppercase tracking-wider font-bold text-slate-500">Temperature</p>
                             <p className="text-sm font-extrabold text-slate-900 mt-0.5">
@@ -4891,7 +5867,7 @@ export default function EmployeeDashboard() {
                           </div>
                         )}
 
-                        {commuteResult.weather.apparent_temperature_c != null && (
+                        {commuteAdviceOptions.includes('route_weather') && commuteResult.weather.apparent_temperature_c != null && (
                           <div className="rounded-xl bg-white/70 border border-white/70 px-2.5 py-2">
                             <p className="text-[9px] uppercase tracking-wider font-bold text-slate-500">Feels Like</p>
                             <p className={`text-sm font-extrabold mt-0.5 ${
@@ -4904,7 +5880,7 @@ export default function EmployeeDashboard() {
                           </div>
                         )}
 
-                        {commuteResult.weather.rain_probability != null && (
+                        {commuteAdviceOptions.includes('rain_risk') && commuteResult.weather.rain_probability != null && (
                           <div className="rounded-xl bg-white/70 border border-white/70 px-2.5 py-2">
                             <p className="text-[9px] uppercase tracking-wider font-bold text-slate-500">Rain Chance</p>
                             <p className={`text-sm font-extrabold mt-0.5 ${
@@ -4921,7 +5897,7 @@ export default function EmployeeDashboard() {
                           </div>
                         )}
 
-                        {commuteResult.weather.expected_precipitation_next_30_minutes_mm != null && (
+                        {commuteAdviceOptions.includes('rain_risk') && commuteResult.weather.expected_precipitation_next_30_minutes_mm != null && (
                           <div className="rounded-xl bg-white/70 border border-white/70 px-2.5 py-2">
                             <p className="text-[9px] uppercase tracking-wider font-bold text-slate-500">Next 30 Min</p>
                             <p className="text-sm font-extrabold text-slate-900 mt-0.5">
@@ -4930,7 +5906,7 @@ export default function EmployeeDashboard() {
                           </div>
                         )}
 
-                        {commuteResult.weather.expected_precipitation_next_hour_mm != null && (
+                        {commuteAdviceOptions.includes('rain_risk') && commuteResult.weather.expected_precipitation_next_hour_mm != null && (
                           <div className="rounded-xl bg-white/70 border border-white/70 px-2.5 py-2">
                             <p className="text-[9px] uppercase tracking-wider font-bold text-slate-500">Next Hour</p>
                             <p className={`text-sm font-extrabold mt-0.5 ${rainAlertActive ? weatherHighlight.text : 'text-slate-900'}`}>
@@ -4939,7 +5915,7 @@ export default function EmployeeDashboard() {
                           </div>
                         )}
 
-                        {commuteResult.weather.wind_speed_kmh != null && (
+                        {commuteAdviceOptions.includes('route_weather') && commuteResult.weather.wind_speed_kmh != null && (
                           <div className="rounded-xl bg-white/70 border border-white/70 px-2.5 py-2">
                             <p className="text-[9px] uppercase tracking-wider font-bold text-slate-500">Wind</p>
                             <p className={`text-sm font-extrabold mt-0.5 ${
@@ -4970,9 +5946,9 @@ export default function EmployeeDashboard() {
                   );
                 })()}
 
-                {commuteResult.route && <TrafficRouteMap result={commuteResult} />}
+                {commuteResult.route && (commuteAdviceOptions.includes('route_weather') || commuteAdviceOptions.includes('traffic_delays')) && <TrafficRouteMap result={commuteResult} />}
 
-                {(commuteResult.incidents?.length ?? 0) > 0 && (
+                {commuteAdviceOptions.includes('traffic_delays') && (commuteResult.incidents?.length ?? 0) > 0 && (
                   <div className="rounded-2xl bg-white border border-slate-200 overflow-hidden">
                     <button
                       type="button"
@@ -5087,17 +6063,19 @@ export default function EmployeeDashboard() {
                 )}
 
 
-                <div className="flex items-center gap-3 text-[10px] text-slate-500 flex-wrap">
-                  <span className="font-semibold">
-                    Route traffic: {commuteResult.route?.traffic_level ?? 'Unknown'}
-                  </span>
-                  <span>
-                    Live ETA/delay from TomTom Routing
-                  </span>
-                  <span className="ml-auto">{commuteResult.origin?.name ?? 'Origin'} → {commuteResult.destination?.name ?? 'Destination'}</span>
-                </div>
+                {(commuteAdviceOptions.includes('traffic_delays') || commuteAdviceOptions.includes('best_departure')) && (
+                  <div className="flex items-center gap-3 text-[10px] text-slate-500 flex-wrap">
+                    <span className="font-semibold">
+                      Route traffic: {commuteResult.route?.traffic_level ?? 'Unknown'}
+                    </span>
+                    <span>Live ETA/delay from TomTom Routing</span>
+                    <span className="ml-auto">{selectedOriginAddress ? getAddressPrimaryLabel(selectedOriginAddress) : commuteResult.origin?.name ?? 'Origin'} → {selectedDestinationAddress ? getAddressPrimaryLabel(selectedDestinationAddress) : commuteResult.destination?.name ?? 'Destination'}</span>
+                  </div>
+                )}
               </div>
             )}
+            </div>
+            </div>
           </div>
         </div>
       )}
@@ -5952,3 +6930,4 @@ export default function EmployeeDashboard() {
     </main>
   );
 }
+
