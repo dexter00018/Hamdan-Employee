@@ -1,33 +1,15 @@
-// @ts-nocheck
 'use client';
 
-// Presentation-only extraction of legacy dashboard JSX. The parent page remains
-// the source of truth for typed state, data fetching, and mutations.
-export default function AppSettingsModal({ context }: { context: Record<string, any> }) {
-  const { Spinner, appSettings, appSettingsLoading, appSettingsModalOpen, appSettingsMsg, appSettingsSaving, saveAppSettings, setAppSettings, setAppSettingsModalOpen } = context;
-  return (
-    <>
-      {/* APP SETTINGS MODAL */}
-      {appSettingsModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 backdrop-blur-sm p-0 sm:items-center sm:p-4">
-          <div className="w-full max-w-sm card-style shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2.5">
-                <span className="w-9 h-9 rounded-2xl bg-orange-50 flex items-center justify-center text-base flex-shrink-0">⚙️</span>
-                <h3 className="mb-0">App Settings</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setAppSettingsModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 transition"
-                aria-label="Close"
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
-              </button>
-            </div>
+import type { Dispatch, SetStateAction } from 'react';
+import Spinner from '@/components/Spinner';
+import ModalShell from '@/components/shared/ModalShell';
 
+type AppSettings = { late_cutoff_hour: number; late_cutoff_minute: number; default_leave_credits: number; time_out_reminder_hour: number; support_response_target_hours: number; payslip_ack_reminder_days: number; dashboard_refresh_seconds: number };
+type Props = { open: boolean; onClose: () => void; appSettings: AppSettings; appSettingsLoading: boolean; appSettingsMsg: { type: 'success' | 'error'; text: string } | null; appSettingsSaving: boolean; saveAppSettings: () => void | Promise<void>; setAppSettings: Dispatch<SetStateAction<AppSettings>> };
+
+export default function AppSettingsModal({ open, onClose, appSettings, appSettingsLoading, appSettingsMsg, appSettingsSaving, saveAppSettings, setAppSettings }: Props) {
+  return (
+    <ModalShell open={open} onClose={onClose} title="App Settings" icon="⚙️" size="sm" closeDisabled={appSettingsSaving}>
             {appSettingsMsg && (
               <div className={`p-3 rounded-xl text-sm font-bold mb-4 ${appSettingsMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
                 {appSettingsMsg.text}
@@ -120,9 +102,6 @@ export default function AppSettingsModal({ context }: { context: Record<string, 
                 </button>
               </div>
             )}
-          </div>
-        </div>
-      )}
-    </>
+    </ModalShell>
   );
 }

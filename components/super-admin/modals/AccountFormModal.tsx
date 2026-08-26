@@ -1,30 +1,16 @@
-// @ts-nocheck
 'use client';
 
-// Presentation-only extraction of legacy dashboard JSX. The parent page remains
-// the source of truth for typed state, data fetching, and mutations.
-export default function AccountFormModal({ context }: { context: Record<string, any> }) {
-  const { Spinner, confirmPassword, createAccountModalOpen, deactivating, designation, editingId, email, emailChecking, emailConflict, employeeId, employeeIdConflict, employees, fullName, fullNameConflict, handleSave, loading, password, passwordMismatch, resetForm, role, setConfirmPassword, setDesignation, setEmail, setEmployeeId, setFullName, setPassword, setRole, toggleAccountActive } = context;
-  return (
-    <>
-      {/* ── CREATE / EDIT ACCOUNT MODAL ── */}
-      {createAccountModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 backdrop-blur-sm p-0 sm:items-center sm:p-4">
-          <div className="w-full max-w-sm card-style shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="mb-0">{editingId ? 'Edit Account' : 'Create New Account'}</h3>
-              <button
-                type="button"
-                onClick={resetForm}
-                className="text-slate-400 hover:text-slate-600 transition"
-                aria-label="Close"
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
-              </button>
-            </div>
+import type { Dispatch, FormEvent, SetStateAction } from 'react';
+import Spinner from '@/components/Spinner';
+import ModalShell from '@/components/shared/ModalShell';
 
+type Employee = { id: string; role?: string | null; is_active?: boolean | null };
+type Props = { open: boolean; onClose: () => void; confirmPassword: string; deactivating: boolean; designation: string; editingId: string | null; email: string; emailChecking: boolean; emailConflict: boolean; employeeId: string; employeeIdConflict: string | null; employees: Employee[]; fullName: string; fullNameConflict: boolean | null; handleSave: (event: FormEvent) => void | Promise<void>; loading: boolean; password: string; passwordMismatch: boolean; resetForm: () => void; role: 'employee' | 'admin'; setConfirmPassword: Dispatch<SetStateAction<string>>; setDesignation: Dispatch<SetStateAction<string>>; setEmail: Dispatch<SetStateAction<string>>; setEmployeeId: Dispatch<SetStateAction<string>>; setFullName: Dispatch<SetStateAction<string>>; setPassword: Dispatch<SetStateAction<string>>; setRole: Dispatch<SetStateAction<'employee' | 'admin'>>; toggleAccountActive: (deactivate: boolean) => void | Promise<void> };
+
+export default function AccountFormModal({ open, onClose, confirmPassword, deactivating, designation, editingId, email, emailChecking, emailConflict, employeeId, employeeIdConflict, employees, fullName, fullNameConflict, handleSave, loading, password, passwordMismatch, resetForm, role, setConfirmPassword, setDesignation, setEmail, setEmployeeId, setFullName, setPassword, setRole, toggleAccountActive }: Props) {
+  const close = () => { resetForm(); onClose(); };
+  return (
+    <ModalShell open={open} onClose={close} title={editingId ? 'Edit Account' : 'Create New Account'} size="sm" closeDisabled={loading || deactivating}>
             <form onSubmit={handleSave} className="space-y-4">
               <div>
                 <input
@@ -196,9 +182,6 @@ export default function AccountFormModal({ context }: { context: Record<string, 
                   : 'Create Account'}
               </button>
             </form>
-          </div>
-        </div>
-      )}
-    </>
+    </ModalShell>
   );
 }

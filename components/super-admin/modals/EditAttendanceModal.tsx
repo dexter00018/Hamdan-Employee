@@ -1,20 +1,16 @@
-// @ts-nocheck
 'use client';
 
-// Presentation-only extraction of legacy dashboard JSX. The parent page remains
-// the source of truth for typed state, data fetching, and mutations.
-export default function EditAttendanceModal({ context }: { context: Record<string, any> }) {
-  const { Spinner, editingLog, logSaving, saveEditLog, setEditingLog } = context;
-  return (
-    <>
-      {/* EDIT ATTENDANCE MODAL -- opens on top of the Attendance Records
-          modal when a row is tapped. */}
-      {editingLog && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 backdrop-blur-sm p-0 sm:items-center sm:p-4">
-          <div className="w-full max-w-sm card-style shadow-2xl">
-            <h3 className="mb-2">Edit Attendance</h3>
-            <p className="text-sm text-slate-400 mb-6">{editingLog.employeeName}</p>
+import type { Dispatch, SetStateAction } from 'react';
+import Spinner from '@/components/Spinner';
+import ModalShell from '@/components/shared/ModalShell';
 
+type EditingLog = { id: string; employeeName: string; timeInLocal: string; timeOutLocal: string; status: string };
+type Props = { editingLog: EditingLog | null; logSaving: boolean; saveEditLog: () => void | Promise<void>; setEditingLog: Dispatch<SetStateAction<EditingLog | null>> };
+
+export default function EditAttendanceModal({ editingLog, logSaving, saveEditLog, setEditingLog }: Props) {
+  if (!editingLog) return null;
+  return (
+    <ModalShell open onClose={() => setEditingLog(null)} title="Edit Attendance" description={editingLog.employeeName} size="sm" closeDisabled={logSaving} footer={<div className="flex gap-3"><button type="button" className="flex-1 rounded-full bg-slate-100 p-3 text-sm font-medium" onClick={() => setEditingLog(null)}>Cancel</button><button type="button" className="flex-1 btn-primary disabled:opacity-50" onClick={saveEditLog} disabled={logSaving || !editingLog.timeInLocal}>{logSaving ? <span className="flex items-center justify-center gap-2"><Spinner size="sm" />Saving...</span> : 'Save'}</button></div>}>
             <label className="label-branded">Time In (Philippine Time)</label>
             <input
               type="datetime-local"
@@ -62,31 +58,6 @@ export default function EditAttendanceModal({ context }: { context: Record<strin
               <option value="Emergency Leave">Emergency Leave</option>
             </select>
 
-            <div className="flex gap-3">
-              <button
-                type="button"
-                className="flex-1 p-3 bg-slate-100 rounded-full font-medium text-sm"
-                onClick={() => setEditingLog(null)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="flex-1 btn-primary disabled:opacity-50"
-                onClick={saveEditLog}
-                disabled={logSaving || !editingLog.timeInLocal}
-              >
-                {logSaving ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <Spinner size="sm" />
-                    Saving...
-                  </span>
-                ) : 'Save'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
+    </ModalShell>
   );
 }

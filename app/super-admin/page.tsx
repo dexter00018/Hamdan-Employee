@@ -1224,15 +1224,15 @@ export default function SuperAdminDashboard() {
         </section>
       </div>
 
-      <AccountFormModal context={{ Spinner, confirmPassword, createAccountModalOpen, deactivating, designation, editingId, email, emailChecking, emailConflict, employeeId, employeeIdConflict, employees, fullName, fullNameConflict, handleSave, loading, password, passwordMismatch, resetForm, role, setConfirmPassword, setDesignation, setEmail, setEmployeeId, setFullName, setPassword, setRole, toggleAccountActive }} />
+      <AccountFormModal open={createAccountModalOpen} onClose={() => setCreateAccountModalOpen(false)} confirmPassword={confirmPassword} deactivating={deactivating} designation={designation} editingId={editingId} email={email} emailChecking={emailChecking} emailConflict={emailConflict} employeeId={employeeId} employeeIdConflict={employeeIdConflict} employees={employees} fullName={fullName} fullNameConflict={fullNameConflict} handleSave={handleSave} loading={loading} password={password} passwordMismatch={passwordMismatch} resetForm={resetForm} role={role} setConfirmPassword={setConfirmPassword} setDesignation={setDesignation} setEmail={setEmail} setEmployeeId={setEmployeeId} setFullName={setFullName} setPassword={setPassword} setRole={setRole} toggleAccountActive={toggleAccountActive} />
 
-      <ResetPasswordModal context={{ Spinner, handleResetPassword, resetEmail, resetLoading, resetPasswordModalOpen, resetPasswordMsg, setResetEmail, setResetPasswordModalOpen, setResetPasswordMsg }} />
+      <ResetPasswordModal open={resetPasswordModalOpen} onClose={() => setResetPasswordModalOpen(false)} handleResetPassword={handleResetPassword} resetEmail={resetEmail} resetLoading={resetLoading} resetPasswordMsg={resetPasswordMsg} setResetEmail={setResetEmail} setResetPasswordMsg={setResetPasswordMsg} />
 
-      <UserAccountsModal context={{ PAGE_SIZE, employees, employeesLoading, employeesPage, employeesTotalPages, initials, paginatedEmployees, roleTagClass, setEmployeesPage, setUserAccountsModalOpen, startEdit, totalAccounts, userAccountsModalOpen }} />
+      <UserAccountsModal open={userAccountsModalOpen} onClose={() => setUserAccountsModalOpen(false)} pageSize={PAGE_SIZE} employees={employees} employeesLoading={employeesLoading} employeesPage={employeesPage} employeesTotalPages={employeesTotalPages} initials={initials} paginatedEmployees={paginatedEmployees} roleTagClass={roleTagClass} setEmployeesPage={setEmployeesPage} startEdit={startEdit} totalAccounts={totalAccounts} />
 
-      <AttendanceRecordsModal context={{ PAGE_SIZE, attendanceDateFilter, attendanceLoading, attendancePage, attendanceRecordsModalOpen, attendanceSearch, attendanceTotalPages, filteredAttendanceLogs, handleAttendanceDateChange, handleAttendanceSearchChange, paginatedAttendanceLogs, setAttendancePage, setAttendanceRecordsModalOpen, startEditLog, statusTagClass, todayManila }} />
+      <AttendanceRecordsModal open={attendanceRecordsModalOpen} onClose={() => setAttendanceRecordsModalOpen(false)} pageSize={PAGE_SIZE} attendanceDateFilter={attendanceDateFilter} attendanceLoading={attendanceLoading} attendancePage={attendancePage} attendanceSearch={attendanceSearch} attendanceTotalPages={attendanceTotalPages} filteredAttendanceLogs={filteredAttendanceLogs} handleAttendanceDateChange={handleAttendanceDateChange} handleAttendanceSearchChange={handleAttendanceSearchChange} paginatedAttendanceLogs={paginatedAttendanceLogs} setAttendancePage={setAttendancePage} startEditLog={startEditLog} statusTagClass={statusTagClass} todayManila={todayManila} />
 
-      <AppSettingsModal context={{ Spinner, appSettings, appSettingsLoading, appSettingsModalOpen, appSettingsMsg, appSettingsSaving, saveAppSettings, setAppSettings, setAppSettingsModalOpen }} />
+      <AppSettingsModal open={appSettingsModalOpen} onClose={() => setAppSettingsModalOpen(false)} appSettings={appSettings} appSettingsLoading={appSettingsLoading} appSettingsMsg={appSettingsMsg} appSettingsSaving={appSettingsSaving} saveAppSettings={saveAppSettings} setAppSettings={setAppSettings} />
 
       {/* SYSTEM HEALTH MODAL */}
       <SystemHealthModal open={healthModalOpen} onClose={() => setHealthModalOpen(false)} loading={healthStatusLoading} lastBackupAt={lastBackupAt} lastArchiveAt={lastArchiveAt} formatTimestamp={formatHealthTimestamp} adminEmail={currentAdminEmail} result={testEmailResult} sending={testEmailLoading} onSendTestEmail={sendTestEmail} />
@@ -1240,15 +1240,15 @@ export default function SuperAdminDashboard() {
       {/* AUDIT LOG MODAL */}
       <AuditLogModal open={auditLogModalOpen} onClose={() => setAuditLogModalOpen(false)} loading={auditLogsLoading} logs={paginatedAuditLogs} allCount={auditLogs.length} pageSize={PAGE_SIZE} page={auditLogPage} totalPages={auditLogTotalPages} onPageChange={setAuditLogPage} actionMeta={auditActionMeta} />
 
-      <DataArchiveModal context={{ Spinner, archivalModalOpen, archiveLoading, archiveResult, handleArchiveOldRecords, setArchivalModalOpen }} />
+      <DataArchiveModal open={archivalModalOpen} onClose={() => setArchivalModalOpen(false)} archiveLoading={archiveLoading} archiveResult={archiveResult} handleArchiveOldRecords={handleArchiveOldRecords} />
 
-      <DatabaseBackupModal context={{ Spinner, backupLoading, backupModalOpen, backupResult, handleBackupDatabase, setBackupModalOpen }} />
+      <DatabaseBackupModal open={backupModalOpen} onClose={() => setBackupModalOpen(false)} backupLoading={backupLoading} backupResult={backupResult} handleBackupDatabase={handleBackupDatabase} />
 
-      <ArchivePasswordModal context={{ Spinner, archivePasswordError, archivePasswordInput, archivePasswordModalOpen, archivePasswordVerifying, confirmArchiveWithPassword, setArchivePasswordError, setArchivePasswordInput, setArchivePasswordModalOpen }} />
+      <ArchivePasswordModal open={archivePasswordModalOpen} onClose={() => setArchivePasswordModalOpen(false)} archivePasswordError={archivePasswordError} archivePasswordInput={archivePasswordInput} archivePasswordVerifying={archivePasswordVerifying} confirmArchiveWithPassword={confirmArchiveWithPassword} setArchivePasswordError={setArchivePasswordError} setArchivePasswordInput={setArchivePasswordInput} />
 
-      <BackupPasswordModal context={{ Spinner, backupPasswordError, backupPasswordInput, backupPasswordModalOpen, backupPasswordVerifying, confirmBackupWithPassword, setBackupPasswordError, setBackupPasswordInput, setBackupPasswordModalOpen }} />
+      <BackupPasswordModal open={backupPasswordModalOpen} onClose={() => setBackupPasswordModalOpen(false)} backupPasswordError={backupPasswordError} backupPasswordInput={backupPasswordInput} backupPasswordVerifying={backupPasswordVerifying} confirmBackupWithPassword={confirmBackupWithPassword} setBackupPasswordError={setBackupPasswordError} setBackupPasswordInput={setBackupPasswordInput} />
 
-      <EditAttendanceModal context={{ Spinner, editingLog, logSaving, saveEditLog, setEditingLog }} />
+      <EditAttendanceModal editingLog={editingLog} logSaving={logSaving} saveEditLog={saveEditLog} setEditingLog={setEditingLog} />
 
 
     </main>
