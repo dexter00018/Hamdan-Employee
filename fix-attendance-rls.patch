@@ -1,0 +1,135 @@
+From fd5f336413ca42e12f3064b16f950eb8cea2b952 Mon Sep 17 00:00:00 2001
+From: "Dexter (via Claude)" <dexter@hamdanengineering.local>
+Date: Wed, 26 Aug 2026 07:50:50 +0000
+Subject: [PATCH] fix: restrict attendance_logs read access + revoke unneeded
+ RPC execute grants
+
+- attendance_logs: replace "Authenticated can read attendance_logs"
+  (using true) with "Admins can read all attendance_logs", scoped to
+  admin/super_admin/hr. Previously any logged-in employee could read
+  everyone else's attendance logs since RLS policies are OR'd together.
+- handle_new_user(): revoke EXECUTE from anon/authenticated. It's
+  trigger-only (relies on NEW) and doesn't need to be a public RPC
+  endpoint.
+- log_audit_event(): revoke EXECUTE from anon. It had no internal auth
+  check, so unauthenticated callers could insert fake audit_logs rows.
+- Update migrations README known-issues section to match live DB state.
+
+Applied directly to the live Supabase project (msoomcjzzudibiyezclj) via
+migration; this commit syncs the versioned snapshot to match.
+---
+ .../migrations/03_functions_and_triggers.sql  |  8 +++
+ supabase/migrations/04_rls_policies.sql       | 10 +++-
+ supabase/migrations/README.md                 | 55 ++++++++++++++-----
+ 3 files changed, 56 insertions(+), 17 deletions(-)
+
+diff --git a/supabase/migrations/03_functions_and_triggers.sql b/supabase/migrations/03_functions_and_triggers.sql
+index 9174835..3a7c82a 100644
+--- a/supabase/migrations/03_functions_and_triggers.sql
++++ b/supabase/migrations/03_functions_and_triggers.sql
+@@ -30,6 +30,14 @@ BEGIN
+ END;
+ $function$;
+ 
++-- SECURITY FIX: this is a trigger-only function (it relies on NEW, which
++-- only exists inside a trigger context), but Supabase exposes every
++-- public-schema function as a callable RPC endpoint by default. Revoke
++-- direct execute access from anon/authenticated -- the trigger itself
++-- still runs fine since it executes as the table owner regardless of
++-- these grants.
++revoke execute on function public.handle_new_user() from anon, authenticated;
++
+ CREATE OR REPLACE FUNCTION public.email_exists(check_email text)
+  RETURNS boolean
+  LANGUAGE sql
+diff --git a/supabase/migrations/04_rls_policies.sql b/supabase/migrations/04_rls_policies.sql
+index 29aa410..63ef514 100644
+--- a/supabase/migrations/04_rls_policies.sql
++++ b/supabase/migrations/04_rls_policies.sql
+@@ -60,9 +60,15 @@ create policy "Users can read own attendance logs"
+   on public.attendance_logs for select to authenticated
+   using (user_id = auth.uid());
+ 
+-create policy "Authenticated can read attendance_logs"
++-- SECURITY FIX (see README "Known issues" #1 history): this used to be
++-- "Authenticated can read attendance_logs" with `using (true)`, which let
++-- ANY logged-in user -- including regular employees -- read every other
++-- employee's attendance logs. RLS policies are OR'd together, so it
++-- silently overrode "Users can read own attendance logs" above. Fixed to
++-- scope broad read access to admin/super_admin/hr only.
++create policy "Admins can read all attendance_logs"
+   on public.attendance_logs for select to authenticated
+-  using (true);
++  using (exists (select 1 from public.profiles p where p.id = auth.uid() and lower(coalesce(p.role, '')) = any (array['admin','super_admin','hr'])));
+ 
+ create policy "Admins can insert attendance_logs"
+   on public.attendance_logs for insert to authenticated
+diff --git a/supabase/migrations/README.md b/supabase/migrations/README.md
+index f3543f7..2dddc3a 100644
+--- a/supabase/migrations/README.md
++++ b/supabase/migrations/README.md
+@@ -35,21 +35,46 @@ state and refresh these files.
+ 
+ ## Known issues in the live database (as of this snapshot)
+ 
+-These are flagged inline in the SQL files too, but summarized here:
+-
+-1. **A leftover diagnostic RLS policy** lets unauthenticated (anon)
+-   requests read all attendance logs (`"Anon can read attendance_logs (diag)"`
+-   on `attendance_logs`). This looks like debug leftovers from before this
+-   backup existed and is a real security gap — recommend dropping it:
+-   ```sql
+-   drop policy "Anon can read attendance_logs (diag)" on public.attendance_logs;
+-   ```
+-
+-2. **Several older policies check `role = 'hr'`**, but no profile in this
+-   app ever actually has that exact role string — real roles are
+-   `employee`, `admin`, and `super_admin`. These policies fail closed
+-   (nobody matches them), so they're not a security hole, just dead
+-   weight worth cleaning up eventually.
++**Fixed (kept here for history):**
++
++1. ~~A leftover diagnostic RLS policy let unauthenticated (anon) requests
++   read all attendance logs (`"Anon can read attendance_logs (diag)"`).~~
++   Dropped from the live DB.
++
++2. ~~`"Authenticated can read attendance_logs"` (`using (true)`) let ANY
++   logged-in user, including regular employees, read every other
++   employee's attendance logs — RLS policies are OR'd together, so it
++   silently overrode `"Users can read own attendance logs"`.~~ Replaced
++   with `"Admins can read all attendance_logs"`, scoped to
++   admin/super_admin/hr only. See `04_rls_policies.sql`.
++
++3. ~~`handle_new_user()` and `log_audit_event()` (both `SECURITY DEFINER`)
++   were exposed as directly-callable RPC endpoints to `anon`.~~
++   `handle_new_user` (trigger-only, doesn't need direct RPC access) had
++   EXECUTE revoked from both `anon` and `authenticated`. `log_audit_event`
++   had no internal auth check, so anon callers could insert arbitrary fake
++   rows into `audit_logs`; EXECUTE was revoked from `anon` only
++   (authenticated users still need it, the app calls it after real
++   actions).
++
++**Still open — worth cleaning up eventually (not urgent):**
++
++4. **Several older policies/functions check `role = 'hr'`**, but no
++   profile in this app ever actually has that exact role string — real
++   roles are `employee`, `admin`, and `super_admin`. These fail closed
++   (nobody matches them), so it's dead weight, not a security hole.
++
++5. **`settle_overdue_absences()` and `settle_overdue_leave_days()`** are
++   callable by any authenticated user (by design — the employee dashboard
++   calls them as an opportunistic "sweep" on page load, see
++   `LeaveRequestModal.tsx`). They're idempotent and don't leak data, but
++   they let any logged-in employee trigger a global settle/absence-mark
++   pass for *all* employees a little early. Low risk, flagged for
++   awareness.
++
++6. **Leaked password protection is disabled** in Supabase Auth (checks
++   new passwords against HaveIBeenPwned). This is a dashboard toggle, not
++   a SQL fix — Authentication → Policies → Password Security.
+ 
+ ## How to restore (disaster recovery)
+ 
+-- 
+2.43.0
+
