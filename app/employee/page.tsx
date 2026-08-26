@@ -2234,8 +2234,12 @@ export default function EmployeeDashboard() {
               )}
             </section>
             {/* Announcements */}
+            {/* min-h approximates the resolved card's typical height (icon row
+                + 2-3 lines of text) so swapping from skeleton to real content
+                doesn't shove everything below it down -- this was a measurable
+                contributor to this page's Cumulative Layout Shift score. */}
             {announcementLoading ? (
-              <div className="card-style !p-4"><LoadingRow label="Loading announcement..." /></div>
+              <div className="card-style !p-4 min-h-[104px] flex items-center"><LoadingRow label="Loading announcement..." /></div>
             ) : announcementError ? (
               <div className="card-style !p-4 border border-red-100"><p className="text-red-500 text-sm">{announcementError}</p></div>
             ) : announcement ? (
@@ -2246,12 +2250,17 @@ export default function EmployeeDashboard() {
                     <span className="inline-block bg-green-500 text-slate-950 text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full mb-2">Announcement</span>
                     <p className="text-white text-sm font-medium whitespace-pre-wrap leading-relaxed">{announcement}</p>
                     {announcementImageUrl && (
-                      // eslint-disable-next-line @next/next/no-img-element -- external Supabase Storage URL, not a static asset
-                      <img
-                        src={announcementImageUrl}
-                        alt="Announcement attachment"
-                        className="mt-3 w-full max-h-[420px] rounded-2xl object-contain bg-black/10 border border-white/10"
-                      />
+                      // Fixed aspect-ratio wrapper reserves the image's box before
+                      // it loads, so the rest of the page doesn't jump once the
+                      // browser learns the real dimensions (a CLS contributor).
+                      <div className="mt-3 w-full aspect-video max-h-[420px] rounded-2xl bg-black/10 border border-white/10 overflow-hidden">
+                        {/* eslint-disable-next-line @next/next/no-img-element -- external Supabase Storage URL, not a static asset */}
+                        <img
+                          src={announcementImageUrl}
+                          alt="Announcement attachment"
+                          className="w-full h-full object-contain"
+                        />
+                      </div>
                     )}
                     {announcementUpdatedAt && <p className="text-green-100/70 text-[10px] font-medium uppercase tracking-widest mt-2">Updated: {announcementUpdatedAt}</p>}
                   </div>
@@ -2264,8 +2273,11 @@ export default function EmployeeDashboard() {
             )}
 
             {/* AI Weather & Commute Advisory */}
+            {/* min-h approximates the resolved card's typical height so the
+                skeleton-to-content swap doesn't push page content below it
+                down -- see the announcement block above for the same fix. */}
             {weatherLoading ? (
-              <div className="card-style !p-4">
+              <div className="card-style !p-4 min-h-[168px] flex items-center">
                 <LoadingRow label="Loading weather advisory..." />
               </div>
             ) : weatherAdvisory ? (
