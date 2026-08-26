@@ -2609,7 +2609,7 @@ export default function EmployeeDashboard() {
         </div>
       </div>
 
-      <SummaryDetailModal context={{ formatMonthLabel, setSummaryDetailType, statusTagClass, summaryCutoffKey, summaryDetailInfo, summaryDetailType }} />
+      <SummaryDetailModal formatMonthLabel={formatMonthLabel} setSummaryDetailType={setSummaryDetailType} statusTagClass={statusTagClass} summaryCutoffKey={summaryCutoffKey} summaryDetailInfo={summaryDetailInfo} summaryDetailType={summaryDetailType} />
 
       {/* New Announcement Toast (auto-dismisses after 6s) */}
       {showAnnouncementToast && (
@@ -2634,7 +2634,7 @@ export default function EmployeeDashboard() {
         </div>
       )}
 
-      <AttendanceDisputeFormModal context={{ Spinner, disputeChoiceEligibility, disputeForm, disputeModalOpen, disputeMsg, disputeSaving, disputeStep, disputeTypeLocked, formatTimeLocal, handleDisputeDateChange, proceedToDisputeConfirm, selectDisputeType, setDisputeForm, setDisputeModalOpen, setDisputeStep, submitDispute }} />
+      <AttendanceDisputeFormModal open={disputeModalOpen} onClose={() => setDisputeModalOpen(false)} disputeChoiceEligibility={disputeChoiceEligibility} disputeForm={disputeForm} disputeMsg={disputeMsg} disputeSaving={disputeSaving} disputeStep={disputeStep} disputeTypeLocked={disputeTypeLocked} formatTimeLocal={formatTimeLocal} handleDisputeDateChange={handleDisputeDateChange} proceedToDisputeConfirm={proceedToDisputeConfirm} selectDisputeType={selectDisputeType} setDisputeForm={setDisputeForm} setDisputeStep={setDisputeStep} submitDispute={submitDispute} />
 
       {/* Dispute Result Toast (auto-dismisses after 8s) */}
       {disputeResultToast && (
@@ -2710,11 +2710,11 @@ export default function EmployeeDashboard() {
         initialDestination={weatherAdvisory?.location_name}
       />
 
-      <LeaveChoiceModal context={{ fetchMyLeaves, isRegular, leaveChoiceModalOpen, myLeaves, remainingCredits, setLeaveChoiceModalOpen, setLeaveForm, setLeaveModalOpen, setLeaveMsg, setMyLeavesModalOpen, setSelectedMyLeaveDetail }} />
+      <LeaveChoiceModal open={leaveChoiceModalOpen} onClose={() => setLeaveChoiceModalOpen(false)} fetchMyLeaves={fetchMyLeaves} isRegular={isRegular} myLeavesCount={myLeaves.length} remainingCredits={remainingCredits} setLeaveForm={setLeaveForm} setLeaveModalOpen={setLeaveModalOpen} setLeaveMsg={setLeaveMsg} setMyLeavesModalOpen={setMyLeavesModalOpen} clearSelectedLeave={() => setSelectedMyLeaveDetail(null)} />
 
-      <LeaveRequestsModal context={{ cancelLeave, countLeaveDays, myLeaves, myLeavesModalOpen, selectedMyLeaveDetail, setLeaveChoiceModalOpen, setMyLeavesModalOpen, setSelectedMyLeaveDetail }} />
+      <LeaveRequestsModal open={myLeavesModalOpen} onClose={() => setMyLeavesModalOpen(false)} onBackToChoice={() => { setMyLeavesModalOpen(false); setLeaveChoiceModalOpen(true); }} cancelLeave={cancelLeave} countLeaveDays={countLeaveDays} myLeaves={myLeaves} selectedMyLeaveDetail={selectedMyLeaveDetail} setSelectedMyLeaveDetail={setSelectedMyLeaveDetail} />
 
-      <AttendanceDisputesModal context={{ cancelDispute, cancelingDisputeId, disputeClaimed, disputeFieldLabel, disputeOriginal, disputeTypeLabel, formatDisputeTimePh, myDisputes, myDisputesModalOpen, openDisputeModal, selectedMyDisputeDetail, setMyDisputesModalOpen, setSelectedMyDisputeDetail }} />
+      <AttendanceDisputesModal open={myDisputesModalOpen} onClose={() => setMyDisputesModalOpen(false)} cancelDispute={cancelDispute} cancelingDisputeId={cancelingDisputeId} disputeClaimed={disputeClaimed} disputeFieldLabel={disputeFieldLabel} disputeOriginal={disputeOriginal} disputeTypeLabel={disputeTypeLabel} formatDisputeTimePh={formatDisputeTimePh} myDisputes={myDisputes} openDisputeModal={openDisputeModal} selectedMyDisputeDetail={selectedMyDisputeDetail} setSelectedMyDisputeDetail={setSelectedMyDisputeDetail} />
 
       {/* Employee Directory Modal */}
       <EmployeeDirectoryModal open={directoryModalOpen} onClose={() => setDirectoryModalOpen(false)} loading={directoryLoading} total={directoryEmployees.length} search={directorySearch} onSearchChange={setDirectorySearch} employees={filteredDirectory} initials={directoryInitials} />
@@ -2722,7 +2722,7 @@ export default function EmployeeDashboard() {
       {/* Company Calendar Modal */}
       <CompanyCalendarModal open={calendarModalOpen} onClose={() => setCalendarModalOpen(false)} loading={holidaysLoading} holidays={companyHolidays} upcoming={upcomingHolidays} past={pastHolidays} formatDate={formatHolidayDate} daysUntil={daysUntilHoliday} />
 
-      <LeaveRequestModal context={{ Spinner, countLeaveDays, countLeaveHolidays, fallbackLeaveCredits, isRegular, leaveCredits, leaveForm, leaveModalOpen, leaveMsg, leaveSaving, remainingCredits, setLeaveChoiceModalOpen, setLeaveForm, setLeaveModalOpen, submitLeave, todayManila, upcomingApprovedLeaves }} />
+      <LeaveRequestModal open={leaveModalOpen} onClose={() => setLeaveModalOpen(false)} onBack={() => { setLeaveModalOpen(false); setLeaveChoiceModalOpen(true); }} countLeaveDays={countLeaveDays} countLeaveHolidays={countLeaveHolidays} fallbackLeaveCredits={fallbackLeaveCredits} isRegular={isRegular} leaveCredits={leaveCredits} leaveForm={leaveForm} leaveMsg={leaveMsg} leaveSaving={leaveSaving} remainingCredits={remainingCredits} setLeaveForm={setLeaveForm} submitLeave={submitLeave} todayManila={todayManila} upcomingApprovedLeaves={upcomingApprovedLeaves} />
 
       {/* Leave Result Toast */}
       {leaveResultToast && (
@@ -2752,7 +2752,7 @@ export default function EmployeeDashboard() {
       {/* Employee Documents Modal */}
       <EmployeeDocumentsModal open={documentsModalOpen} onClose={() => setDocumentsModalOpen(false)} loading={documentsLoading} documents={employeeDocuments} downloadingId={downloadingDocumentId} onDownload={downloadEmployeeDocument} />
 
-      <EarlyTimeOutModal context={{ Spinner, expectedTimeOutLabel, handleTimeOut, setShowEarlyTimeOutWarning, showEarlyTimeOutWarning, timeOutLoading }} />
+      <EarlyTimeOutModal open={showEarlyTimeOutWarning} onClose={() => setShowEarlyTimeOutWarning(false)} expectedTimeOutLabel={expectedTimeOutLabel} handleTimeOut={handleTimeOut} timeOutLoading={timeOutLoading} />
 
 
 

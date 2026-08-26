@@ -1,18 +1,18 @@
-// @ts-nocheck
 'use client';
 
-// Presentation-only extraction of legacy dashboard JSX. The parent page remains
-// the source of truth for typed state, data fetching, and mutations.
-export default function AttendanceDisputeFormModal({ context }: { context: Record<string, any> }) {
-  const { Spinner, disputeChoiceEligibility, disputeForm, disputeModalOpen, disputeMsg, disputeSaving, disputeStep, disputeTypeLocked, formatTimeLocal, handleDisputeDateChange, proceedToDisputeConfirm, selectDisputeType, setDisputeForm, setDisputeModalOpen, setDisputeStep, submitDispute } = context;
-  return (
-    <>
-      {/* File a Dispute Modal -- two steps: "form" then a highlighted
-          "confirm" review screen before the dispute is actually submitted. */}
-      {disputeModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 backdrop-blur-sm p-0 sm:items-center sm:p-4">
-          <div className="w-full max-w-sm card-style shadow-2xl max-h-[90vh] overflow-y-auto">
+import type { Dispatch, RefObject, SetStateAction } from 'react';
+import Spinner from '@/components/Spinner';
+import ModalShell from '@/components/shared/ModalShell';
 
+type DisputeType = 'TimeIn' | 'TimeOut';
+type Step = 'choice' | 'form' | 'confirm';
+type Form = { attendanceLogId: string | null; date: string; timeLocal: string; reason: string; type: DisputeType };
+type Eligibility = { timeIn: { eligible: boolean; reason: string }; timeOut: { eligible: boolean; reason: string } };
+type Props = { open: boolean; onClose: () => void; disputeChoiceEligibility: Eligibility; disputeForm: Form; disputeMsg: { type: 'success' | 'error'; text: string } | null; disputeSaving: boolean; disputeStep: Step; disputeTypeLocked: RefObject<boolean>; formatTimeLocal: (value: string) => string; handleDisputeDateChange: (value: string) => void; proceedToDisputeConfirm: () => void; selectDisputeType: (type: DisputeType) => void; setDisputeForm: Dispatch<SetStateAction<Form>>; setDisputeStep: Dispatch<SetStateAction<Step>>; submitDispute: () => void | Promise<void> };
+
+export default function AttendanceDisputeFormModal({ open, onClose, disputeChoiceEligibility, disputeForm, disputeMsg, disputeSaving, disputeStep, disputeTypeLocked, formatTimeLocal, handleDisputeDateChange, proceedToDisputeConfirm, selectDisputeType, setDisputeForm, setDisputeStep, submitDispute }: Props) {
+  return (
+    <ModalShell open={open} onClose={onClose} title={disputeStep === 'choice' ? 'File a Dispute' : disputeStep === 'confirm' ? 'Confirm Dispute' : `${disputeForm.type === 'TimeOut' ? 'Time Out' : 'Time In'} Dispute`} size="sm" closeDisabled={disputeSaving}>
             {disputeStep === 'choice' ? (
               <>
                 {/* ── STEP 1: CHOOSE DISPUTE TYPE ── */}
@@ -69,7 +69,7 @@ export default function AttendanceDisputeFormModal({ context }: { context: Recor
                 <button
                   type="button"
                   className="w-full mt-6 p-3 bg-slate-100 rounded-full font-medium text-sm"
-                  onClick={() => setDisputeModalOpen(false)}
+                    onClick={onClose}
                 >
                   Cancel
                 </button>
@@ -149,7 +149,7 @@ export default function AttendanceDisputeFormModal({ context }: { context: Recor
                       if (!disputeTypeLocked.current) {
                         setDisputeStep('choice');
                       } else {
-                        setDisputeModalOpen(false);
+                      onClose();
                       }
                     }}
                   >
@@ -231,9 +231,6 @@ export default function AttendanceDisputeFormModal({ context }: { context: Recor
                 </div>
               </>
             )}
-          </div>
-        </div>
-      )}
-    </>
+    </ModalShell>
   );
 }

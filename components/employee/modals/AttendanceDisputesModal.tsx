@@ -1,30 +1,15 @@
-// @ts-nocheck
 'use client';
 
-// Presentation-only extraction of legacy dashboard JSX. The parent page remains
-// the source of truth for typed state, data fetching, and mutations.
-export default function AttendanceDisputesModal({ context }: { context: Record<string, any> }) {
-  const { cancelDispute, cancelingDisputeId, disputeClaimed, disputeFieldLabel, disputeOriginal, disputeTypeLabel, formatDisputeTimePh, myDisputes, myDisputesModalOpen, openDisputeModal, selectedMyDisputeDetail, setMyDisputesModalOpen, setSelectedMyDisputeDetail } = context;
-  return (
-    <>
-      {/* My Disputes Modal -- tap a dispute to see its full details. */}
-      {myDisputesModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 backdrop-blur-sm p-0 sm:items-center sm:p-4">
-          <div className="w-full max-w-sm card-style shadow-2xl max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between mb-4 flex-shrink-0">
-              <h3 className="mb-0">{selectedMyDisputeDetail ? 'Dispute Details' : 'My Disputes'}</h3>
-              <button
-                type="button"
-                onClick={() => { setMyDisputesModalOpen(false); setSelectedMyDisputeDetail(null); }}
-                className="text-slate-400 hover:text-slate-600 transition"
-                aria-label="Close"
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
-              </button>
-            </div>
+import type { Dispatch, SetStateAction } from 'react';
+import ModalShell from '@/components/shared/ModalShell';
 
+type Dispute = { id: string; status: string; dispute_date: string; dispute_type?: string | null; original_time_in?: string | null; original_time_out?: string | null; claimed_time_in?: string | null; claimed_time_out?: string | null; reason?: string | null; hr_notes?: string | null; reviewed_at?: string | null; created_at: string };
+type Props = { open: boolean; onClose: () => void; cancelDispute: (id: string) => void | Promise<void>; cancelingDisputeId: string | null; disputeClaimed: (dispute: Dispute) => string | null | undefined; disputeFieldLabel: (dispute: Dispute) => string; disputeOriginal: (dispute: Dispute) => string | null | undefined; disputeTypeLabel: (dispute: Dispute) => string; formatDisputeTimePh: (iso: string) => string; myDisputes: Dispute[]; openDisputeModal: (logId: string | null, date: string, type: 'TimeIn' | 'TimeOut', locked: boolean) => void; selectedMyDisputeDetail: Dispute | null; setSelectedMyDisputeDetail: Dispatch<SetStateAction<Dispute | null>> };
+
+export default function AttendanceDisputesModal({ open, onClose, cancelDispute, cancelingDisputeId, disputeClaimed, disputeFieldLabel, disputeOriginal, disputeTypeLabel, formatDisputeTimePh, myDisputes, openDisputeModal, selectedMyDisputeDetail, setSelectedMyDisputeDetail }: Props) {
+  const close = () => { setSelectedMyDisputeDetail(null); onClose(); };
+  return (
+    <ModalShell open={open} onClose={close} title={selectedMyDisputeDetail ? 'Dispute Details' : 'My Disputes'} size="sm" closeDisabled={Boolean(cancelingDisputeId)}>
             {/* Filing a new dispute lives here now, instead of cluttering
                 the Attendance History section -- opens the same choice
                 screen (Time In / Time Out) as disputing from a specific row. */}
@@ -64,12 +49,12 @@ export default function AttendanceDisputesModal({ context }: { context: Record<s
                     {disputeOriginal(selectedMyDisputeDetail) && (
                       <div>
                         <p className="label-branded mb-0.5">Original {disputeFieldLabel(selectedMyDisputeDetail)}</p>
-                        <p className="text-slate-700 text-xs">{formatDisputeTimePh(disputeOriginal(selectedMyDisputeDetail))}</p>
+                        <p className="text-slate-700 text-xs">{formatDisputeTimePh(disputeOriginal(selectedMyDisputeDetail)!)}</p>
                       </div>
                     )}
                     <div>
                       <p className="label-branded mb-0.5">Claimed {disputeFieldLabel(selectedMyDisputeDetail)}</p>
-                      <p className="text-slate-700 text-xs">{disputeClaimed(selectedMyDisputeDetail) ? formatDisputeTimePh(disputeClaimed(selectedMyDisputeDetail)) : '—'}</p>
+                      <p className="text-slate-700 text-xs">{disputeClaimed(selectedMyDisputeDetail) ? formatDisputeTimePh(disputeClaimed(selectedMyDisputeDetail)!) : '—'}</p>
                     </div>
                   </div>
 
@@ -118,8 +103,8 @@ export default function AttendanceDisputesModal({ context }: { context: Record<s
                       <div className="min-w-0">
                         <div className="font-medium text-slate-900 text-xs truncate">{disputeTypeLabel(d)} — {d.dispute_date}</div>
                         <div className="text-slate-400 text-[10px] mt-0.5">
-                          {disputeOriginal(d) && <>{formatDisputeTimePh(disputeOriginal(d))} → </>}
-                          {disputeClaimed(d) && formatDisputeTimePh(disputeClaimed(d))}
+                          {disputeOriginal(d) && <>{formatDisputeTimePh(disputeOriginal(d)!)} → </>}
+                          {disputeClaimed(d) && formatDisputeTimePh(disputeClaimed(d)!)}
                         </div>
                       </div>
                       <span className={d.status === 'Approved' ? 'tag-present' : d.status === 'Rejected' ? 'tag-late' : 'tag-excused'}>{d.status}</span>
@@ -135,16 +120,13 @@ export default function AttendanceDisputesModal({ context }: { context: Record<s
                 if (selectedMyDisputeDetail) {
                   setSelectedMyDisputeDetail(null);
                 } else {
-                  setMyDisputesModalOpen(false);
+                  onClose();
                 }
               }}
               className="mt-6 w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 transition flex-shrink-0"
             >
               {selectedMyDisputeDetail ? '← Back' : 'Close'}
             </button>
-          </div>
-        </div>
-      )}
-    </>
+    </ModalShell>
   );
 }
