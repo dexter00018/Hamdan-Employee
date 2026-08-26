@@ -1,28 +1,17 @@
-// @ts-nocheck
 'use client';
 
-// Presentation-only extraction of legacy dashboard JSX. The parent page remains
-// the source of truth for typed state, data fetching, and mutations.
-export default function EmployeeQuickViewModal({ context }: { context: Record<string, any> }) {
-  const { fallbackLeaveCredits, formatPh, initials, openPayslipsModal, openProfileChoice, quickViewAttendance, quickViewCredits, quickViewProfile, scrollToDashboardSection, setAttendanceHistoryOpen, setCutoffFilter, setQuickViewProfile, setSearchTerm, setSelectedDate, statusTagClass, todayManila } = context;
-  return (
-    <>
-        {/* EMPLOYEE QUICK VIEW MODAL */}
-        {quickViewProfile && (
-          <div className="fixed inset-0 z-[60] flex items-end justify-center bg-slate-950/45 backdrop-blur-sm p-0 sm:items-center sm:p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) setQuickViewProfile(null); }}>
-            <div className="w-full max-w-xl card-style shadow-2xl max-h-[90vh] flex flex-col !p-4 sm:!p-5" onMouseDown={(e) => e.stopPropagation()}>
-              <div className="flex items-center justify-between gap-3 mb-4 flex-shrink-0">
-                <div className="flex items-center gap-3 min-w-0">
-                  <span className="w-11 h-11 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center text-xs font-extrabold overflow-hidden flex-shrink-0">
-                    {initials(quickViewProfile.full_name)}
-                  </span>
-                  <span className="min-w-0"><span className="block text-sm font-bold text-slate-900 truncate">{quickViewProfile.full_name || 'Unknown'}</span><span className="block text-[10px] text-slate-400 truncate">{quickViewProfile.employee_id || 'No ID'} · {quickViewProfile.designation || 'No designation'}</span></span>
-                </div>
-                <button type="button" onClick={() => setQuickViewProfile(null)} className="text-slate-400 hover:text-slate-600" aria-label="Close employee quick view">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                </button>
-              </div>
+import type { Dispatch, SetStateAction } from 'react';
+import ModalShell from '@/components/shared/ModalShell';
 
+type Profile = { id: string; full_name: string | null; employee_id: string | null; designation: string | null; avatar_url: string | null; employee_email: string | null };
+type Attendance = { id: string; log_date: string; time_in: string | null; time_out: string | null; status: string | null };
+type Credits = { employment_status?: string | null; total_credits?: number | null; used_credits?: number | null } | null;
+type Props = { fallbackLeaveCredits: number; formatPh: (iso: string) => string; initials: (name: string | null) => string; openPayslipsModal: (profile: Profile) => void; openProfileChoice: (profile: Profile) => void; quickViewAttendance: Attendance[]; quickViewCredits: Credits; quickViewProfile: Profile | null; scrollToDashboardSection: (id: string) => void; setAttendanceHistoryOpen: Dispatch<SetStateAction<boolean>>; setCutoffFilter: Dispatch<SetStateAction<string>>; setQuickViewProfile: Dispatch<SetStateAction<Profile | null>>; setSearchTerm: Dispatch<SetStateAction<string>>; setSelectedDate: Dispatch<SetStateAction<string>>; statusTagClass: (status: string | null) => string; todayManila: string };
+
+export default function EmployeeQuickViewModal({ fallbackLeaveCredits, formatPh, initials, openPayslipsModal, openProfileChoice, quickViewAttendance, quickViewCredits, quickViewProfile, scrollToDashboardSection, setAttendanceHistoryOpen, setCutoffFilter, setQuickViewProfile, setSearchTerm, setSelectedDate, statusTagClass, todayManila }: Props) {
+  if (!quickViewProfile) return null;
+  return (
+    <ModalShell open onClose={() => setQuickViewProfile(null)} title={quickViewProfile.full_name || 'Unknown'} description={`${quickViewProfile.employee_id || 'No ID'} · ${quickViewProfile.designation || 'No designation'}`} icon={initials(quickViewProfile.full_name)} size="md" footer={<div className="grid grid-cols-3 gap-2"><button type="button" onClick={() => { const profile = quickViewProfile; setQuickViewProfile(null); openProfileChoice(profile); }} className="rounded-full bg-slate-900 py-2.5 text-[10px] font-bold text-white hover:bg-slate-700">Profile</button><button type="button" onClick={() => { setSearchTerm(quickViewProfile.full_name || ''); setSelectedDate(''); setCutoffFilter(''); setAttendanceHistoryOpen(true); setQuickViewProfile(null); scrollToDashboardSection('attendance-history'); }} className="rounded-full bg-blue-50 py-2.5 text-[10px] font-bold text-blue-600 hover:bg-blue-100">Attendance</button><button type="button" onClick={() => { const profile = quickViewProfile; setQuickViewProfile(null); openPayslipsModal(profile); }} className="rounded-full bg-emerald-50 py-2.5 text-[10px] font-bold text-emerald-600 hover:bg-emerald-100">Payslips</button></div>}>
               <div className="overflow-y-auto flex-1 pr-1 space-y-3">
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <div className="p-3 rounded-xl bg-slate-50 border border-slate-100"><p className="label-branded mb-1">Today</p><p className="text-xs font-bold text-slate-800">{quickViewAttendance.find((log) => log.log_date === todayManila)?.status || 'No record'}</p></div>
@@ -49,14 +38,6 @@ export default function EmployeeQuickViewModal({ context }: { context: Record<st
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-2 mt-4 flex-shrink-0">
-                <button type="button" onClick={() => { const profile = quickViewProfile; if (!profile) return; setQuickViewProfile(null); openProfileChoice(profile); }} className="py-2.5 rounded-full bg-slate-900 text-white text-[10px] font-bold hover:bg-slate-700">Profile</button>
-                <button type="button" onClick={() => { setSearchTerm(quickViewProfile?.full_name || ''); setSelectedDate(''); setCutoffFilter(''); setAttendanceHistoryOpen(true); setQuickViewProfile(null); scrollToDashboardSection('attendance-history'); }} className="py-2.5 rounded-full bg-blue-50 text-blue-600 text-[10px] font-bold hover:bg-blue-100">Attendance</button>
-                <button type="button" onClick={() => { const profile = quickViewProfile; if (!profile) return; setQuickViewProfile(null); openPayslipsModal(profile); }} className="py-2.5 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-bold hover:bg-emerald-100">Payslips</button>
-              </div>
-            </div>
-          </div>
-        )}
-    </>
+    </ModalShell>
   );
 }

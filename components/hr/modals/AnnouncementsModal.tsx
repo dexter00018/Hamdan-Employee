@@ -1,42 +1,15 @@
-// @ts-nocheck
 'use client';
 
-// Presentation-only extraction of legacy dashboard JSX. The parent page remains
-// the source of truth for typed state, data fetching, and mutations.
-export default function AnnouncementsModal({ context }: { context: Record<string, any> }) {
-  const { LoadingRow, Megaphone, Spinner, announcementContent, announcementId, announcementImageInputRef, announcementImagePreview, announcementImageUrl, announcementLoading, announcementMsg, announcementOpen, announcementRemoveImage, announcementSaving, announcementUpdatedAt, clearAnnouncementImage, handleAnnouncementImageChange, publishAnnouncement, setAnnouncementContent, setAnnouncementOpen } = context;
-  return (
-    <>
-        {/* ANNOUNCEMENTS MODULE MODAL */}
-        {announcementOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 backdrop-blur-sm p-0 sm:items-center sm:p-4"
-          onMouseDown={(e) => { if (e.target === e.currentTarget && !announcementSaving) setAnnouncementOpen(false); }}
-        >
-        <section className="w-full max-w-2xl card-style shadow-2xl max-h-[90vh] flex flex-col !p-4 sm:!p-5" onMouseDown={(e) => e.stopPropagation()}>
-          <div className="flex items-center justify-between gap-2 mb-4 flex-shrink-0">
-            <div className="flex items-center gap-2.5">
-              <span className="w-9 h-9 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center"><Megaphone size={17} strokeWidth={2.4}/></span>
-              <h3 className="mb-0 text-sm">
-              Announcements
-              {announcementUpdatedAt && (
-                <span className="block text-[10px] font-medium text-slate-400 normal-case tracking-normal mt-0.5">
-                  Last: {new Date(announcementUpdatedAt).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                </span>
-              )}
-              </h3>
-            </div>
-            <button
-              type="button"
-              onClick={() => setAnnouncementOpen(false)}
-              disabled={announcementSaving}
-              className="text-slate-400 hover:text-slate-600 transition disabled:opacity-50"
-              aria-label="Close announcements"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
-          </div>
+import type { Dispatch, RefObject, SetStateAction } from 'react';
+import { Megaphone } from 'lucide-react';
+import Spinner, { LoadingRow } from '@/components/Spinner';
+import ModalShell from '@/components/shared/ModalShell';
 
+type Props = { open: boolean; onClose: () => void; announcementContent: string; announcementId: string | null; announcementImageInputRef: RefObject<HTMLInputElement | null>; announcementImagePreview: string | null; announcementImageUrl: string | null; announcementLoading: boolean; announcementMsg: { type: 'success' | 'error'; text: string } | null; announcementRemoveImage: boolean; announcementSaving: boolean; announcementUpdatedAt: string | null; clearAnnouncementImage: () => void; handleAnnouncementImageChange: (file: File | null) => void; publishAnnouncement: () => void | Promise<void>; setAnnouncementContent: Dispatch<SetStateAction<string>> };
+
+export default function AnnouncementsModal({ open, onClose, announcementContent, announcementId, announcementImageInputRef, announcementImagePreview, announcementImageUrl, announcementLoading, announcementMsg, announcementRemoveImage, announcementSaving, announcementUpdatedAt, clearAnnouncementImage, handleAnnouncementImageChange, publishAnnouncement, setAnnouncementContent }: Props) {
+  return (
+    <ModalShell open={open} onClose={onClose} title="Announcements" description={announcementUpdatedAt ? `Last: ${new Date(announcementUpdatedAt).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : undefined} icon={<Megaphone size={17} strokeWidth={2.4}/>} size="lg" closeDisabled={announcementSaving}>
           <div className="overflow-y-auto flex-1 pr-1">
           {announcementMsg && <div className={`p-2.5 rounded-xl text-xs font-bold mb-3 ${announcementMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>{announcementMsg.text}</div>}
           <div className="min-h-[137px]">
@@ -86,15 +59,12 @@ export default function AnnouncementsModal({ context }: { context: Record<string
           </div>
           <button
             type="button"
-            onClick={() => setAnnouncementOpen(false)}
+            onClick={onClose}
             disabled={announcementSaving}
             className="mt-4 w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 transition disabled:opacity-50 flex-shrink-0"
           >
             Close
           </button>
-        </section>
-        </div>
-        )}
-    </>
+    </ModalShell>
   );
 }

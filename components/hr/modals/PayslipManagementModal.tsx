@@ -1,30 +1,19 @@
-// @ts-nocheck
 'use client';
 
-// Presentation-only extraction of legacy dashboard JSX. The parent page remains
-// the source of truth for typed state, data fetching, and mutations.
-export default function PayslipManagementModal({ context }: { context: Record<string, any> }) {
-  const { Spinner, closeModal, deletePayslip, employeePayslips, employeePayslipsLoading, generateCutoffOptions, modalMode, payslipCutoff, payslipFile, payslipFileRef, payslipMsg, payslipUploading, publishMsg, publishPayslip, publishingId, selectedProfile, setModalMode, setPayslipCutoff, setPayslipFile, uploadPayslip } = context;
-  return (
-    <>
-      {/* ── PAYSLIPS MODAL ── */}
-      {modalMode === 'payslips' && selectedProfile && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 backdrop-blur-sm p-0 sm:items-center sm:p-4">
-          <div className="w-full max-w-sm card-style shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h3 className="mb-0">Payslips</h3>
-                <p className="text-slate-400 text-xs mt-1">{selectedProfile.full_name}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setModalMode('choice')}
-                className="text-slate-400 hover:text-slate-600 text-xs font-bold"
-              >
-                ← Back
-              </button>
-            </div>
+import type { Dispatch, RefObject, SetStateAction } from 'react';
+import Spinner from '@/components/Spinner';
+import ModalShell from '@/components/shared/ModalShell';
 
+type Profile = { id: string; full_name: string | null };
+type Payslip = { id: string; cutoff_label: string; file_name: string; file_path: string; uploaded_at: string; published: boolean; published_at: string | null; acknowledged_at: string | null };
+type Feedback = { type: 'success' | 'error'; text: string } | null;
+type Props = { open: boolean; onClose: () => void; onBack: () => void; deletePayslip: (payslipId: string, filePath: string, employeeId: string) => void | Promise<void>; employeePayslips: Payslip[]; employeePayslipsLoading: boolean; generateCutoffOptions: () => { value: string; label: string }[]; payslipCutoff: string; payslipFile: File | null; payslipFileRef: RefObject<HTMLInputElement | null>; payslipMsg: Feedback; payslipUploading: boolean; publishMsg: Feedback; publishPayslip: (payslipId: string, employeeId: string) => void | Promise<void>; publishingId: string | null; selectedProfile: Profile | null; setPayslipCutoff: Dispatch<SetStateAction<string>>; setPayslipFile: Dispatch<SetStateAction<File | null>>; uploadPayslip: (employeeId: string) => void | Promise<void> };
+
+export default function PayslipManagementModal({ open, onClose, onBack, deletePayslip, employeePayslips, employeePayslipsLoading, generateCutoffOptions, payslipCutoff, payslipFile, payslipFileRef, payslipMsg, payslipUploading, publishMsg, publishPayslip, publishingId, selectedProfile, setPayslipCutoff, setPayslipFile, uploadPayslip }: Props) {
+  if (!selectedProfile) return null;
+  return (
+    <ModalShell open={open} onClose={onClose} title="Payslips" description={selectedProfile.full_name || 'Employee'} size="sm" closeDisabled={payslipUploading || Boolean(publishingId)}>
+            <button type="button" onClick={onBack} className="mb-4 text-xs font-bold text-slate-400 hover:text-slate-600">← Back</button>
             {/* Existing payslips */}
             {publishMsg && (
               <div className={`p-2.5 rounded-xl text-xs font-bold mb-3 ${publishMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
@@ -73,7 +62,7 @@ export default function PayslipManagementModal({ context }: { context: Record<st
                       )}
                       <button
                         type="button"
-                        onClick={() => deletePayslip(ps.id, (ps as any).file_path, selectedProfile.id)}
+                        onClick={() => deletePayslip(ps.id, ps.file_path, selectedProfile.id)}
                         className="flex-shrink-0 text-rose-500 hover:text-rose-700 text-xs font-bold transition px-2"
                         title="Delete payslip"
                       >
@@ -121,13 +110,10 @@ export default function PayslipManagementModal({ context }: { context: Record<st
                 ) : 'Upload PDF'}
               </button>
 
-              <button type="button" onClick={closeModal} className="w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 transition">
+              <button type="button" onClick={onClose} className="w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 transition">
                 Close
               </button>
             </div>
-          </div>
-        </div>
-      )}
-    </>
+    </ModalShell>
   );
 }

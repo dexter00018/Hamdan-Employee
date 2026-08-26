@@ -1,40 +1,16 @@
-// @ts-nocheck
 'use client';
 
-// Presentation-only extraction of legacy dashboard JSX. The parent page remains
-// the source of truth for typed state, data fetching, and mutations.
-export default function HolidaysModal({ context }: { context: Record<string, any> }) {
-  const { CalendarRange, LoadingRow, Spinner, addHoliday, deleteHoliday, holidayMsg, holidaySaving, holidays, holidaysLoading, holidaysOpen, newHolidayDate, newHolidayName, setHolidaysOpen, setNewHolidayDate, setNewHolidayName } = context;
-  return (
-    <>
-        {/* HOLIDAYS MODULE MODAL */}
-        {holidaysOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 backdrop-blur-sm p-0 sm:items-center sm:p-4"
-          onMouseDown={(e) => { if (e.target === e.currentTarget && !holidaySaving) setHolidaysOpen(false); }}
-        >
-        <section className="w-full max-w-2xl card-style shadow-2xl max-h-[90vh] flex flex-col !p-4 sm:!p-5" onMouseDown={(e) => e.stopPropagation()}>
-          <div className="flex items-center justify-between gap-2 mb-4 flex-shrink-0">
-            <div className="flex items-center gap-2.5">
-              <span className="w-9 h-9 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center"><CalendarRange size={17} strokeWidth={2.4}/></span>
-              <h3 className="mb-0 text-sm">
-              Holidays
-              <span className="block text-[10px] font-medium text-slate-400 normal-case tracking-normal mt-0.5">
-                Dates employees won&apos;t be auto-marked Absent
-              </span>
-              </h3>
-            </div>
-            <button
-              type="button"
-              onClick={() => setHolidaysOpen(false)}
-              disabled={holidaySaving}
-              className="text-slate-400 hover:text-slate-600 transition disabled:opacity-50"
-              aria-label="Close holidays"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
-          </div>
+import type { Dispatch, SetStateAction } from 'react';
+import { CalendarRange } from 'lucide-react';
+import Spinner, { LoadingRow } from '@/components/Spinner';
+import ModalShell from '@/components/shared/ModalShell';
 
+type Holiday = { id: string; holiday_date: string; name: string };
+type Props = { open: boolean; onClose: () => void; addHoliday: () => void | Promise<void>; deleteHoliday: (id: string) => void | Promise<void>; holidayMsg: { type: 'success' | 'error'; text: string } | null; holidaySaving: boolean; holidays: Holiday[]; holidaysLoading: boolean; newHolidayDate: string; newHolidayName: string; setNewHolidayDate: Dispatch<SetStateAction<string>>; setNewHolidayName: Dispatch<SetStateAction<string>> };
+
+export default function HolidaysModal({ open, onClose, addHoliday, deleteHoliday, holidayMsg, holidaySaving, holidays, holidaysLoading, newHolidayDate, newHolidayName, setNewHolidayDate, setNewHolidayName }: Props) {
+  return (
+    <ModalShell open={open} onClose={onClose} title="Holidays" description="Dates employees won't be auto-marked Absent" icon={<CalendarRange size={17} strokeWidth={2.4}/>} size="lg" closeDisabled={holidaySaving}>
           <div className="overflow-y-auto flex-1 pr-1">
             {holidayMsg && <div className={`p-2.5 rounded-xl text-xs font-bold mb-3 ${holidayMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>{holidayMsg.text}</div>}
 
@@ -80,15 +56,12 @@ export default function HolidaysModal({ context }: { context: Record<string, any
           </div>
           <button
             type="button"
-            onClick={() => setHolidaysOpen(false)}
+            onClick={onClose}
             disabled={holidaySaving}
             className="mt-4 w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 transition disabled:opacity-50 flex-shrink-0"
           >
             Close
           </button>
-        </section>
-        </div>
-        )}
-    </>
+    </ModalShell>
   );
 }

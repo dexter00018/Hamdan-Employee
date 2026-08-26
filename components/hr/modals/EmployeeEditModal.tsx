@@ -1,27 +1,17 @@
-// @ts-nocheck
 'use client';
 
-// Presentation-only extraction of legacy dashboard JSX. The parent page remains
-// the source of truth for typed state, data fetching, and mutations.
-export default function EmployeeEditModal({ context }: { context: Record<string, any> }) {
-  const { Spinner, avatarInputRef, avatarPreview, avatarUploading, closeModal, currentAvatarUrl, editing, editingEmployeeIdConflict, handleAvatarChange, modalMode, saveEdit, saveLoading, setEditing, setModalMode } = context;
-  return (
-    <>
-      {/* ── EDIT PROFILE MODAL ── */}
-      {modalMode === 'edit' && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 backdrop-blur-sm p-0 sm:items-center sm:p-4">
-          <div className="w-full max-w-sm card-style shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="mb-0">Edit Profile</h3>
-              <button
-                type="button"
-                onClick={() => { setModalMode('choice'); }}
-                className="text-slate-400 hover:text-slate-600 text-xs font-bold"
-              >
-                ← Back
-              </button>
-            </div>
+import type { Dispatch, RefObject, SetStateAction } from 'react';
+import Spinner from '@/components/Spinner';
+import ModalShell from '@/components/shared/ModalShell';
 
+type Editing = { id: string | null; full_name: string; employee_id: string; designation: string; employee_email: string; sss_number: string; philhealth_number: string; pagibig_number: string; tin_number: string; hired_date: string; employment_status: string };
+type ModalMode = null | 'choice' | 'edit' | 'payslips';
+type Props = { open: boolean; onClose: () => void; avatarInputRef: RefObject<HTMLInputElement | null>; avatarPreview: string | null; avatarUploading: boolean; currentAvatarUrl: string | null; editing: Editing; editingEmployeeIdConflict: string | null; handleAvatarChange: (file: File | null) => void; saveEdit: () => void | Promise<void>; saveLoading: boolean; setEditing: Dispatch<SetStateAction<Editing>>; setModalMode: Dispatch<SetStateAction<ModalMode>> };
+
+export default function EmployeeEditModal({ open, onClose, avatarInputRef, avatarPreview, avatarUploading, currentAvatarUrl, editing, editingEmployeeIdConflict, handleAvatarChange, saveEdit, saveLoading, setEditing, setModalMode }: Props) {
+  return (
+    <ModalShell open={open} onClose={onClose} title="Edit Profile" size="sm" closeDisabled={saveLoading} footer={<div className="flex gap-3"><button type="button" className="flex-1 rounded-full bg-slate-100 p-3 text-sm font-medium" onClick={onClose}>Cancel</button><button type="button" className="flex-1 btn-primary" onClick={saveEdit} disabled={saveLoading || !!editingEmployeeIdConflict}>{saveLoading ? <span className="flex items-center justify-center gap-2"><Spinner size="sm" />{avatarUploading ? 'Uploading photo...' : 'Saving...'}</span> : editingEmployeeIdConflict ? 'Fix Conflict First' : 'Save'}</button></div>}>
+            <button type="button" onClick={() => setModalMode('choice')} className="mb-4 text-xs font-bold text-slate-400 hover:text-slate-600">← Back</button>
             {/* Profile Photo — HR can upload/replace directly on behalf
                 of the employee. Stored in the public "avatars" bucket;
                 the URL is only written to profiles.avatar_url on Save. */}
@@ -91,17 +81,6 @@ export default function EmployeeEditModal({ context }: { context: Record<string,
               </div>
             </div>
 
-            <div className="flex gap-3">
-              <button className="flex-1 p-3 bg-slate-100 rounded-full font-medium text-sm" onClick={closeModal}>Cancel</button>
-              <button className="flex-1 btn-primary" onClick={saveEdit} disabled={saveLoading || !!editingEmployeeIdConflict}>
-                {saveLoading ? (
-                  <span className="flex items-center justify-center gap-2"><Spinner size="sm" />{avatarUploading ? 'Uploading photo...' : 'Saving...'}</span>
-                ) : editingEmployeeIdConflict ? 'Fix Conflict First' : 'Save'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
+    </ModalShell>
   );
 }

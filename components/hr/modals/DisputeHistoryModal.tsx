@@ -1,30 +1,15 @@
-// @ts-nocheck
 'use client';
 
-// Presentation-only extraction of legacy dashboard JSX. The parent page remains
-// the source of truth for typed state, data fetching, and mutations.
-export default function DisputeHistoryModal({ context }: { context: Record<string, any> }) {
-  const { disputeClaimed, disputeFieldLabel, disputeOriginal, disputeTypeLabel, disputes, disputesHistoryModalOpen, formatPh, selectedDisputeDetail, setDisputesHistoryModalOpen, setSelectedDisputeDetail } = context;
-  return (
-    <>
-      {/* Dispute History Modal */}
-      {disputesHistoryModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 backdrop-blur-sm p-0 sm:items-center sm:p-4">
-          <div className="w-full max-w-sm card-style shadow-2xl max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between mb-6 flex-shrink-0">
-              <h3 className="mb-0">{selectedDisputeDetail ? 'Dispute Details' : 'Dispute History'}</h3>
-              <button
-                type="button"
-                onClick={() => { setDisputesHistoryModalOpen(false); setSelectedDisputeDetail(null); }}
-                className="text-slate-400 hover:text-slate-600 transition"
-                aria-label="Close"
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
-              </button>
-            </div>
+import type { Dispatch, SetStateAction } from 'react';
+import ModalShell from '@/components/shared/ModalShell';
 
+type Dispute = { id: string; status: string; dispute_date: string; dispute_type?: string | null; original_time_in?: string | null; original_time_out?: string | null; claimed_time_in?: string | null; claimed_time_out?: string | null; reason?: string | null; hr_notes?: string | null; reviewed_at?: string | null; created_at: string; employee?: { full_name?: string | null } | null; reviewer?: { full_name?: string | null } | null };
+type Props = { open: boolean; onClose: () => void; disputeClaimed: (dispute: Dispute) => string | null | undefined; disputeFieldLabel: (dispute: Dispute) => string; disputeOriginal: (dispute: Dispute) => string | null | undefined; disputeTypeLabel: (dispute: Dispute) => string; disputes: Dispute[]; formatPh: (iso: string) => string; selectedDisputeDetail: Dispute | null; setSelectedDisputeDetail: Dispatch<SetStateAction<Dispute | null>> };
+
+export default function DisputeHistoryModal({ open, onClose, disputeClaimed, disputeFieldLabel, disputeOriginal, disputeTypeLabel, disputes, formatPh, selectedDisputeDetail, setSelectedDisputeDetail }: Props) {
+  const close = () => { setSelectedDisputeDetail(null); onClose(); };
+  return (
+    <ModalShell open={open} onClose={close} title={selectedDisputeDetail ? 'Dispute Details' : 'Dispute History'} size="sm">
             <div className="overflow-y-auto flex-1">
               {selectedDisputeDetail ? (
                 <div className="space-y-3">
@@ -54,12 +39,12 @@ export default function DisputeHistoryModal({ context }: { context: Record<strin
                     {disputeOriginal(selectedDisputeDetail) && (
                       <div>
                         <p className="label-branded mb-0.5">Original {disputeFieldLabel(selectedDisputeDetail)}</p>
-                        <p className="text-slate-700 text-xs">{formatPh(disputeOriginal(selectedDisputeDetail))}</p>
+                        <p className="text-slate-700 text-xs">{formatPh(disputeOriginal(selectedDisputeDetail)!)}</p>
                       </div>
                     )}
                     <div>
                       <p className="label-branded mb-0.5">Claimed {disputeFieldLabel(selectedDisputeDetail)}</p>
-                      <p className="text-slate-700 text-xs">{disputeClaimed(selectedDisputeDetail) ? formatPh(disputeClaimed(selectedDisputeDetail)) : '—'}</p>
+                      <p className="text-slate-700 text-xs">{disputeClaimed(selectedDisputeDetail) ? formatPh(disputeClaimed(selectedDisputeDetail)!) : '—'}</p>
                     </div>
                   </div>
 
@@ -106,14 +91,11 @@ export default function DisputeHistoryModal({ context }: { context: Record<strin
 
             <button
               type="button"
-              onClick={() => { setDisputesHistoryModalOpen(false); setSelectedDisputeDetail(null); }}
+              onClick={close}
               className="mt-6 w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 transition flex-shrink-0"
             >
               Close
             </button>
-          </div>
-        </div>
-      )}
-    </>
+    </ModalShell>
   );
 }

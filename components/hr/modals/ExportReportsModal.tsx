@@ -1,38 +1,17 @@
-// @ts-nocheck
 'use client';
 
-// Presentation-only extraction of legacy dashboard JSX. The parent page remains
-// the source of truth for typed state, data fetching, and mutations.
-export default function ExportReportsModal({ context }: { context: Record<string, any> }) {
-  const { FileDown, availableCutoffs, exportCutoff, exportEmployeeMasterListCSV, exportEmployeeMasterListPDF, exportModalOpen, exportMsg, exportPayrollSummaryCSV, exportPayrollSummaryPDF, exportRawAttendanceCSV, exportRawAttendancePDF, exportingType, formatCutoffLabel, rawExportMonth, rawExportPeriod, rawExportPreviewCount, setExportCutoff, setExportModalOpen, setExportMsg, setRawExportMonth, setRawExportPeriod } = context;
-  return (
-    <>
-      {/* EXPORT REPORTS MODAL */}
-      {exportModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 backdrop-blur-sm p-0 sm:items-center sm:p-4"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget && !exportingType) setExportModalOpen(false);
-          }}
-        >
-          <div className="w-full max-w-sm card-style shadow-2xl max-h-[90vh] overflow-y-auto" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2.5">
-                <span className="w-9 h-9 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center flex-shrink-0"><FileDown size={17} strokeWidth={2.4}/></span>
-                <h3 className="mb-0">Export Reports</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setExportModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 transition"
-                aria-label="Close"
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
-              </button>
-            </div>
+import type { Dispatch, SetStateAction } from 'react';
+import { FileDown } from 'lucide-react';
+import ModalShell from '@/components/shared/ModalShell';
 
+type Period = 'MONTH' | 'H1' | 'H2';
+type Feedback = { type: 'success' | 'error'; text: string } | null;
+type ExportAction = () => void | Promise<void>;
+type Props = { open: boolean; onClose: () => void; availableCutoffs: string[]; exportCutoff: string; exportEmployeeMasterListCSV: ExportAction; exportEmployeeMasterListPDF: ExportAction; exportMsg: Feedback; exportPayrollSummaryCSV: ExportAction; exportPayrollSummaryPDF: ExportAction; exportRawAttendanceCSV: ExportAction; exportRawAttendancePDF: ExportAction; exportingType: string | null; formatCutoffLabel: (key: string) => string; rawExportMonth: string; rawExportPeriod: Period; rawExportPreviewCount: number; setExportCutoff: Dispatch<SetStateAction<string>>; setExportMsg: Dispatch<SetStateAction<Feedback>>; setRawExportMonth: Dispatch<SetStateAction<string>>; setRawExportPeriod: Dispatch<SetStateAction<Period>> };
+
+export default function ExportReportsModal({ open, onClose, availableCutoffs, exportCutoff, exportEmployeeMasterListCSV, exportEmployeeMasterListPDF, exportMsg, exportPayrollSummaryCSV, exportPayrollSummaryPDF, exportRawAttendanceCSV, exportRawAttendancePDF, exportingType, formatCutoffLabel, rawExportMonth, rawExportPeriod, rawExportPreviewCount, setExportCutoff, setExportMsg, setRawExportMonth, setRawExportPeriod }: Props) {
+  return (
+    <ModalShell open={open} onClose={onClose} title="Export Reports" icon={<FileDown size={17} strokeWidth={2.4}/>} size="sm" closeDisabled={Boolean(exportingType)}>
             {exportMsg && (
               <div className={`p-3 rounded-xl text-sm font-bold mb-4 ${exportMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
                 {exportMsg.text}
@@ -154,14 +133,11 @@ export default function ExportReportsModal({ context }: { context: Record<string
 
             <button
               type="button"
-              onClick={() => setExportModalOpen(false)}
+              onClick={onClose}
               className="mt-4 w-full py-3 rounded-full bg-slate-100 text-slate-600 font-medium text-sm hover:bg-slate-200 transition"
             >
               Close
             </button>
-          </div>
-        </div>
-      )}
-    </>
+    </ModalShell>
   );
 }
