@@ -60,9 +60,15 @@ create policy "Users can read own attendance logs"
   on public.attendance_logs for select to authenticated
   using (user_id = auth.uid());
 
-create policy "Authenticated can read attendance_logs"
+-- SECURITY FIX (see README "Known issues" #1 history): this used to be
+-- "Authenticated can read attendance_logs" with `using (true)`, which let
+-- ANY logged-in user -- including regular employees -- read every other
+-- employee's attendance logs. RLS policies are OR'd together, so it
+-- silently overrode "Users can read own attendance logs" above. Fixed to
+-- scope broad read access to admin/super_admin/hr only.
+create policy "Admins can read all attendance_logs"
   on public.attendance_logs for select to authenticated
-  using (true);
+  using (exists (select 1 from public.profiles p where p.id = auth.uid() and lower(coalesce(p.role, '')) = any (array['admin','super_admin','hr'])));
 
 create policy "Admins can insert attendance_logs"
   on public.attendance_logs for insert to authenticated

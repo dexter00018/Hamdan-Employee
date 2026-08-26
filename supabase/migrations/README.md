@@ -35,21 +35,46 @@ state and refresh these files.
 
 ## Known issues in the live database (as of this snapshot)
 
-These are flagged inline in the SQL files too, but summarized here:
+**Fixed (kept here for history):**
 
-1. **A leftover diagnostic RLS policy** lets unauthenticated (anon)
-   requests read all attendance logs (`"Anon can read attendance_logs (diag)"`
-   on `attendance_logs`). This looks like debug leftovers from before this
-   backup existed and is a real security gap — recommend dropping it:
-   ```sql
-   drop policy "Anon can read attendance_logs (diag)" on public.attendance_logs;
-   ```
+1. ~~A leftover diagnostic RLS policy let unauthenticated (anon) requests
+   read all attendance logs (`"Anon can read attendance_logs (diag)"`).~~
+   Dropped from the live DB.
 
-2. **Several older policies check `role = 'hr'`**, but no profile in this
-   app ever actually has that exact role string — real roles are
-   `employee`, `admin`, and `super_admin`. These policies fail closed
-   (nobody matches them), so they're not a security hole, just dead
-   weight worth cleaning up eventually.
+2. ~~`"Authenticated can read attendance_logs"` (`using (true)`) let ANY
+   logged-in user, including regular employees, read every other
+   employee's attendance logs — RLS policies are OR'd together, so it
+   silently overrode `"Users can read own attendance logs"`.~~ Replaced
+   with `"Admins can read all attendance_logs"`, scoped to
+   admin/super_admin/hr only. See `04_rls_policies.sql`.
+
+3. ~~`handle_new_user()` and `log_audit_event()` (both `SECURITY DEFINER`)
+   were exposed as directly-callable RPC endpoints to `anon`.~~
+   `handle_new_user` (trigger-only, doesn't need direct RPC access) had
+   EXECUTE revoked from both `anon` and `authenticated`. `log_audit_event`
+   had no internal auth check, so anon callers could insert arbitrary fake
+   rows into `audit_logs`; EXECUTE was revoked from `anon` only
+   (authenticated users still need it, the app calls it after real
+   actions).
+
+**Still open — worth cleaning up eventually (not urgent):**
+
+4. **Several older policies/functions check `role = 'hr'`**, but no
+   profile in this app ever actually has that exact role string — real
+   roles are `employee`, `admin`, and `super_admin`. These fail closed
+   (nobody matches them), so it's dead weight, not a security hole.
+
+5. **`settle_overdue_absences()` and `settle_overdue_leave_days()`** are
+   callable by any authenticated user (by design — the employee dashboard
+   calls them as an opportunistic "sweep" on page load, see
+   `LeaveRequestModal.tsx`). They're idempotent and don't leak data, but
+   they let any logged-in employee trigger a global settle/absence-mark
+   pass for *all* employees a little early. Low risk, flagged for
+   awareness.
+
+6. **Leaked password protection is disabled** in Supabase Auth (checks
+   new passwords against HaveIBeenPwned). This is a dashboard toggle, not
+   a SQL fix — Authentication → Policies → Password Security.
 
 ## How to restore (disaster recovery)
 

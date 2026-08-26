@@ -30,6 +30,14 @@ BEGIN
 END;
 $function$;
 
+-- SECURITY FIX: this is a trigger-only function (it relies on NEW, which
+-- only exists inside a trigger context), but Supabase exposes every
+-- public-schema function as a callable RPC endpoint by default. Revoke
+-- direct execute access from anon/authenticated -- the trigger itself
+-- still runs fine since it executes as the table owner regardless of
+-- these grants.
+revoke execute on function public.handle_new_user() from anon, authenticated;
+
 CREATE OR REPLACE FUNCTION public.email_exists(check_email text)
  RETURNS boolean
  LANGUAGE sql
