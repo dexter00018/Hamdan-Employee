@@ -1,35 +1,14 @@
-// @ts-nocheck
 'use client';
 
-// Presentation-only extraction of legacy dashboard JSX. The parent page remains
-// the source of truth for typed state, data fetching, and mutations.
-export default function AttendanceRecordsModal({ context }: { context: Record<string, any> }) {
-  const { PAGE_SIZE, attendanceDateFilter, attendanceLoading, attendancePage, attendanceRecordsModalOpen, attendanceSearch, attendanceTotalPages, filteredAttendanceLogs, handleAttendanceDateChange, handleAttendanceSearchChange, paginatedAttendanceLogs, setAttendancePage, setAttendanceRecordsModalOpen, startEditLog, statusTagClass, todayManila } = context;
-  return (
-    <>
-      {/* ── ATTENDANCE RECORDS MODAL ── */}
-      {attendanceRecordsModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 backdrop-blur-sm p-0 sm:items-center sm:p-4">
-          <div className="w-full max-w-sm card-style shadow-2xl max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between mb-4 flex-shrink-0">
-              <div>
-                <h3 className="mb-0">Attendance Records</h3>
-                <p className="text-slate-400 text-xs mt-1">
-                  {attendanceDateFilter === todayManila ? "Today's records" : attendanceDateFilter ? `Records for ${attendanceDateFilter}` : 'All records'}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setAttendanceRecordsModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 transition"
-                aria-label="Close"
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
-              </button>
-            </div>
+import type { Dispatch, SetStateAction } from 'react';
+import ModalShell from '@/components/shared/ModalShell';
 
+type AttendanceLog = { id: string; log_date?: string | null; time_in?: string | null; time_out?: string | null; status: string; profiles?: { full_name?: string | null } | null };
+type Props = { open: boolean; onClose: () => void; pageSize: number; attendanceDateFilter: string; attendanceLoading: boolean; attendancePage: number; attendanceSearch: string; attendanceTotalPages: number; filteredAttendanceLogs: AttendanceLog[]; handleAttendanceDateChange: (value: string) => void; handleAttendanceSearchChange: (value: string) => void; paginatedAttendanceLogs: AttendanceLog[]; setAttendancePage: Dispatch<SetStateAction<number>>; startEditLog: (log: AttendanceLog) => void; statusTagClass: (status: string) => string; todayManila: string };
+
+export default function AttendanceRecordsModal({ open, onClose, pageSize, attendanceDateFilter, attendanceLoading, attendancePage, attendanceSearch, attendanceTotalPages, filteredAttendanceLogs, handleAttendanceDateChange, handleAttendanceSearchChange, paginatedAttendanceLogs, setAttendancePage, startEditLog, statusTagClass, todayManila }: Props) {
+  return (
+    <ModalShell open={open} onClose={onClose} title="Attendance Records" description={attendanceDateFilter === todayManila ? "Today's records" : attendanceDateFilter ? `Records for ${attendanceDateFilter}` : 'All records'} size="sm">
             <div className="flex flex-wrap gap-2 mb-3 flex-shrink-0">
               <input
                 type="text"
@@ -114,7 +93,7 @@ export default function AttendanceRecordsModal({ context }: { context: Record<st
               )}
             </div>
 
-            {filteredAttendanceLogs.length > PAGE_SIZE && (
+            {filteredAttendanceLogs.length > pageSize && (
               <div className="flex items-center justify-between pt-4 flex-shrink-0">
                 <button
                   type="button"
@@ -135,9 +114,6 @@ export default function AttendanceRecordsModal({ context }: { context: Record<st
                 </button>
               </div>
             )}
-          </div>
-        </div>
-      )}
-    </>
+    </ModalShell>
   );
 }

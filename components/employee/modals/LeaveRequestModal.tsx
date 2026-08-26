@@ -1,23 +1,16 @@
-// @ts-nocheck
 'use client';
 
-// Presentation-only extraction of legacy dashboard JSX. The parent page remains
-// the source of truth for typed state, data fetching, and mutations.
-export default function LeaveRequestModal({ context }: { context: Record<string, any> }) {
-  const { Spinner, countLeaveDays, countLeaveHolidays, fallbackLeaveCredits, isRegular, leaveCredits, leaveForm, leaveModalOpen, leaveMsg, leaveSaving, remainingCredits, setLeaveChoiceModalOpen, setLeaveForm, setLeaveModalOpen, submitLeave, todayManila, upcomingApprovedLeaves } = context;
-  return (
-    <>
-      {/* Leave Request Modal */}
-      {leaveModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 backdrop-blur-sm p-0 sm:items-center sm:p-4">
-          <div className="w-full max-w-sm card-style shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="mb-0">File a Leave Request</h3>
-              <button type="button" onClick={() => setLeaveModalOpen(false)} className="text-slate-400 hover:text-slate-600 transition" aria-label="Close">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              </button>
-            </div>
+import type { Dispatch, SetStateAction } from 'react';
+import Spinner from '@/components/Spinner';
+import ModalShell from '@/components/shared/ModalShell';
 
+type LeaveForm = { leave_type: string; start_date: string; end_date: string; reason: string };
+type Leave = { id: string; leave_type: string; start_date: string; end_date: string };
+type Props = { open: boolean; onClose: () => void; onBack: () => void; countLeaveDays: (start: string, end: string) => number; countLeaveHolidays: (start: string, end: string) => number; fallbackLeaveCredits: number; isRegular: boolean; leaveCredits: { total_credits: number; used_credits: number } | null; leaveForm: LeaveForm; leaveMsg: { type: 'success' | 'error'; text: string } | null; leaveSaving: boolean; remainingCredits: number; setLeaveForm: Dispatch<SetStateAction<LeaveForm>>; submitLeave: () => void | Promise<void>; todayManila: string; upcomingApprovedLeaves: Leave[] };
+
+export default function LeaveRequestModal({ open, onClose, onBack, countLeaveDays, countLeaveHolidays, fallbackLeaveCredits, isRegular, leaveCredits, leaveForm, leaveMsg, leaveSaving, remainingCredits, setLeaveForm, submitLeave, todayManila, upcomingApprovedLeaves }: Props) {
+  return (
+    <ModalShell open={open} onClose={onClose} title="File a Leave Request" size="sm" closeDisabled={leaveSaving}>
             {/* Credits badge for Regular employees */}
             {isRegular && (
               <div className={`flex items-center justify-between p-3 rounded-xl mb-4 ${remainingCredits <= 3 ? 'bg-orange-50 border border-orange-100' : 'bg-green-50 border border-green-100'}`}>
@@ -127,7 +120,7 @@ export default function LeaveRequestModal({ context }: { context: Record<string,
               <button
                 type="button"
                 className="flex-1 p-3 bg-slate-100 rounded-full font-medium text-sm"
-                onClick={() => { setLeaveModalOpen(false); setLeaveChoiceModalOpen(true); }}
+                onClick={onBack}
               >
                 ← Back
               </button>
@@ -140,9 +133,6 @@ export default function LeaveRequestModal({ context }: { context: Record<string,
                 {leaveSaving ? <span className="flex items-center justify-center gap-2"><Spinner size="sm" />Submitting...</span> : 'Submit Request'}
               </button>
             </div>
-          </div>
-        </div>
-      )}
-    </>
+    </ModalShell>
   );
 }

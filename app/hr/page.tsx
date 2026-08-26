@@ -2090,17 +2090,17 @@ export default function HRDashboard() {
           )}
         </section>
 
-        <AttendanceInsightsModal context={{ CheckCircle2, attendanceInsightMeta, attendanceInsightModal, attendanceInsightRecords, initials, setAttendanceInsightModal }} />
+        <AttendanceInsightsModal modal={attendanceInsightModal} meta={attendanceInsightMeta} records={attendanceInsightRecords} initials={initials} setModal={setAttendanceInsightModal} />
 
-        <DailyOverviewModal context={{ CheckCircle2, dailyOverviewMeta, dailyOverviewModal, dailyOverviewRecords, initials, setDailyOverviewModal }} />
+        <DailyOverviewModal modal={dailyOverviewModal} meta={dailyOverviewMeta} records={dailyOverviewRecords} initials={initials} setModal={setDailyOverviewModal} />
 
-        <EmployeeQuickViewModal context={{ fallbackLeaveCredits, formatPh, initials, openPayslipsModal, openProfileChoice, quickViewAttendance, quickViewCredits, quickViewProfile, scrollToDashboardSection, setAttendanceHistoryOpen, setCutoffFilter, setQuickViewProfile, setSearchTerm, setSelectedDate, statusTagClass, todayManila }} />
+        <EmployeeQuickViewModal fallbackLeaveCredits={fallbackLeaveCredits} formatPh={formatPh} initials={initials} openPayslipsModal={openPayslipsModal} openProfileChoice={openProfileChoice} quickViewAttendance={quickViewAttendance} quickViewCredits={quickViewCredits} quickViewProfile={quickViewProfile} scrollToDashboardSection={scrollToDashboardSection} setAttendanceHistoryOpen={setAttendanceHistoryOpen} setCutoffFilter={setCutoffFilter} setQuickViewProfile={setQuickViewProfile} setSearchTerm={setSearchTerm} setSelectedDate={setSelectedDate} statusTagClass={statusTagClass} todayManila={todayManila} />
 
-        <TeamLeaveCalendarModal context={{ CalendarRange, calendarData, leaveCalendarMonth, leaveCalendarOpen, selectedCalendarDate, selectedCalendarDay, setLeaveCalendarMonth, setLeaveCalendarOpen, setSelectedCalendarDate, todayManila }} />
+        <TeamLeaveCalendarModal open={leaveCalendarOpen} onClose={() => setLeaveCalendarOpen(false)} calendarData={calendarData} leaveCalendarMonth={leaveCalendarMonth} selectedCalendarDate={selectedCalendarDate} selectedCalendarDay={selectedCalendarDay} setLeaveCalendarMonth={setLeaveCalendarMonth} setSelectedCalendarDate={setSelectedCalendarDate} todayManila={todayManila} />
 
-        <AnnouncementsModal context={{ LoadingRow, Megaphone, Spinner, announcementContent, announcementId, announcementImageInputRef, announcementImagePreview, announcementImageUrl, announcementLoading, announcementMsg, announcementOpen, announcementRemoveImage, announcementSaving, announcementUpdatedAt, clearAnnouncementImage, handleAnnouncementImageChange, publishAnnouncement, setAnnouncementContent, setAnnouncementOpen }} />
+        <AnnouncementsModal open={announcementOpen} onClose={() => setAnnouncementOpen(false)} announcementContent={announcementContent} announcementId={announcementId} announcementImageInputRef={announcementImageInputRef} announcementImagePreview={announcementImagePreview} announcementImageUrl={announcementImageUrl} announcementLoading={announcementLoading} announcementMsg={announcementMsg} announcementRemoveImage={announcementRemoveImage} announcementSaving={announcementSaving} announcementUpdatedAt={announcementUpdatedAt} clearAnnouncementImage={clearAnnouncementImage} handleAnnouncementImageChange={handleAnnouncementImageChange} publishAnnouncement={publishAnnouncement} setAnnouncementContent={setAnnouncementContent} />
 
-        <HolidaysModal context={{ CalendarRange, LoadingRow, Spinner, addHoliday, deleteHoliday, holidayMsg, holidaySaving, holidays, holidaysLoading, holidaysOpen, newHolidayDate, newHolidayName, setHolidaysOpen, setNewHolidayDate, setNewHolidayName }} />
+        <HolidaysModal open={holidaysOpen} onClose={() => setHolidaysOpen(false)} addHoliday={addHoliday} deleteHoliday={deleteHoliday} holidayMsg={holidayMsg} holidaySaving={holidaySaving} holidays={holidays} holidaysLoading={holidaysLoading} newHolidayDate={newHolidayDate} newHolidayName={newHolidayName} setNewHolidayDate={setNewHolidayDate} setNewHolidayName={setNewHolidayName} />
 
         {/* Disputes + Leave — side by side on desktop */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 md:gap-5">
@@ -2214,7 +2214,7 @@ export default function HRDashboard() {
         </div>
 
         <div>
-          <EmployeesModal context={{ LoadingRow, PAGE_SIZE, UsersRound, employeesListOpen, employeesPage, employeesTotalPages, initials, loadingData, openProfileChoice, paginatedProfiles, profiles, setEmployeesListOpen, setEmployeesPage }} />
+          <EmployeesModal open={employeesListOpen} onClose={() => setEmployeesListOpen(false)} pageSize={PAGE_SIZE} employeesPage={employeesPage} employeesTotalPages={employeesTotalPages} initials={initials} loadingData={loadingData} openProfileChoice={openProfileChoice} paginatedProfiles={paginatedProfiles} profiles={profiles} setEmployeesPage={setEmployeesPage} />
 
           {/* Attendance History */}
           <section id="attendance-history" className="card-style overflow-hidden !p-0 scroll-mt-4">
@@ -2362,15 +2362,15 @@ export default function HRDashboard() {
         </div>
       </div>
 
-      <EmployeeChoiceModal context={{ closeModal, initials, modalMode, openEdit, openPayslipsModal, selectedProfile }} />
+      <EmployeeChoiceModal open={modalMode === 'choice'} onClose={closeModal} initials={initials} openEdit={openEdit} openPayslipsModal={openPayslipsModal} selectedProfile={selectedProfile} />
 
-      <EmployeeEditModal context={{ Spinner, avatarInputRef, avatarPreview, avatarUploading, closeModal, currentAvatarUrl, editing, editingEmployeeIdConflict, handleAvatarChange, modalMode, saveEdit, saveLoading, setEditing, setModalMode }} />
+      <EmployeeEditModal open={modalMode === 'edit'} onClose={closeModal} avatarInputRef={avatarInputRef} avatarPreview={avatarPreview} avatarUploading={avatarUploading} currentAvatarUrl={currentAvatarUrl} editing={editing} editingEmployeeIdConflict={editingEmployeeIdConflict} handleAvatarChange={handleAvatarChange} saveEdit={saveEdit} saveLoading={saveLoading} setEditing={setEditing} setModalMode={setModalMode} />
 
-      <PayslipManagementModal context={{ Spinner, closeModal, deletePayslip, employeePayslips, employeePayslipsLoading, generateCutoffOptions, modalMode, payslipCutoff, payslipFile, payslipFileRef, payslipMsg, payslipUploading, publishMsg, publishPayslip, publishingId, selectedProfile, setModalMode, setPayslipCutoff, setPayslipFile, uploadPayslip }} />
+      <PayslipManagementModal open={modalMode === 'payslips'} onClose={closeModal} onBack={() => setModalMode('choice')} deletePayslip={deletePayslip} employeePayslips={employeePayslips} employeePayslipsLoading={employeePayslipsLoading} generateCutoffOptions={generateCutoffOptions} payslipCutoff={payslipCutoff} payslipFile={payslipFile} payslipFileRef={payslipFileRef} payslipMsg={payslipMsg} payslipUploading={payslipUploading} publishMsg={publishMsg} publishPayslip={publishPayslip} publishingId={publishingId} selectedProfile={selectedProfile} setPayslipCutoff={setPayslipCutoff} setPayslipFile={setPayslipFile} uploadPayslip={uploadPayslip} />
 
-      <DisputeHistoryModal context={{ disputeClaimed, disputeFieldLabel, disputeOriginal, disputeTypeLabel, disputes, disputesHistoryModalOpen, formatPh, selectedDisputeDetail, setDisputesHistoryModalOpen, setSelectedDisputeDetail }} />
+      <DisputeHistoryModal open={disputesHistoryModalOpen} onClose={() => setDisputesHistoryModalOpen(false)} disputeClaimed={disputeClaimed} disputeFieldLabel={disputeFieldLabel} disputeOriginal={disputeOriginal} disputeTypeLabel={disputeTypeLabel} disputes={disputes} formatPh={formatPh} selectedDisputeDetail={selectedDisputeDetail} setSelectedDisputeDetail={setSelectedDisputeDetail} />
 
-      <LeaveHistoryModal context={{ countLeaveDays, leaveHistoryModalOpen, leaveRequests, selectedLeaveDetail, setLeaveHistoryModalOpen, setSelectedLeaveDetail }} />
+      <LeaveHistoryModal open={leaveHistoryModalOpen} onClose={() => setLeaveHistoryModalOpen(false)} countLeaveDays={countLeaveDays} leaveRequests={leaveRequests} selectedLeaveDetail={selectedLeaveDetail} setSelectedLeaveDetail={setSelectedLeaveDetail} />
 
       {/* HELP DESK REQUESTS MANAGEMENT MODAL */}
       <HelpDeskRequestsModal open={hrSupportModalOpen} onClose={() => setHrSupportModalOpen(false)} loading={hrSupportLoading} requests={hrSupportRequests} drafts={hrSupportDrafts} setDrafts={setHrSupportDrafts} savingId={hrSupportSavingId} onSave={saveHrSupportRequest} />
@@ -2378,9 +2378,9 @@ export default function HRDashboard() {
       {/* EMPLOYEE DOCUMENTS MANAGEMENT MODAL */}
       <EmployeeDocumentsModal open={hrDocumentsModalOpen} onClose={() => setHrDocumentsModalOpen(false)} saving={hrDocumentSaving} loading={hrDocumentsLoading} title={hrDocumentTitle} setTitle={setHrDocumentTitle} category={hrDocumentCategory} setCategory={setHrDocumentCategory} file={hrDocumentFile} setFile={setHrDocumentFile} fileRef={hrDocumentFileRef} documents={hrDocuments} onUpload={uploadHrDocument} onToggle={toggleHrDocument} onDelete={deleteHrDocument} />
 
-      <LeaveCreditsModal context={{ fallbackLeaveCredits, leaveCreditsLoading, leaveCreditsModalOpen, setLeaveCreditsModalOpen, sortedLeaveCreditsData }} />
+      <LeaveCreditsModal open={leaveCreditsModalOpen} onClose={() => setLeaveCreditsModalOpen(false)} fallbackLeaveCredits={fallbackLeaveCredits} leaveCreditsLoading={leaveCreditsLoading} sortedLeaveCreditsData={sortedLeaveCreditsData} />
 
-      <ExportReportsModal context={{ FileDown, availableCutoffs, exportCutoff, exportEmployeeMasterListCSV, exportEmployeeMasterListPDF, exportModalOpen, exportMsg, exportPayrollSummaryCSV, exportPayrollSummaryPDF, exportRawAttendanceCSV, exportRawAttendancePDF, exportingType, formatCutoffLabel, rawExportMonth, rawExportPeriod, rawExportPreviewCount, setExportCutoff, setExportModalOpen, setExportMsg, setRawExportMonth, setRawExportPeriod }} />
+      <ExportReportsModal open={exportModalOpen} onClose={() => setExportModalOpen(false)} availableCutoffs={availableCutoffs} exportCutoff={exportCutoff} exportEmployeeMasterListCSV={exportEmployeeMasterListCSV} exportEmployeeMasterListPDF={exportEmployeeMasterListPDF} exportMsg={exportMsg} exportPayrollSummaryCSV={exportPayrollSummaryCSV} exportPayrollSummaryPDF={exportPayrollSummaryPDF} exportRawAttendanceCSV={exportRawAttendanceCSV} exportRawAttendancePDF={exportRawAttendancePDF} exportingType={exportingType} formatCutoffLabel={formatCutoffLabel} rawExportMonth={rawExportMonth} rawExportPeriod={rawExportPeriod} rawExportPreviewCount={rawExportPreviewCount} setExportCutoff={setExportCutoff} setExportMsg={setExportMsg} setRawExportMonth={setRawExportMonth} setRawExportPeriod={setRawExportPeriod} />
 
 
     </main>
