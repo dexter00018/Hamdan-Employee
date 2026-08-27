@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import Image from 'next/image';
 import {
   Bell,
   BriefcaseBusiness,
@@ -13,7 +14,10 @@ import {
   HandCoins,
   Headphones,
   Home,
+  LogOut,
+  Moon,
   Plane,
+  Sun,
   UserRound,
   UsersRound,
   X,
@@ -21,9 +25,15 @@ import {
 
 type Props = {
   open: boolean;
+  darkMode: boolean;
+  employeeName: string;
+  designation?: string;
+  avatarUrl?: string | null;
   attendanceLabel: 'Time In' | 'Time Out' | 'Completed';
   attendanceDisabled: boolean;
   onClose: () => void;
+  onToggleTheme: () => void;
+  onLogout: () => void;
   onHome: () => void;
   onAttendanceAction: () => void;
   onAttendanceHistory: () => void;
@@ -59,7 +69,7 @@ export default function MobileAllToolsSheet(props: Props) {
     { label: 'Payslips', icon: HandCoins, action: props.onPayslips },
     { label: 'Documents', icon: FileText, action: props.onDocuments },
     { label: 'Directory', icon: UsersRound, action: props.onDirectory },
-    { label: 'Calendar', icon: CalendarDays, action: props.onCalendar },
+    { label: 'Attendance Calendar', icon: CalendarDays, action: props.onCalendar },
     { label: 'Notifications', icon: Bell, action: props.onNotifications },
     { label: 'Commute', icon: CarFront, action: props.onCommute },
     { label: 'Helpdesk', icon: Headphones, action: props.onHelpdesk },
@@ -75,26 +85,55 @@ export default function MobileAllToolsSheet(props: Props) {
   return (
     <div className="fixed inset-0 z-[70] lg:hidden" role="dialog" aria-modal="true" aria-labelledby="mobile-all-tools-title">
       <button type="button" className="absolute inset-0 bg-slate-950/45 backdrop-blur-[2px]" onClick={props.onClose} aria-label="Close all tools" />
-      <section className="absolute inset-x-0 bottom-0 max-h-[85dvh] overflow-y-auto rounded-t-3xl border-t border-slate-200 bg-white px-4 pt-3 shadow-2xl dark:border-[#465049] dark:bg-[#292f2b]" style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
+      <section className="absolute inset-x-0 bottom-0 max-h-[88dvh] overflow-y-auto rounded-t-3xl border-t border-slate-200 bg-white px-4 pt-3 shadow-2xl transition-colors duration-150 dark:border-[#465049] dark:bg-[#292f2b]" style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
         <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-slate-200" aria-hidden="true" />
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
-            <h2 id="mobile-all-tools-title" className="text-lg font-bold text-slate-900">All Tools</h2>
-            <p className="mt-0.5 text-xs text-slate-500">Mabilis na access sa employee services</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-green-700">Employee Menu</p>
+            <h2 id="mobile-all-tools-title" className="text-lg font-bold text-slate-900">Account & Tools</h2>
           </div>
           <button type="button" onClick={props.onClose} className="grid h-11 w-11 place-items-center rounded-full bg-slate-100 text-slate-600" aria-label="Close all tools">
             <X size={19} />
           </button>
         </div>
+        <button type="button" onClick={() => runTool(props.onProfile)} className="mb-5 flex min-h-16 w-full items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-left transition-colors duration-150 hover:bg-slate-100 dark:bg-[#343b36] dark:hover:bg-[#3b433d]">
+          <span className="grid h-12 w-12 flex-none place-items-center overflow-hidden rounded-full bg-white text-slate-500 dark:bg-[#292f2b]">
+            {props.avatarUrl ? <Image src={props.avatarUrl} alt="" width={48} height={48} className="h-full w-full object-cover" /> : <UserRound size={20} />}
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-bold text-slate-900">{props.employeeName}</span>
+            <span className="mt-0.5 block truncate text-xs text-slate-500">{props.designation || 'Employee'}</span>
+          </span>
+        </button>
+        <h3 className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">All Tools</h3>
         <div className="grid grid-cols-4 gap-2 sm:gap-3">
           {tools.map(({ label, icon: Icon, action, disabled }) => (
             <button key={label} type="button" onClick={() => runTool(action)} disabled={disabled} className="flex min-h-24 min-w-0 flex-col items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-1.5 py-3 text-center transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 dark:bg-[#303632]">
               <span className="grid h-10 w-10 place-items-center rounded-full bg-green-50 text-[#16a34a] dark:bg-[#263b2f] dark:text-[#8ee6a7]">
                 <Icon size={19} strokeWidth={2} aria-hidden="true" />
               </span>
-              <span className="w-full truncate text-[11px] font-semibold text-slate-700 dark:text-slate-200">{label}</span>
+              <span className="line-clamp-2 min-h-7 w-full text-[10px] font-semibold leading-tight text-slate-700 dark:text-slate-200 sm:text-[11px]">{label}</span>
             </button>
           ))}
+        </div>
+        <div className="mt-5 border-t border-slate-200 pt-4">
+          <h3 className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Appearance & Account</h3>
+          <button type="button" onClick={props.onToggleTheme} className="flex min-h-14 w-full items-center gap-3 rounded-xl px-3 text-left transition-colors duration-150 hover:bg-slate-50 dark:hover:bg-[#343b36]" aria-label={props.darkMode ? 'Switch to light mode' : 'Switch to dark mode'}>
+            <span className="grid h-10 w-10 flex-none place-items-center rounded-xl bg-green-50 text-green-700 dark:bg-[#263b2f] dark:text-[#8ee6a7]">
+              {props.darkMode ? <Sun size={18} /> : <Moon size={18} />}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold text-slate-900">Appearance</span>
+              <span className="block text-xs text-slate-500">{props.darkMode ? 'Dark Mode' : 'Light Mode'}</span>
+            </span>
+            <span className={`relative h-6 w-11 rounded-full transition-colors duration-150 ${props.darkMode ? 'bg-green-600' : 'bg-slate-300'}`} aria-hidden="true">
+              <span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-150 ${props.darkMode ? 'translate-x-6' : 'translate-x-1'}`} />
+            </span>
+          </button>
+          <button type="button" onClick={() => runTool(props.onLogout)} className="mt-1 flex min-h-12 w-full items-center gap-3 rounded-xl px-3 text-sm font-semibold text-red-700 transition-colors duration-150 hover:bg-red-50 dark:text-red-300 dark:hover:bg-[#44292b]">
+            <LogOut size={18} aria-hidden="true" />
+            Log Out
+          </button>
         </div>
       </section>
     </div>

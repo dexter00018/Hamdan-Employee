@@ -3,6 +3,10 @@
 /* Ito ang kailangan para makilala ng Tailwind ang @apply sa v4 */
 @reference "tailwindcss";
 
+/* Tailwind v4 dark: utilities follow the same manual class used by the
+   existing CSS-variable theme below. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   /* ---- Base palette: soft mint-green, modern HR SaaS (Crextio-inspired) ---- */
   --color-slate-50: #f2f8f2;   /* page background */
@@ -325,8 +329,8 @@
    DARK MODE -- Tailwind v4
    Paste this block at the very END of app/globals.css.
 
-   No tailwind.config.js edit needed, no @custom-variant needed.
-   Why: your @theme block defines colors as CSS custom properties
+   The @custom-variant near the top makes newer dark:* utilities respond
+   to the same .dark class. The @theme block also defines color variables
    (--color-slate-50, --color-blue-600, etc.), and Tailwind v4
    compiles utilities like `bg-slate-50` to reference that same
    variable (`background-color: var(--color-slate-50)`) instead of
@@ -335,7 +339,7 @@
    bg-slate-50, text-slate-400, tag-present, card-style, etc.
    anywhere in the app (including page.tsx, which you never need
    to touch) picks up the new value automatically via normal CSS
-   cascade, the moment `<main>` gets the "dark" class.
+   cascade, the moment `<html>` gets the "dark" class.
    ========================================================= */
 
 .dark {

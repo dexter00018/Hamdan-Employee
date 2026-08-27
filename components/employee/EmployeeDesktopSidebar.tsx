@@ -8,6 +8,7 @@ import {
   HandCoins,
   Headphones,
   LayoutDashboard,
+  LogOut,
   Moon,
   Plane,
   Sun,
@@ -31,6 +32,7 @@ type Props = {
   onHelpdesk: () => void;
   onProfile: () => void;
   onToggleTheme: () => void;
+  onLogout: () => void;
 };
 
 export default function EmployeeDesktopSidebar(props: Props) {
@@ -74,6 +76,10 @@ export default function EmployeeDesktopSidebar(props: Props) {
           <span className="block truncate text-xs font-bold text-slate-900 dark:text-white">{props.employeeName}</span>
           <span className="block truncate text-[11px] text-slate-500">{props.designation}</span>
         </span>
+      </button>
+      <button type="button" onClick={props.onLogout} className="mt-2 flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium text-red-700 transition-colors duration-150 hover:bg-red-50 dark:text-red-300 dark:hover:bg-[#44292b]">
+        <LogOut size={18} aria-hidden="true" />
+        Log Out
       </button>
     </aside>
   );

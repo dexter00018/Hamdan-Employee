@@ -12,7 +12,7 @@ import EmployeeQuickActions from '@/components/employee/EmployeeQuickActions';
 import EmployeeDesktopSidebar from '@/components/employee/EmployeeDesktopSidebar';
 import MobileAllToolsSheet from '@/components/employee/MobileAllToolsSheet';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import Image from 'next/image';
 import Spinner, { LoadingRow } from '@/components/Spinner';
@@ -24,7 +24,7 @@ import NotificationsModal from '@/components/employee/modals/NotificationsModal'
 import PayslipsModal from '@/components/employee/modals/PayslipsModal';
 import EmployeeDirectoryModal from '@/components/employee/modals/EmployeeDirectoryModal';
 import CompanyCalendarModal from '@/components/employee/modals/CompanyCalendarModal';
-import { Bell, CalendarDays, CalendarX2, CheckCircle2, CircleAlert, Clock3, Grid2X2, HandCoins, Headphones, Plane, UserRound } from 'lucide-react';
+import { Bell, CalendarDays, CalendarX2, CheckCircle2, CircleAlert, Clock3, HandCoins, Headphones, Plane, UserRound } from 'lucide-react';
 
 function EyeIcon() {
   return (
@@ -104,34 +104,29 @@ export default function EmployeeDashboard() {
   };
 
   // --- Dark Mode ---
-  // Persisted in localStorage (falls back to the OS/browser preference on
-  // first visit). Toggles a `dark` class on <html> itself (via
-  // document.documentElement) rather than on <main> -- your body
-  // background gradient in globals.css is set on the <body> tag, which
-  // is an ANCESTOR of <main>, not a descendant, so ".dark body { }"
-  // would never match if "dark" only lived on <main>. Putting it on
-  // <html> makes <body> (and everything else) a proper descendant, so
-  // the CSS override actually applies. The matching dark-theme colors
-  // for the custom classes (card-style, input-field, tag-*, btn-*,
-  // branding-box, etc.) live in the CSS snippet provided alongside this
-  // file -- paste it at the end of globals.css.
+  // The root layout applies the saved theme before first paint. This state
+  // mirrors that DOM class for icons and controls after hydration.
   const [darkMode, setDarkMode] = useState(false);
-  const [themeReady, setThemeReady] = useState(false);
 
-  useEffect(() => {
-    const stored = localStorage.getItem('theme');
-    const shouldUseDark =
-      stored === 'dark' ||
-      (!stored && window.matchMedia?.('(prefers-color-scheme: dark)').matches);
-    setDarkMode(shouldUseDark);
-    setThemeReady(true);
+  const applyTheme = useCallback((nextDark: boolean) => {
+    document.documentElement.classList.toggle('dark', nextDark);
+    document.documentElement.style.colorScheme = nextDark ? 'dark' : 'light';
+    try { localStorage.setItem('theme', nextDark ? 'dark' : 'light'); } catch { /* localStorage can be unavailable */ }
+    setDarkMode(nextDark);
   }, []);
 
+  const toggleTheme = () => applyTheme(!darkMode);
+
   useEffect(() => {
-    if (!themeReady) return;
-    document.documentElement.classList.toggle('dark', darkMode);
-    localStorage.setItem('theme', darkMode ? 'dark' : 'light');
-  }, [darkMode, themeReady]);
+    queueMicrotask(() => setDarkMode(document.documentElement.classList.contains('dark')));
+    const syncTheme = (event: StorageEvent) => {
+      if (event.key === 'theme' && (event.newValue === 'dark' || event.newValue === 'light')) {
+        applyTheme(event.newValue === 'dark');
+      }
+    };
+    window.addEventListener('storage', syncTheme);
+    return () => window.removeEventListener('storage', syncTheme);
+  }, [applyTheme]);
 
   // 7PM time-out reminder -- an in-page toast, not a real push
   // notification, so it only appears while this tab is open. Uses a
@@ -1907,6 +1902,17 @@ export default function EmployeeDashboard() {
     window.setTimeout(() => scrollToEmployeeSection('employee-profile'), 0);
   };
 
+  const openAttendanceCalendar = () => {
+    setAttendanceCalendarMonth(selectedYm || currentCutoffKey.split(':')[0]);
+    setSelectedAttendanceCalendarDate(null);
+    setAttendanceCalendarOpen(true);
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    window.location.replace('/');
+  };
+
   const greeting = (() => {
     const hour = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', hour12: false }).format(new Date()));
     if (hour < 12) return 'Good morning';
@@ -2077,26 +2083,25 @@ export default function EmployeeDashboard() {
             <p className="mt-1 hidden text-xs text-slate-500 sm:block">Here&apos;s what&apos;s happening with your workday.</p>
             <p className="mt-1 text-xs font-medium text-slate-500">{date} <span className="mx-1 text-slate-300">•</span> {time || '--:--:--'}</p>
           </div>
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex flex-none items-center gap-1.5 sm:gap-2">
             <button
               type="button"
-              onClick={() => setDarkMode((d) => !d)}
-              className="hidden h-11 w-11 place-items-center rounded-full border border-slate-200 text-slate-500 transition hover:bg-slate-50 sm:grid lg:hidden"
+              onClick={toggleTheme}
+              className="grid h-11 w-11 place-items-center rounded-full border border-slate-200 text-slate-500 transition-colors duration-150 hover:bg-slate-50 lg:hidden"
               aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
             >
               {darkMode ? <SunIcon /> : <MoonIcon />}
-            </button>
-            <button type="button" onClick={() => setMobileToolsOpen(true)} className="grid h-11 w-11 place-items-center rounded-full border border-slate-200 text-slate-600 transition hover:bg-slate-50 lg:hidden" aria-label="Open all employee tools">
-              <Grid2X2 size={19} strokeWidth={2} />
             </button>
             <button type="button" onClick={() => setNotificationsModalOpen(true)} className="relative grid h-11 w-11 place-items-center rounded-full border border-slate-200 text-slate-600 transition hover:bg-slate-50" aria-label={`Notifications${unreadNotificationCount ? `, ${unreadNotificationCount} unread` : ''}`}>
               <Bell size={19} strokeWidth={2} />
               {unreadNotificationCount > 0 && <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white">{unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}</span>}
             </button>
-            <button type="button" onClick={openProfileFromNav} className="grid h-11 w-11 place-items-center overflow-hidden rounded-full border border-slate-200 bg-slate-50 text-slate-500" aria-label="Open employee profile">
+            <button type="button" onClick={() => setMobileToolsOpen(true)} className="grid h-11 w-11 place-items-center overflow-hidden rounded-full border border-slate-200 bg-slate-50 text-slate-500 lg:hidden" aria-label="Open employee menu">
               {profile?.avatar_url ? <Image src={profile.avatar_url} alt="" width={44} height={44} className="h-full w-full object-cover" /> : <UserRound size={19} />}
             </button>
-            <button onClick={() => supabase.auth.signOut().then(() => window.location.href = '/')} className="hidden text-xs font-medium text-slate-500 transition hover:text-red-600 xl:block">Log Out</button>
+            <button type="button" onClick={openProfileFromNav} className="hidden h-11 w-11 place-items-center overflow-hidden rounded-full border border-slate-200 bg-slate-50 text-slate-500 lg:grid" aria-label="Open employee profile">
+              {profile?.avatar_url ? <Image src={profile.avatar_url} alt="" width={44} height={44} className="h-full w-full object-cover" /> : <UserRound size={19} />}
+            </button>
           </div>
         </header>
 
@@ -2128,7 +2133,8 @@ export default function EmployeeDashboard() {
             onCommute={() => setCommuteModalOpen(true)}
             onHelpdesk={() => { setSupportModalOpen(true); fetchSupportRequests(); }}
             onProfile={openProfileFromNav}
-            onToggleTheme={() => setDarkMode((current) => !current)}
+            onToggleTheme={toggleTheme}
+            onLogout={handleLogout}
           />
           {/* Profile Sidebar */}
           <div id="employee-profile" className="scroll-mt-4 lg:col-span-1">
@@ -2592,11 +2598,7 @@ export default function EmployeeDashboard() {
               </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setAttendanceCalendarMonth(selectedYm || currentCutoffKey.split(':')[0]);
-                    setSelectedAttendanceCalendarDate(null);
-                    setAttendanceCalendarOpen(true);
-                  }}
+                  onClick={openAttendanceCalendar}
                   className="px-3 py-2 rounded-full bg-blue-50 text-blue-600 text-[10px] font-bold hover:bg-blue-100 transition flex-shrink-0"
                 >
                   Calendar
@@ -2741,9 +2743,15 @@ export default function EmployeeDashboard() {
 
       <MobileAllToolsSheet
         open={mobileToolsOpen}
+        darkMode={darkMode}
+        employeeName={profile?.full_name || 'Employee'}
+        designation={profile?.designation || 'Employee'}
+        avatarUrl={profile?.avatar_url}
         attendanceLabel={attendanceQuickLabel}
         attendanceDisabled={attendanceQuickDisabled}
         onClose={() => setMobileToolsOpen(false)}
+        onToggleTheme={toggleTheme}
+        onLogout={handleLogout}
         onHome={() => scrollToEmployeeSection('employee-dashboard-top')}
         onAttendanceAction={runAttendanceQuickAction}
         onAttendanceHistory={openAttendanceFromNav}
@@ -2752,7 +2760,7 @@ export default function EmployeeDashboard() {
         onPayslips={() => { setPayslipsModalOpen(true); fetchPayslips(); }}
         onDocuments={() => { setDocumentsModalOpen(true); fetchEmployeeDocuments(); }}
         onDirectory={() => { setDirectoryModalOpen(true); setDirectorySearch(''); fetchDirectory(); }}
-        onCalendar={() => { setCalendarModalOpen(true); fetchCompanyHolidays(); }}
+        onCalendar={openAttendanceCalendar}
         onNotifications={() => setNotificationsModalOpen(true)}
         onCommute={() => setCommuteModalOpen(true)}
         onHelpdesk={() => { setSupportModalOpen(true); fetchSupportRequests(); }}
