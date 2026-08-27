@@ -1,27 +1,31 @@
 'use client';
-import AttendanceInsightsModal from '@/components/hr/modals/AttendanceInsightsModal';
-import DailyOverviewModal from '@/components/hr/modals/DailyOverviewModal';
-import EmployeeQuickViewModal from '@/components/hr/modals/EmployeeQuickViewModal';
-import TeamLeaveCalendarModal from '@/components/hr/modals/TeamLeaveCalendarModal';
-import AnnouncementsModal from '@/components/hr/modals/AnnouncementsModal';
-import HolidaysModal from '@/components/hr/modals/HolidaysModal';
-import EmployeesModal from '@/components/hr/modals/EmployeesModal';
-import EmployeeChoiceModal from '@/components/hr/modals/EmployeeChoiceModal';
-import EmployeeEditModal from '@/components/hr/modals/EmployeeEditModal';
-import PayslipManagementModal from '@/components/hr/modals/PayslipManagementModal';
-import DisputeHistoryModal from '@/components/hr/modals/DisputeHistoryModal';
-import LeaveHistoryModal from '@/components/hr/modals/LeaveHistoryModal';
-import LeaveCreditsModal from '@/components/hr/modals/LeaveCreditsModal';
-import ExportReportsModal from '@/components/hr/modals/ExportReportsModal';
+import HRDesktopSidebar from '@/components/hr/HRDesktopSidebar';
+import HRMobileBottomNav from '@/components/hr/HRMobileBottomNav';
+import HRMobileToolsSheet from '@/components/hr/HRMobileToolsSheet';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { AlertTriangle, CalendarClock, CalendarRange, CheckCircle2, Clock3, FileDown, Megaphone, RefreshCw, Search, UsersRound } from 'lucide-react';
+import dynamic from 'next/dynamic';
+import { AlertTriangle, Bell, CalendarClock, CalendarRange, CheckCircle2, ChevronRight, Clock3, FileDown, FileText, Headphones, Megaphone, Moon, RefreshCw, Search, Sun, UserRound, UsersRound } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import Spinner, { LoadingRow } from '@/components/Spinner';
-import HelpDeskRequestsModal from '@/components/hr/modals/HelpDeskRequestsModal';
-import EmployeeDocumentsModal from '@/components/hr/modals/EmployeeDocumentsModal';
-import { BentoGrid, BentoGridItem } from '@/components/shared/BentoGrid';
+import { LoadingRow } from '@/components/Spinner';
+
+const AttendanceInsightsModal = dynamic(() => import('@/components/hr/modals/AttendanceInsightsModal'));
+const DailyOverviewModal = dynamic(() => import('@/components/hr/modals/DailyOverviewModal'));
+const EmployeeQuickViewModal = dynamic(() => import('@/components/hr/modals/EmployeeQuickViewModal'));
+const TeamLeaveCalendarModal = dynamic(() => import('@/components/hr/modals/TeamLeaveCalendarModal'));
+const AnnouncementsModal = dynamic(() => import('@/components/hr/modals/AnnouncementsModal'));
+const HolidaysModal = dynamic(() => import('@/components/hr/modals/HolidaysModal'));
+const EmployeesModal = dynamic(() => import('@/components/hr/modals/EmployeesModal'));
+const EmployeeChoiceModal = dynamic(() => import('@/components/hr/modals/EmployeeChoiceModal'));
+const EmployeeEditModal = dynamic(() => import('@/components/hr/modals/EmployeeEditModal'));
+const PayslipManagementModal = dynamic(() => import('@/components/hr/modals/PayslipManagementModal'));
+const DisputeHistoryModal = dynamic(() => import('@/components/hr/modals/DisputeHistoryModal'));
+const LeaveHistoryModal = dynamic(() => import('@/components/hr/modals/LeaveHistoryModal'));
+const LeaveCreditsModal = dynamic(() => import('@/components/hr/modals/LeaveCreditsModal'));
+const ExportReportsModal = dynamic(() => import('@/components/hr/modals/ExportReportsModal'));
+const HelpDeskRequestsModal = dynamic(() => import('@/components/hr/modals/HelpDeskRequestsModal'));
+const EmployeeDocumentsModal = dynamic(() => import('@/components/hr/modals/EmployeeDocumentsModal'));
 
 type AttendanceLog = {
   id: string;
@@ -577,7 +581,8 @@ export default function HRDashboard() {
     new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit' }).format(new Date()).slice(0, 7)
   );
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(null);
-  const [attendanceInsightsOpen, setAttendanceInsightsOpen] = useState(true);
+  const [darkMode, setDarkMode] = useState(false);
+  const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
   const [dailyOverviewModal, setDailyOverviewModal] = useState<null | 'present' | 'late' | 'leave' | 'notTimedIn'>(null);
   const [attendanceInsightModal, setAttendanceInsightModal] = useState<null | 'attendance' | 'late' | 'absent' | 'leave'>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -1882,24 +1887,41 @@ export default function HRDashboard() {
     requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   };
 
+  const applyTheme = (useDark: boolean) => {
+    document.documentElement.classList.toggle('dark', useDark);
+    document.documentElement.style.colorScheme = useDark ? 'dark' : 'light';
+    try { localStorage.setItem('theme', useDark ? 'dark' : 'light'); } catch { /* storage can be unavailable */ }
+    setDarkMode(useDark);
+  };
+  const toggleTheme = () => applyTheme(!darkMode);
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.replace('/');
+  };
+
+  useEffect(() => {
+    queueMicrotask(() => setDarkMode(document.documentElement.classList.contains('dark')));
+  }, []);
+
+  const pendingHrActionCount = pendingDisputesCount + pendingLeaveCount + openHrSupportCount;
+  const openReports = () => { setExportModalOpen(true); setExportMsg(null); if (!exportCutoff) setExportCutoff(availableCutoffs[0] || ''); };
+  const openDocuments = () => { setHrDocumentsModalOpen(true); fetchHrDocuments(); };
+  const openHelpdesk = () => { setHrSupportModalOpen(true); fetchHrSupportRequests(); };
+  const openLeaveCalendar = () => { setSelectedCalendarDate(null); setLeaveCalendarOpen(true); };
+  const openHolidays = () => { if (!holidaysOpen) toggleHolidays(); };
+  const openAttendanceLog = () => { setAttendanceHistoryOpen(true); scrollToDashboardSection('attendance-history'); };
+
   return (
-    <main className="min-h-screen p-3 sm:p-4 md:p-6 lg:p-8">
+    <main id="hr-dashboard-top" className="min-h-screen p-3 pb-24 transition-colors sm:p-4 sm:pb-24 md:p-6 lg:py-6 lg:pl-[260px] lg:pr-6">
+      <HRDesktopSidebar darkMode={darkMode} requestCount={pendingHrActionCount} onDashboard={() => scrollToDashboardSection('hr-dashboard-top')} onAttendance={openAttendanceLog} onEmployees={() => setEmployeesListOpen(true)} onLeave={() => scrollToDashboardSection('leave-requests')} onDisputes={() => scrollToDashboardSection('attendance-disputes')} onPayslips={() => setEmployeesListOpen(true)} onDocuments={openDocuments} onAnnouncements={() => setAnnouncementOpen(true)} onHolidays={openHolidays} onReports={openReports} onHelpdesk={openHelpdesk} onToggleTheme={toggleTheme} onLogout={handleLogout} />
       <div className="max-w-7xl mx-auto space-y-3 sm:space-y-4 md:space-y-5">
         {/* Header */}
-        <header className="branding-box flex items-center justify-between gap-3 !p-3 sm:!p-4">
-          <div>
-            <h1 className="text-base sm:text-lg md:text-2xl leading-tight">HAMDAN ENGINEERING</h1>
-            <p className="text-slate-400 text-[9px] sm:text-[10px] font-bold uppercase tracking-widest mt-0.5">HR Portal</p>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="hidden lg:flex items-center gap-4">
-              <div className="text-center"><p className="stat-number text-xl text-slate-900 leading-none">{profiles.length}</p><p className="text-slate-600 text-[9px] font-bold uppercase tracking-widest mt-0.5">Employees</p></div>
-              <div className="w-px h-8 bg-slate-900/10"/>
-              <div className="text-center"><p className="stat-number text-xl text-green-600 leading-none">{presentTodayCount}</p><p className="label-branded mt-0.5 mb-0">Present</p></div>
-              <div className="w-px h-8 bg-slate-900/10"/>
-              <div className="text-center"><p className="stat-number text-xl text-orange-600 leading-none">{lateTodayCount}</p><p className="label-branded mt-0.5 mb-0">Late</p></div>
-            </div>
-            <button onClick={() => supabase.auth.signOut().then(() => router.push('/'))} className="text-slate-500 font-medium text-xs hover:text-red-600 transition whitespace-nowrap">Sign out</button>
+        <header className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_4px_18px_rgba(15,23,42,0.05)] dark:border-slate-700 dark:bg-[#292f2b] sm:p-4">
+          <div className="min-w-0"><p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-green-600">Hamdan Engineering</p><h1 className="mt-0.5 truncate text-xl font-bold leading-tight sm:text-2xl">HR Dashboard</h1><p className="mt-1 hidden text-xs text-slate-500 sm:block">People, attendance, and employee operations.</p></div>
+          <div className="flex flex-none items-center gap-1.5">
+            <button type="button" onClick={toggleTheme} className="grid h-11 w-11 place-items-center rounded-full border border-slate-200 text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800 lg:hidden" aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}>{darkMode ? <Sun size={18}/> : <Moon size={18}/>}</button>
+            <button type="button" onClick={() => scrollToDashboardSection('action-center')} className="relative grid h-11 w-11 place-items-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800" aria-label={`${pendingHrActionCount} pending HR actions`}><Bell size={18}/>{pendingHrActionCount ? <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[9px] font-black text-white">{pendingHrActionCount > 9 ? '9+' : pendingHrActionCount}</span> : null}</button>
+            <button type="button" onClick={() => setMobileToolsOpen(true)} className="grid h-11 w-11 place-items-center rounded-full border border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 lg:hidden" aria-label="Open HR tools"><UserRound size={18}/></button>
           </div>
         </header>
 
@@ -1946,91 +1968,33 @@ export default function HRDashboard() {
         </div>
 
         {/* Daily attendance overview */}
-        <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
+        <section aria-labelledby="daily-overview-title"><div className="mb-3"><h2 id="daily-overview-title" className="text-base font-semibold sm:text-lg">Daily Overview</h2><p className="mt-0.5 text-xs text-slate-500">Today&apos;s attendance at a glance</p></div><div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
           {[
-            { key: 'present' as const, label: 'Present', value: presentTodayCount, tone: 'text-emerald-600', icon: <CheckCircle2 size={14}/> },
-            { key: 'late' as const, label: 'Late', value: lateTodayCount, tone: 'text-orange-600', icon: <Clock3 size={14}/> },
-            { key: 'leave' as const, label: 'On Leave', value: onLeaveTodayCount, tone: 'text-blue-600', icon: <CalendarClock size={14}/> },
-            { key: 'notTimedIn' as const, label: 'Not Timed In', value: notYetTimedInToday.length, tone: 'text-amber-600', icon: <AlertTriangle size={14}/> },
+            { key: 'present' as const, label: 'Present', value: presentTodayCount, tone: 'from-emerald-500 to-green-600', icon: <CheckCircle2 size={19}/> },
+            { key: 'late' as const, label: 'Late', value: lateTodayCount, tone: 'from-amber-400 to-orange-500', icon: <Clock3 size={19}/> },
+            { key: 'leave' as const, label: 'On Leave', value: onLeaveTodayCount, tone: 'from-sky-500 to-blue-600', icon: <CalendarClock size={19}/> },
+            { key: 'notTimedIn' as const, label: 'Not Timed In', value: notYetTimedInToday.length, tone: 'from-orange-500 to-red-600', icon: <AlertTriangle size={19}/> },
           ].map((stat) => (
-            <button type="button" key={stat.key} onClick={() => setDailyOverviewModal(stat.key)} className="card-style !p-2 sm:!p-2.5 flex items-center justify-center sm:justify-start gap-1.5 sm:gap-2 min-w-0 min-h-[52px] hover:bg-slate-50 hover:-translate-y-0.5 transition text-left" aria-label={`View ${stat.label} records`}>
-              <span className={`${stat.tone} hidden sm:flex flex-shrink-0`}>{stat.icon}</span>
-              <span className="min-w-0"><span className={`stat-number block text-base sm:text-lg leading-none ${stat.tone}`}>{stat.value}</span><span className="block text-slate-500 text-[7px] sm:text-[8px] font-extrabold uppercase tracking-tight sm:tracking-wide mt-1 leading-tight whitespace-normal">{stat.label}</span></span>
+            <button type="button" key={stat.key} onClick={() => setDailyOverviewModal(stat.key)} className="group relative flex min-h-24 items-center gap-3 overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 text-left shadow-[0_6px_20px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-700 dark:bg-[#292f2b]" aria-label={`View ${stat.label} records`}>
+              <span className={`relative grid h-11 w-11 flex-none place-items-center rounded-2xl bg-gradient-to-br text-white shadow-md ${stat.tone}`}><span className="absolute inset-[3px] rounded-[13px] border border-white/25"/>{stat.icon}</span>
+              <span className="min-w-0"><span className="stat-number block text-2xl leading-none text-slate-950 dark:text-white">{stat.value}</span><span className="mt-1.5 block text-[11px] font-bold text-slate-600 dark:text-slate-300">{stat.label}</span></span>
             </button>
           ))}
-        </div>
+        </div></section>
 
-        {/* MODULES -- compact icon buttons that open their own modal,
-            same pattern as the Super Admin dashboard, so these don't
-            add another full-width accordion section to scroll past.
-            Rendered with the shared BentoGrid/BentoGridItem components. */}
-        <BentoGrid>
-          <BentoGridItem
-            onClick={openLeaveCreditsModal}
-            icon={<CalendarClock size={18} strokeWidth={2.4}/>}
-            iconWrapClassName="bg-amber-50 text-amber-600"
-            title="Leave Credits"
-            description={leaveCreditsLoading ? 'Checking balances...' : lowLeaveCreditsCount > 0 ? `${lowLeaveCreditsCount} low balance${lowLeaveCreditsCount === 1 ? '' : 's'}` : 'Balances healthy'}
-            className={lowLeaveCreditsCount > 0 ? '[&_.text-slate-400]:text-orange-600 [&_.text-slate-400]:font-bold' : ''}
-          />
-
-          <BentoGridItem
-            onClick={() => { setExportModalOpen(true); setExportMsg(null); if (!exportCutoff) setExportCutoff(availableCutoffs[0] || ''); }}
-            icon={<FileDown size={18} strokeWidth={2.4}/>}
-            iconWrapClassName="bg-emerald-50 text-emerald-600"
-            title="Export Reports"
-            description="CSV & PDF"
-          />
-
-          <BentoGridItem
-            onClick={() => setAnnouncementOpen(true)}
-            icon={<Megaphone size={18} strokeWidth={2.4}/>}
-            iconWrapClassName="bg-blue-50 text-blue-600"
-            title="Announcements"
-            description={announcementModuleLabel}
-          />
-
-          <BentoGridItem
-            onClick={() => { if (!holidaysOpen) toggleHolidays(); }}
-            icon={<CalendarRange size={18} strokeWidth={2.4}/>}
-            iconWrapClassName="bg-rose-50 text-rose-600"
-            title="Holidays"
-            description={holidaysLoading ? 'Checking calendar...' : `${upcomingHolidaysCount} upcoming`}
-          />
-
-          <BentoGridItem
-            onClick={() => setEmployeesListOpen(true)}
-            icon={<UsersRound size={18} strokeWidth={2.4}/>}
-            iconWrapClassName="bg-violet-50 text-violet-600"
-            title="Employees"
-            description={`${profiles.length} total`}
-          />
-
-          <BentoGridItem
-            onClick={() => { setSelectedCalendarDate(null); setLeaveCalendarOpen(true); }}
-            icon={<CalendarRange size={18} strokeWidth={2.4}/>}
-            iconWrapClassName="bg-cyan-50 text-cyan-600"
-            title="Leave Calendar"
-            description="Approved leaves & holidays"
-          />
-
-          <BentoGridItem
-            onClick={() => { setHrSupportModalOpen(true); fetchHrSupportRequests(); }}
-            icon={<span className="text-base">🎫</span>}
-            iconWrapClassName="bg-indigo-50 text-indigo-600"
-            title="Help Desk Requests"
-            description={openHrSupportCount ? `${openHrSupportCount} open` : 'No open requests'}
-            className={openHrSupportCount ? '[&_.text-slate-400]:text-orange-600 [&_.text-slate-400]:font-bold' : ''}
-          />
-
-          <BentoGridItem
-            onClick={() => { setHrDocumentsModalOpen(true); fetchHrDocuments(); }}
-            icon={<span className="text-base">📚</span>}
-            iconWrapClassName="bg-teal-50 text-teal-600"
-            title="Employee Documents"
-            description={`${activeHrDocumentsCount} published`}
-          />
-        </BentoGrid>
+        {/* HR modules keep their existing handlers while sharing one visual language. */}
+        <section aria-labelledby="hr-quick-actions-title"><div className="mb-3"><h2 id="hr-quick-actions-title" className="text-base font-semibold sm:text-lg">HR Quick Actions</h2><p className="mt-0.5 text-xs text-slate-500">Frequently used people operations tools</p></div><div className="grid grid-cols-4 gap-2 sm:gap-3">
+          {[
+            { title: 'Leave Credits', description: leaveCreditsLoading ? 'Checking...' : lowLeaveCreditsCount ? `${lowLeaveCreditsCount} low` : 'Healthy', icon: CalendarClock, action: openLeaveCreditsModal, warning: lowLeaveCreditsCount > 0 },
+            { title: 'Export Reports', description: 'CSV & PDF', icon: FileDown, action: openReports },
+            { title: 'Announcements', description: announcementModuleLabel, icon: Megaphone, action: () => setAnnouncementOpen(true) },
+            { title: 'Holidays', description: holidaysLoading ? 'Checking...' : `${upcomingHolidaysCount} upcoming`, icon: CalendarRange, action: openHolidays },
+            { title: 'Employees', description: `${profiles.length} total`, icon: UsersRound, action: () => setEmployeesListOpen(true) },
+            { title: 'Leave Calendar', description: 'Leaves & holidays', icon: CalendarRange, action: openLeaveCalendar },
+            { title: 'Help Desk', description: openHrSupportCount ? `${openHrSupportCount} open` : 'All clear', icon: Headphones, action: openHelpdesk, warning: openHrSupportCount > 0 },
+            { title: 'Documents', description: `${activeHrDocumentsCount} published`, icon: FileText, action: openDocuments },
+          ].map(({ title, description, icon: Icon, action, warning }) => <button key={title} type="button" onClick={action} className="group relative flex min-h-24 min-w-0 flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border border-slate-200 bg-white px-1.5 py-3 text-center shadow-[0_5px_16px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:border-green-200 dark:border-slate-700 dark:bg-[#292f2b]"><span className={`relative grid h-10 w-10 place-items-center rounded-2xl bg-gradient-to-br text-white shadow-md ${warning ? 'from-amber-400 to-orange-500' : 'from-emerald-500 to-green-700'}`}><span className="absolute inset-[3px] rounded-[13px] border border-white/25"/><Icon size={18}/></span><span className="line-clamp-2 text-[10px] font-bold leading-tight text-slate-800 dark:text-slate-100 sm:text-xs">{title}</span><span className={`hidden max-w-full truncate text-[10px] sm:block ${warning ? 'font-bold text-orange-600' : 'text-slate-400'}`}>{description}</span></button>)}
+        </div></section>
 
         {/* Priority action center */}
         <section id="action-center" className="card-style !p-4 scroll-mt-4">
@@ -2040,58 +2004,40 @@ export default function HRDashboard() {
               <p className="text-slate-400 text-[10px] mt-0.5">Items that may need HR attention today</p>
             </div>
             <span className="text-[10px] font-bold text-slate-500 bg-slate-100 rounded-full px-2.5 py-1">
-              {pendingDisputesCount + pendingLeaveCount + lowLeaveCreditsCount + openHrSupportCount} open
+              {pendingHrActionCount} open
             </span>
           </div>
-          {pendingDisputesCount + pendingLeaveCount + lowLeaveCreditsCount + openHrSupportCount === 0 ? (
+          {pendingHrActionCount === 0 ? (
             <div className="flex items-center justify-center gap-2 py-5 rounded-2xl border-2 border-dashed border-emerald-100 bg-emerald-50/50 text-emerald-700">
               <CheckCircle2 size={17}/><span className="text-xs font-bold">All caught up — no pending HR actions.</span>
             </div>
           ) : (
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+            <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700">
               {[
-                { label: 'Pending Disputes', count: pendingDisputesCount, tone: 'text-blue-600 bg-blue-50', action: () => scrollToDashboardSection('attendance-disputes') },
-                { label: 'Leave Requests', count: pendingLeaveCount, tone: 'text-violet-600 bg-violet-50', action: () => scrollToDashboardSection('leave-requests') },
-                { label: 'Low Leave Credits', count: lowLeaveCreditsCount, tone: 'text-orange-600 bg-orange-50', action: openLeaveCreditsModal },
-                { label: 'Help Desk Requests', count: openHrSupportCount, tone: 'text-indigo-600 bg-indigo-50', action: () => { setHrSupportModalOpen(true); fetchHrSupportRequests(); } },
+                { label: 'Pending Disputes', description: 'Review attendance corrections', count: pendingDisputesCount, icon: Clock3, action: () => scrollToDashboardSection('attendance-disputes') },
+                { label: 'Pending Leave Requests', description: 'Approve or reject submitted leave', count: pendingLeaveCount, icon: CalendarClock, action: () => scrollToDashboardSection('leave-requests') },
+                { label: 'Open Help Desk Requests', description: 'Respond to employee concerns', count: openHrSupportCount, icon: Headphones, action: openHelpdesk },
               ].map((item) => (
-                <button key={item.label} type="button" onClick={item.action} className="p-3 rounded-2xl border border-slate-100 bg-slate-50 hover:bg-slate-100 transition text-left">
-                  <span className={`inline-flex min-w-7 h-7 items-center justify-center rounded-full px-2 text-xs font-extrabold ${item.tone}`}>{item.count}</span>
-                  <span className="block text-slate-700 text-[10px] font-bold mt-2">{item.label}</span>
+                <button key={item.label} type="button" onClick={item.action} className="flex min-h-16 w-full items-center gap-3 border-b border-slate-200 bg-white px-3 py-3 text-left transition last:border-b-0 hover:bg-slate-50 dark:border-slate-700 dark:bg-[#292f2b] dark:hover:bg-slate-800">
+                  <span className="grid h-10 w-10 flex-none place-items-center rounded-xl bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300"><item.icon size={18}/></span>
+                  <span className="min-w-0 flex-1"><span className="block text-xs font-bold text-slate-900 dark:text-white">{item.label}</span><span className="mt-0.5 block text-[10px] text-slate-500">{item.description}</span></span>
+                  <span className="grid h-7 min-w-7 place-items-center rounded-full bg-slate-100 px-2 text-xs font-black text-slate-700 dark:bg-slate-800 dark:text-slate-200">{item.count}</span><ChevronRight size={17} className="text-slate-400"/>
                 </button>
               ))}
             </div>
           )}
         </section>
 
-        {/* Attendance insights moved near the top for faster daily review. */}
         <section className="card-style !p-4">
-          <button type="button" onClick={() => setAttendanceInsightsOpen((open) => !open)} className="w-full flex items-center justify-between gap-2 text-left">
-            <div><h3 className="text-sm mb-0">Attendance Insights</h3><p className="text-slate-400 text-[10px] mt-0.5">Current-month performance and repeated lateness</p></div>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`text-slate-400 transition-transform ${attendanceInsightsOpen ? 'rotate-180' : ''}`}><polyline points="6 9 12 15 18 9"/></svg>
-          </button>
-          {attendanceInsightsOpen && (
-            <div className="pt-4">
-              <div className="grid grid-cols-4 gap-1.5 sm:gap-2 mb-3">
-                {[
-                  { key: 'attendance' as const, label: 'Attendance Rate', value: `${attendanceInsights.current.attendanceRate}%`, tone: 'text-emerald-600' },
-                  { key: 'late' as const, label: 'Late Records', value: attendanceInsights.current.late, tone: 'text-orange-600' },
-                  { key: 'absent' as const, label: 'Absent Records', value: attendanceInsights.current.absent, tone: 'text-rose-600' },
-                  { key: 'leave' as const, label: 'Leave Days', value: attendanceInsights.current.leave, tone: 'text-blue-600' },
-                ].map((item) => <button type="button" key={item.key} onClick={() => setAttendanceInsightModal(item.key)} className="p-2 sm:p-2.5 min-h-[54px] rounded-xl bg-slate-50 border border-slate-100 hover:bg-white hover:-translate-y-0.5 transition text-left" aria-label={`View ${item.label}`}><p className={`stat-number text-base sm:text-lg leading-none ${item.tone}`}>{item.value}</p><p className="text-[7px] sm:text-[8px] leading-tight font-extrabold uppercase tracking-tight sm:tracking-wide text-slate-500 mt-1 whitespace-normal">{item.label}</p></button>)}
-              </div>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                <div className="p-3 rounded-2xl border border-slate-100 bg-slate-50">
-                  <p className="text-xs font-bold text-slate-800 mb-2">Compared with previous month</p>
-                  {[['Late', attendanceInsights.current.late, attendanceInsights.previous.late], ['Absent', attendanceInsights.current.absent, attendanceInsights.previous.absent], ['Worked', attendanceInsights.current.worked, attendanceInsights.previous.worked]].map(([label, current, previous]) => { const delta = Number(current) - Number(previous); return <div key={String(label)} className="flex items-center justify-between text-xs py-1"><span className="text-slate-500">{label}</span><span className="font-bold text-slate-800">{current} <small className="text-slate-400 ml-1">{delta === 0 ? '—' : `${delta > 0 ? '+' : ''}${delta}`}</small></span></div>; })}
-                </div>
-                <div className="p-3 rounded-2xl border border-slate-100 bg-slate-50">
-                  <p className="text-xs font-bold text-slate-800 mb-2">Most late this month</p>
-                  {attendanceInsights.topLateEmployees.length === 0 ? <p className="text-xs text-slate-400">No late records this month.</p> : attendanceInsights.topLateEmployees.map(([name, count]) => <div key={name} className="flex items-center justify-between text-xs py-1"><span className="font-semibold text-slate-600 truncate">{name}</span><span className="font-bold text-orange-600">{count}</span></div>)}
-                </div>
-              </div>
-            </div>
-          )}
+          <div className="flex items-start justify-between gap-3"><div><h3 className="text-sm mb-0">Attendance Insights</h3><p className="mt-0.5 text-[10px] text-slate-400">Current-month performance</p></div><button type="button" onClick={() => setAttendanceInsightModal('attendance')} className="inline-flex min-h-11 items-center gap-1 rounded-full px-3 text-xs font-bold text-green-700 hover:bg-green-50 dark:text-green-300">View Insights <ChevronRight size={15}/></button></div>
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {[
+              { key: 'attendance' as const, label: 'Attendance Rate', value: `${attendanceInsights.current.attendanceRate}%`, tone: 'text-emerald-600' },
+              { key: 'late' as const, label: 'Late', value: attendanceInsights.current.late, tone: 'text-orange-600' },
+              { key: 'absent' as const, label: 'Absent', value: attendanceInsights.current.absent, tone: 'text-rose-600' },
+              { key: 'leave' as const, label: 'Leave', value: attendanceInsights.current.leave, tone: 'text-blue-600' },
+            ].map((item) => <button type="button" key={item.key} onClick={() => setAttendanceInsightModal(item.key)} className="min-h-16 rounded-xl border border-slate-100 bg-slate-50 p-2.5 text-left transition hover:bg-white dark:border-slate-700 dark:bg-slate-800" aria-label={`View ${item.label}`}><p className={`stat-number text-lg leading-none ${item.tone}`}>{item.value}</p><p className="mt-1 text-[10px] font-bold text-slate-500">{item.label}</p></button>)}
+          </div>
         </section>
 
         <AttendanceInsightsModal modal={attendanceInsightModal} meta={attendanceInsightMeta} records={attendanceInsightRecords} initials={initials} setModal={setAttendanceInsightModal} />
@@ -2228,7 +2174,7 @@ export default function HRDashboard() {
               className="w-full p-4 flex items-center justify-between gap-2"
             >
               <h3 className="text-sm mb-0">
-                Attendance History
+                Raw Attendance Log
                 {cutoffFilter ? <span className="block text-[10px] font-medium text-slate-400 normal-case tracking-normal mt-0.5">Showing {formatCutoffLabel(cutoffFilter)}</span>
                   : selectedDate && <span className="block text-[10px] font-medium text-slate-400 normal-case tracking-normal mt-0.5">{selectedDate === todayManila ? "Today's records" : `Records for ${selectedDate}`}</span>}
                 {searchTerm && (
@@ -2278,8 +2224,8 @@ export default function HRDashboard() {
                 {(searchTerm || selectedDate !== todayManila || cutoffFilter) && <button onClick={() => { setSearchTerm(''); setSelectedDate(todayManila); setCutoffFilter(''); setAttendancePage(1); }} className="text-rose-500 font-bold text-xs whitespace-nowrap">Reset Filters</button>}
               </div>
             </div>
-            <div className="overflow-x-auto min-h-[260px]">
-              <table className="w-full text-left">
+            <div className="min-h-[260px] max-w-full overflow-x-auto overscroll-x-contain" role="region" aria-label="Scrollable raw attendance records" tabIndex={0}>
+              <table className="w-full min-w-[680px] text-left">
                 <thead className="bg-slate-50 text-[10px] text-slate-400 font-bold uppercase tracking-widest">
                   <tr>
                     <th className="px-4 py-3">Employee</th>
@@ -2329,42 +2275,11 @@ export default function HRDashboard() {
             )}
           </section>
 
-          {/* Legacy placement retained in source for easy comparison, hidden because insights now appear near the top. */}
-          {false && <section className="card-style overflow-hidden !p-0 mt-3 sm:mt-4 md:mt-5">
-            <button type="button" onClick={() => setAttendanceInsightsOpen((open) => !open)} className="w-full p-4 flex items-center justify-between gap-2 text-left">
-              <div><h3 className="text-sm mb-0">Attendance Insights</h3><p className="text-slate-400 text-[10px] mt-0.5">Current-month trends and repeated lateness</p></div>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`text-slate-400 transition-transform ${attendanceInsightsOpen ? 'rotate-180' : ''}`}><polyline points="6 9 12 15 18 9"/></svg>
-            </button>
-            {attendanceInsightsOpen && (
-              <div className="px-4 pb-4">
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mb-4">
-                  {[
-                    { label: 'Attendance Rate', value: `${attendanceInsights.current.attendanceRate}%`, tone: 'text-emerald-600' },
-                    { label: 'Late Records', value: attendanceInsights.current.late, tone: 'text-orange-600' },
-                    { label: 'Absent Records', value: attendanceInsights.current.absent, tone: 'text-rose-600' },
-                    { label: 'Leave Days', value: attendanceInsights.current.leave, tone: 'text-blue-600' },
-                  ].map((item) => <div key={item.label} className="p-3 rounded-xl bg-slate-50 border border-slate-100"><p className={`stat-number text-xl ${item.tone}`}>{item.value}</p><p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mt-1">{item.label}</p></div>)}
-                </div>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                  <div className="p-3 rounded-2xl border border-slate-100 bg-slate-50">
-                    <p className="text-xs font-bold text-slate-800 mb-3">Compared with previous month</p>
-                    <div className="space-y-2">
-                      {[['Late', attendanceInsights.current.late, attendanceInsights.previous.late], ['Absent', attendanceInsights.current.absent, attendanceInsights.previous.absent], ['Worked', attendanceInsights.current.worked, attendanceInsights.previous.worked]].map(([label, current, previous]) => {
-                        const delta = Number(current) - Number(previous);
-                        return <div key={String(label)} className="flex items-center justify-between text-xs"><span className="text-slate-500">{label}</span><span className="font-bold text-slate-800">{current} <small className={`${delta > 0 && label !== 'Worked' ? 'text-rose-500' : delta < 0 && label !== 'Worked' ? 'text-emerald-500' : 'text-slate-400'} ml-1`}>{delta === 0 ? '—' : `${delta > 0 ? '+' : ''}${delta}`}</small></span></div>;
-                      })}
-                    </div>
-                  </div>
-                  <div className="p-3 rounded-2xl border border-slate-100 bg-slate-50">
-                    <p className="text-xs font-bold text-slate-800 mb-3">Most late this month</p>
-                    {attendanceInsights.topLateEmployees.length === 0 ? <p className="text-xs text-slate-400">No late records this month.</p> : <div className="space-y-2">{attendanceInsights.topLateEmployees.map(([name, count]) => { const max = attendanceInsights.topLateEmployees[0]?.[1] || 1; return <div key={name}><div className="flex justify-between gap-2 text-[10px] mb-1"><span className="font-bold text-slate-700 truncate">{name}</span><span className="text-orange-600 font-bold">{count}</span></div><div className="h-1.5 rounded-full bg-white overflow-hidden"><div className="h-full bg-orange-400 rounded-full" style={{ width: `${Math.max(8, (count / max) * 100)}%` }}/></div></div>; })}</div>}
-                  </div>
-                </div>
-              </div>
-            )}
-          </section>}
         </div>
       </div>
+
+      <HRMobileBottomNav requestCount={pendingHrActionCount} onHome={() => scrollToDashboardSection('hr-dashboard-top')} onAttendance={openAttendanceLog} onRequests={() => scrollToDashboardSection('action-center')} onEmployees={() => setEmployeesListOpen(true)} onMore={() => setMobileToolsOpen(true)} />
+      <HRMobileToolsSheet open={mobileToolsOpen} darkMode={darkMode} onClose={() => setMobileToolsOpen(false)} onToggleTheme={toggleTheme} onLogout={handleLogout} onAnnouncements={() => setAnnouncementOpen(true)} onHolidays={openHolidays} onLeaveCalendar={openLeaveCalendar} onLeaveCredits={openLeaveCreditsModal} onReports={openReports} onDocuments={openDocuments} onHelpdesk={openHelpdesk} />
 
       <EmployeeChoiceModal open={modalMode === 'choice'} onClose={closeModal} initials={initials} openEdit={openEdit} openPayslipsModal={openPayslipsModal} selectedProfile={selectedProfile} />
 

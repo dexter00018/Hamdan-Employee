@@ -2659,15 +2659,14 @@ export default function EmployeeDashboard() {
                     {initLoading && <LoadingRow label="Loading..." />}
                     {!initLoading && filteredHistory.length === 0 && <p className="text-slate-400 text-xs">No records{monthFilter ? ' for this selected period' : ''}.</p>}
                     {filteredHistory.map((log, index) => (
-                      <div key={index} className="flex items-center justify-between gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                      <div key={index} className="grid grid-cols-[minmax(0,1fr)_76px_minmax(0,1fr)] items-start gap-2 rounded-xl border border-slate-100 bg-slate-50 p-3">
                         <div className="min-w-0">
                           <div className="font-medium text-slate-900 text-xs">{new Date(log.log_date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</div>
                           <div className="text-slate-400 text-[10px]">{log.log_date}</div>
                         </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <span className={statusTagClass(log.status)}>{log.status}</span>
-                          <div className="text-right">
-                            <div className="font-semibold text-slate-700 text-xs">
+                        <span className={`${statusTagClass(log.status)} inline-flex w-[76px] items-center justify-center justify-self-center whitespace-nowrap`}>{log.status}</span>
+                          <div className="min-w-0 text-right">
+                            <div className="whitespace-nowrap font-semibold text-slate-700 text-xs">
                               {log.time_in ? new Date(log.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }) : '--:--'}
                               {log.time_out && <> – {new Date(log.time_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}</>}
                             </div>
@@ -2711,7 +2710,6 @@ export default function EmployeeDashboard() {
                               })()}
                             </div>
                           </div>
-                        </div>
                       </div>
                     ))}
                   </div>

@@ -7,8 +7,8 @@ export default function ThemeRouteGuard() {
   const pathname = usePathname();
 
   useEffect(() => {
-    const isEmployeeRoute = pathname === '/employee' || pathname.startsWith('/employee/');
-    if (!isEmployeeRoute) {
+    const supportsPortalTheme = pathname === '/employee' || pathname.startsWith('/employee/') || pathname === '/hr' || pathname.startsWith('/hr/');
+    if (!supportsPortalTheme) {
       document.documentElement.classList.remove('dark');
       document.documentElement.style.colorScheme = 'light';
       return;

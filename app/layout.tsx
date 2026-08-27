@@ -8,15 +8,15 @@ import "./globals.css";
 const themeInitializationScript = `
   (function () {
     try {
-      var isEmployeeRoute = location.pathname === '/employee' || location.pathname.indexOf('/employee/') === 0;
-      var savedTheme = isEmployeeRoute ? localStorage.getItem('theme') : 'light';
-      var useDark = isEmployeeRoute && (savedTheme === 'dark' ||
+      var supportsPortalTheme = location.pathname === '/employee' || location.pathname.indexOf('/employee/') === 0 || location.pathname === '/hr' || location.pathname.indexOf('/hr/') === 0;
+      var savedTheme = supportsPortalTheme ? localStorage.getItem('theme') : 'light';
+      var useDark = supportsPortalTheme && (savedTheme === 'dark' ||
         (savedTheme !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches));
       document.documentElement.classList.toggle('dark', useDark);
       document.documentElement.style.colorScheme = useDark ? 'dark' : 'light';
     } catch (error) {
-      var isEmployeeRoute = location.pathname === '/employee' || location.pathname.indexOf('/employee/') === 0;
-      var useSystemDark = isEmployeeRoute && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      var supportsPortalTheme = location.pathname === '/employee' || location.pathname.indexOf('/employee/') === 0 || location.pathname === '/hr' || location.pathname.indexOf('/hr/') === 0;
+      var useSystemDark = supportsPortalTheme && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
       document.documentElement.classList.toggle('dark', useSystemDark);
       document.documentElement.style.colorScheme = useSystemDark ? 'dark' : 'light';
     }
