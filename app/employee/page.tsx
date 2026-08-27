@@ -7,6 +7,10 @@ import AttendanceDisputesModal from '@/components/employee/modals/AttendanceDisp
 import LeaveRequestModal from '@/components/employee/modals/LeaveRequestModal';
 import EarlyTimeOutModal from '@/components/employee/modals/EarlyTimeOutModal';
 import MobileBottomNav from '@/components/employee/MobileBottomNav';
+import EmployeeSummaryCard from '@/components/employee/EmployeeSummaryCard';
+import EmployeeQuickActions from '@/components/employee/EmployeeQuickActions';
+import EmployeeDesktopSidebar from '@/components/employee/EmployeeDesktopSidebar';
+import MobileAllToolsSheet from '@/components/employee/MobileAllToolsSheet';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
@@ -20,6 +24,7 @@ import NotificationsModal from '@/components/employee/modals/NotificationsModal'
 import PayslipsModal from '@/components/employee/modals/PayslipsModal';
 import EmployeeDirectoryModal from '@/components/employee/modals/EmployeeDirectoryModal';
 import CompanyCalendarModal from '@/components/employee/modals/CompanyCalendarModal';
+import { Bell, CalendarDays, CalendarX2, CheckCircle2, CircleAlert, Clock3, Grid2X2, HandCoins, Headphones, Plane, UserRound } from 'lucide-react';
 
 function EyeIcon() {
   return (
@@ -1677,6 +1682,7 @@ export default function EmployeeDashboard() {
     target: 'leave' | 'dispute' | 'payslip' | 'announcement' | 'holiday' | 'support';
   };
   const [notificationsModalOpen, setNotificationsModalOpen] = useState(false);
+  const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
   const [readNotificationIds, setReadNotificationIds] = useState<string[]>([]);
 
   useEffect(() => {
@@ -1901,8 +1907,23 @@ export default function EmployeeDashboard() {
     window.setTimeout(() => scrollToEmployeeSection('employee-profile'), 0);
   };
 
+  const greeting = (() => {
+    const hour = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', hour12: false }).format(new Date()));
+    if (hour < 12) return 'Good morning';
+    if (hour < 18) return 'Good afternoon';
+    return 'Good evening';
+  })();
+
+  const employeeFirstName = profile?.full_name?.trim().split(/\s+/)[0] || 'there';
+  const attendanceQuickLabel: 'Time In' | 'Time Out' | 'Completed' = !todayLog ? 'Time In' : !todayLog.time_out ? 'Time Out' : 'Completed';
+  const attendanceQuickDisabled = loading || initLoading || timeOutLoading || checkingNetwork || officeNetworkAllowed === false || Boolean(todayLog?.time_out);
+  const runAttendanceQuickAction = () => {
+    if (!todayLog) handleTimeIn();
+    else if (!todayLog.time_out) handleTimeOutClick();
+  };
+
   return (
-    <main id="employee-dashboard-top" className="min-h-screen p-3 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:p-4 sm:pb-[calc(6rem+env(safe-area-inset-bottom))] md:p-6 md:pb-[calc(6rem+env(safe-area-inset-bottom))] lg:p-8">
+    <main id="employee-dashboard-top" className="employee-dashboard min-h-screen p-3 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:p-4 sm:pb-[calc(6rem+env(safe-area-inset-bottom))] md:p-6 md:pb-[calc(6rem+env(safe-area-inset-bottom))] lg:p-8">
       <style jsx global>{`
         /* DARK MODE — neutral dark gray, not pure black. */
         .dark { color-scheme: dark; }
@@ -1912,6 +1933,12 @@ export default function EmployeeDashboard() {
         .dark .input-field { background: #252b27 !important; border-color: #4b554e !important; color: #f7faf8 !important; }
         .dark .input-field::placeholder { color: #aeb8b1 !important; opacity: 1; }
         .dark input, .dark select, .dark textarea { color-scheme: dark; }
+        .employee-dashboard .card-style {
+          border: 1px solid #e2e8e3;
+          border-radius: 1rem;
+          box-shadow: 0 4px 18px rgba(15, 23, 42, .045);
+        }
+        .dark .employee-dashboard .card-style { border-color: #414944 !important; }
 
         .dark .text-slate-950, .dark .text-slate-900, .dark .text-slate-800 { color: #f8faf9 !important; }
         .dark .text-slate-700, .dark .text-slate-600 { color: #dce3de !important; }
@@ -2028,18 +2055,6 @@ export default function EmployeeDashboard() {
         .commute-theme-scope.dark [class*="bg-blue-50/"] { background-color: rgba(30, 49, 80, .72) !important; }
         .commute-theme-scope.dark [class*="bg-orange-50/"] { background-color: rgba(64, 45, 30, .78) !important; }
         .commute-theme-scope.dark [class*="bg-amber-50/"] { background-color: rgba(66, 53, 30, .78) !important; }
-        .employee-action-row { position: relative; padding-left: 1.75rem; }
-        .employee-action-row::before {
-          content: '';
-          position: absolute;
-          left: .25rem;
-          top: 1.25rem;
-          width: .625rem;
-          height: .625rem;
-          border-radius: 9999px;
-          background: #15803d;
-          box-shadow: 0 0 0 4px rgba(21, 128, 61, .12);
-        }
         @media (max-width: 1023px) {
           .employee-quick-actions > button {
             min-height: 5.5rem;
@@ -2052,46 +2067,69 @@ export default function EmployeeDashboard() {
           .employee-quick-actions > button > div:last-child p:last-child { display: none; }
         }
       `}</style>
-      <div className="max-w-7xl mx-auto space-y-3 sm:space-y-4 md:space-y-5">
+      <div className="mx-auto max-w-[1600px] space-y-4 md:space-y-6">
 
         {/* Header */}
-        <header className="branding-box flex items-center justify-between gap-3 !p-3 sm:!p-4">
-          <div>
-            <h1 className="text-base sm:text-lg md:text-2xl leading-tight">HAMDAN ENGINEERING</h1>
-            <p className="text-slate-400 text-[9px] sm:text-[10px] font-bold uppercase tracking-widest mt-0.5">Employee Portal</p>
+        <header className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_4px_18px_rgba(15,23,42,0.04)] dark:bg-[#292f2b] sm:p-4">
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#16a34a] lg:hidden">Hamdan Engineering</p>
+            <h1 className="mt-0.5 truncate text-xl font-bold leading-tight sm:text-2xl">{greeting}, {employeeFirstName}!</h1>
+            <p className="mt-1 hidden text-xs text-slate-500 sm:block">Here&apos;s what&apos;s happening with your workday.</p>
+            <p className="mt-1 text-xs font-medium text-slate-500">{date} <span className="mx-1 text-slate-300">•</span> {time || '--:--:--'}</p>
           </div>
-          <div className="flex items-center gap-4">
-            <div className="hidden lg:flex items-center gap-4">
-              <button type="button" onClick={() => setSummaryDetailType('present')} className="text-center hover:opacity-70 transition"><p className="stat-number text-xl text-[#15803d] dark:text-[#5ee28b] leading-none">{summary.present}</p><p className="label-branded mt-0.5 mb-0 dark:text-[#aab8ad]">Present</p></button>
-              <div className="w-px h-8 bg-slate-200"/>
-              <button type="button" onClick={() => setSummaryDetailType('late')} className="text-center hover:opacity-70 transition"><p className="stat-number text-xl text-[#c2410c] dark:text-[#fb923c] leading-none">{summary.late}</p><p className="label-branded mt-0.5 mb-0 dark:text-[#aab8ad]">Late</p></button>
-              <div className="w-px h-8 bg-slate-200"/>
-              <button type="button" onClick={() => setSummaryDetailType('absent')} className="text-center hover:opacity-70 transition"><p className="stat-number text-xl text-[#b91c1c] dark:text-[#f87171] leading-none">{summary.absent}</p><p className="label-branded mt-0.5 mb-0 dark:text-[#aab8ad]">Absent</p></button>
-            </div>
+          <div className="flex items-center gap-2 sm:gap-3">
             <button
               type="button"
               onClick={() => setDarkMode((d) => !d)}
-              className="text-slate-400 hover:text-slate-600 transition p-1.5 rounded-full hover:bg-slate-100 flex-shrink-0"
+              className="hidden h-11 w-11 place-items-center rounded-full border border-slate-200 text-slate-500 transition hover:bg-slate-50 sm:grid lg:hidden"
               aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
             >
               {darkMode ? <SunIcon /> : <MoonIcon />}
             </button>
-            <button onClick={() => supabase.auth.signOut().then(() => window.location.href = '/')} className="text-slate-500 font-medium text-xs hover:text-red-600 transition whitespace-nowrap">Log Out</button>
+            <button type="button" onClick={() => setMobileToolsOpen(true)} className="grid h-11 w-11 place-items-center rounded-full border border-slate-200 text-slate-600 transition hover:bg-slate-50 lg:hidden" aria-label="Open all employee tools">
+              <Grid2X2 size={19} strokeWidth={2} />
+            </button>
+            <button type="button" onClick={() => setNotificationsModalOpen(true)} className="relative grid h-11 w-11 place-items-center rounded-full border border-slate-200 text-slate-600 transition hover:bg-slate-50" aria-label={`Notifications${unreadNotificationCount ? `, ${unreadNotificationCount} unread` : ''}`}>
+              <Bell size={19} strokeWidth={2} />
+              {unreadNotificationCount > 0 && <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white">{unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}</span>}
+            </button>
+            <button type="button" onClick={openProfileFromNav} className="grid h-11 w-11 place-items-center overflow-hidden rounded-full border border-slate-200 bg-slate-50 text-slate-500" aria-label="Open employee profile">
+              {profile?.avatar_url ? <Image src={profile.avatar_url} alt="" width={44} height={44} className="h-full w-full object-cover" /> : <UserRound size={19} />}
+            </button>
+            <button onClick={() => supabase.auth.signOut().then(() => window.location.href = '/')} className="hidden text-xs font-medium text-slate-500 transition hover:text-red-600 xl:block">Log Out</button>
           </div>
         </header>
 
         {message && <div className={`p-3 rounded-xl text-xs font-bold ${message.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{message}</div>}
 
         {/* Mobile summary cards -- tap any of these to see which dates were counted. */}
-        <div className="grid grid-cols-2 gap-2 lg:hidden">
-          <button type="button" onClick={() => setSummaryDetailType('present')} className="card-style !p-3 text-center hover:bg-slate-50 transition"><p className="stat-number text-xl text-[#15803d] dark:text-[#5ee28b]">{summary.present}</p><p className="label-branded mt-0.5 dark:text-[#aab8ad]">Present</p></button>
-          <button type="button" onClick={() => setSummaryDetailType('late')} className="card-style !p-3 text-center hover:bg-slate-50 transition"><p className="stat-number text-xl text-[#c2410c] dark:text-[#fb923c]">{summary.late}</p><p className="label-branded mt-0.5 dark:text-[#aab8ad]">Late</p></button>
-          <button type="button" onClick={() => setSummaryDetailType('leave')} className="card-style !p-3 text-center hover:bg-slate-50 transition"><p className="stat-number text-xl text-purple-600">{summary.leave}</p><p className="label-branded mt-0.5 dark:text-[#aab8ad]">On Leave</p></button>
-          <button type="button" onClick={() => setSummaryDetailType('absent')} className="card-style !p-3 text-center hover:bg-slate-50 transition"><p className="stat-number text-xl text-[#b91c1c] dark:text-[#f87171]">{summary.absent}</p><p className="label-branded mt-0.5 dark:text-[#aab8ad]">Not Timed In</p></button>
+        <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
+          <EmployeeSummaryCard label="Present" value={summary.present} icon={CheckCircle2} tone="green" onClick={() => setSummaryDetailType('present')} />
+          <EmployeeSummaryCard label="Late" value={summary.late} icon={Clock3} tone="orange" onClick={() => setSummaryDetailType('late')} />
+          <EmployeeSummaryCard label="On Leave" value={summary.leave} icon={CalendarDays} tone="purple" onClick={() => setSummaryDetailType('leave')} />
+          <EmployeeSummaryCard label="Not Timed In" value={summary.absent} icon={CalendarX2} tone="red" onClick={() => setSummaryDetailType('absent')} />
         </div>
 
         {/* Main layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 sm:gap-4 md:gap-5">
+        <div className="grid grid-cols-1 gap-3 sm:gap-4 md:gap-5 lg:grid-cols-5">
+          <EmployeeDesktopSidebar
+            employeeName={profile?.full_name || 'Employee'}
+            designation={profile?.designation || 'Employee'}
+            avatarUrl={profile?.avatar_url}
+            darkMode={darkMode}
+            actionCount={employeeActionCount}
+            onDashboard={() => scrollToEmployeeSection('employee-dashboard-top')}
+            onAttendance={openAttendanceFromNav}
+            onLeave={() => setLeaveChoiceModalOpen(true)}
+            onDisputes={() => { setSelectedMyDisputeDetail(null); setMyDisputesModalOpen(true); fetchMyDisputes(); }}
+            onPayslips={() => { setPayslipsModalOpen(true); fetchPayslips(); }}
+            onDocuments={() => { setDocumentsModalOpen(true); fetchEmployeeDocuments(); }}
+            onActionCenter={() => scrollToEmployeeSection('employee-action-center')}
+            onCommute={() => setCommuteModalOpen(true)}
+            onHelpdesk={() => { setSupportModalOpen(true); fetchSupportRequests(); }}
+            onProfile={openProfileFromNav}
+            onToggleTheme={() => setDarkMode((current) => !current)}
+          />
           {/* Profile Sidebar */}
           <div id="employee-profile" className="scroll-mt-4 lg:col-span-1">
             <div className="card-style lg:sticky lg:top-6 !p-4">
@@ -2235,39 +2273,45 @@ export default function EmployeeDashboard() {
               {(todayLog?.time_in && !todayLog.time_out) || pendingLeavesCount > 0 || pendingDisputesCount > 0 || newPayslipsCount > 0 || openSupportCount > 0 || (!initLoading && profileCompleteness.percent < 100) ? (
                 <div className="divide-y divide-slate-100 rounded-2xl border border-slate-100 bg-slate-50/80 px-3">
                   {todayLog?.time_in && !todayLog.time_out && (
-                    <button type="button" onClick={handleTimeOutClick} disabled={officeNetworkAllowed === false || timeOutLoading} className="employee-action-row block min-h-14 w-full py-3 text-left disabled:opacity-50">
-                      <p className="font-bold text-amber-800 text-xs">Time Out pending</p>
-                      <p className="text-amber-600 text-[10px] mt-1">Remember to complete today&apos;s attendance.</p>
+                    <button type="button" onClick={handleTimeOutClick} disabled={officeNetworkAllowed === false || timeOutLoading} className="flex min-h-16 w-full items-center gap-3 py-3 text-left disabled:opacity-50">
+                      <span className="grid h-9 w-9 flex-none place-items-center rounded-xl bg-amber-50 text-amber-700"><Clock3 size={17} /></span>
+                      <span className="min-w-0 flex-1"><span className="block text-xs font-bold text-slate-900">Time Out pending</span><span className="mt-0.5 block text-xs text-slate-500">Complete today&apos;s attendance.</span></span>
+                      <span className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-700">Action</span>
                     </button>
                   )}
                   {pendingLeavesCount > 0 && (
-                    <button type="button" onClick={() => setMyLeavesModalOpen(true)} className="employee-action-row block min-h-14 w-full py-3 text-left">
-                      <p className="font-bold text-green-800 text-xs">{pendingLeavesCount} pending leave request{pendingLeavesCount === 1 ? '' : 's'}</p>
-                      <p className="text-green-600 text-[10px] mt-1">Tap to view the status.</p>
+                    <button type="button" onClick={() => setMyLeavesModalOpen(true)} className="flex min-h-16 w-full items-center gap-3 py-3 text-left">
+                      <span className="grid h-9 w-9 flex-none place-items-center rounded-xl bg-green-50 text-green-700"><Plane size={17} /></span>
+                      <span className="min-w-0 flex-1"><span className="block text-xs font-bold text-slate-900">Pending Leave Requests</span><span className="mt-0.5 block text-xs text-slate-500">Review your request status.</span></span>
+                      <span className="rounded-full bg-green-50 px-2 py-1 text-[10px] font-bold text-green-700">{pendingLeavesCount}</span>
                     </button>
                   )}
                   {pendingDisputesCount > 0 && (
-                    <button type="button" onClick={() => setMyDisputesModalOpen(true)} className="employee-action-row block min-h-14 w-full py-3 text-left">
-                      <p className="font-bold text-rose-800 text-xs">{pendingDisputesCount} pending dispute{pendingDisputesCount === 1 ? '' : 's'}</p>
-                      <p className="text-rose-600 text-[10px] mt-1">Tap to review your request.</p>
+                    <button type="button" onClick={() => setMyDisputesModalOpen(true)} className="flex min-h-16 w-full items-center gap-3 py-3 text-left">
+                      <span className="grid h-9 w-9 flex-none place-items-center rounded-xl bg-red-50 text-red-700"><CircleAlert size={17} /></span>
+                      <span className="min-w-0 flex-1"><span className="block text-xs font-bold text-slate-900">Attendance Disputes</span><span className="mt-0.5 block text-xs text-slate-500">Review open attendance corrections.</span></span>
+                      <span className="rounded-full bg-red-50 px-2 py-1 text-[10px] font-bold text-red-700">{pendingDisputesCount}</span>
                     </button>
                   )}
                   {newPayslipsCount > 0 && (
-                    <button type="button" onClick={() => setPayslipsModalOpen(true)} className="employee-action-row block min-h-14 w-full py-3 text-left">
-                      <p className="font-bold text-blue-800 text-xs">{newPayslipsCount} new payslip{newPayslipsCount === 1 ? '' : 's'}</p>
-                      <p className="text-blue-600 text-[10px] mt-1">Review and acknowledge receipt.</p>
+                    <button type="button" onClick={() => setPayslipsModalOpen(true)} className="flex min-h-16 w-full items-center gap-3 py-3 text-left">
+                      <span className="grid h-9 w-9 flex-none place-items-center rounded-xl bg-blue-50 text-blue-700"><HandCoins size={17} /></span>
+                      <span className="min-w-0 flex-1"><span className="block text-xs font-bold text-slate-900">Latest Payslip Available</span><span className="mt-0.5 block text-xs text-slate-500">Review and acknowledge receipt.</span></span>
+                      <span className="rounded-full bg-blue-50 px-2 py-1 text-[10px] font-bold text-blue-700">{newPayslipsCount}</span>
                     </button>
                   )}
                   {openSupportCount > 0 && (
-                    <button type="button" onClick={() => setSupportModalOpen(true)} className="employee-action-row block min-h-14 w-full py-3 text-left">
-                      <p className="font-bold text-violet-800 text-xs">{openSupportCount} open help request{openSupportCount === 1 ? '' : 's'}</p>
-                      <p className="text-violet-600 text-[10px] mt-1">Check the latest status.</p>
+                    <button type="button" onClick={() => setSupportModalOpen(true)} className="flex min-h-16 w-full items-center gap-3 py-3 text-left">
+                      <span className="grid h-9 w-9 flex-none place-items-center rounded-xl bg-purple-50 text-purple-700"><Headphones size={17} /></span>
+                      <span className="min-w-0 flex-1"><span className="block text-xs font-bold text-slate-900">Support Requests</span><span className="mt-0.5 block text-xs text-slate-500">Check the latest helpdesk status.</span></span>
+                      <span className="rounded-full bg-purple-50 px-2 py-1 text-[10px] font-bold text-purple-700">{openSupportCount}</span>
                     </button>
                   )}
                   {!initLoading && profileCompleteness.percent < 100 && (
-                    <button type="button" onClick={openProfileFromNav} className="employee-action-row block min-h-14 w-full py-3 text-left">
-                      <p className="font-bold text-slate-800 text-xs">Profile {profileCompleteness.percent}% complete</p>
-                      <p className="text-slate-500 text-[10px] mt-1">{profileCompleteness.missing} detail{profileCompleteness.missing === 1 ? '' : 's'} still missing.</p>
+                    <button type="button" onClick={openProfileFromNav} className="flex min-h-16 w-full items-center gap-3 py-3 text-left">
+                      <span className="grid h-9 w-9 flex-none place-items-center rounded-xl bg-slate-100 text-slate-600"><UserRound size={17} /></span>
+                      <span className="min-w-0 flex-1"><span className="block text-xs font-bold text-slate-900">Profile Completeness</span><span className="mt-0.5 block text-xs text-slate-500">{profileCompleteness.missing} detail{profileCompleteness.missing === 1 ? '' : 's'} still missing.</span><span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-slate-200"><span className="block h-full rounded-full bg-green-600" style={{ width: `${profileCompleteness.percent}%` }} /></span></span>
+                      <span className="text-xs font-bold text-green-700">{profileCompleteness.percent}%</span>
                     </button>
                   )}
                 </div>
@@ -2292,7 +2336,7 @@ export default function EmployeeDashboard() {
                 <div className="flex items-start gap-3">
                   <div className="flex-shrink-0 w-8 h-8 rounded-xl bg-green-500 flex items-center justify-center text-sm">📣</div>
                   <div className="flex-1 min-w-0">
-                    <span className="inline-block bg-green-500 text-slate-950 text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full mb-2">Announcement</span>
+                    <span className="mb-2 inline-block rounded-full bg-green-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-950">Announcement</span>
                     <p className="text-white text-sm font-medium whitespace-pre-wrap leading-relaxed">{announcement}</p>
                     {announcementImageUrl && (
                       // Fixed aspect-ratio wrapper reserves the image's box before
@@ -2327,15 +2371,7 @@ export default function EmployeeDashboard() {
               </div>
             ) : weatherAdvisory ? (
               <section
-                className={`card-style !p-4 border ${
-                  weatherAdvisory.severity === 'critical'
-                    ? 'border-red-200 bg-red-50/60'
-                    : weatherAdvisory.severity === 'warning'
-                      ? 'border-orange-200 bg-orange-50/60'
-                      : weatherAdvisory.severity === 'watch'
-                        ? 'border-amber-200 bg-amber-50/60'
-                        : 'border-sky-100 bg-sky-50/40'
-                }`}
+                className="card-style !p-4"
               >
                 <div className="flex items-start gap-3">
                   <div
@@ -2354,8 +2390,8 @@ export default function EmployeeDashboard() {
 
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2 mb-1">
-                      <span className="text-[9px] font-extrabold uppercase tracking-widest text-sky-700">
-                        AI Weather & Commute Advisory
+                      <span className="text-[11px] font-extrabold uppercase tracking-widest text-green-700">
+                        Weather & Commute Advisory
                       </span>
                       <span
                         className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-full ${
@@ -2379,7 +2415,7 @@ export default function EmployeeDashboard() {
                       {weatherAdvisory.message}
                     </p>
 
-                    <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 text-[10px] text-slate-500">
+                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
                       <span>📍 {weatherAdvisory.location_name}</span>
                       {weatherAdvisory.temperature_c != null && (
                         <span>🌡️ {Math.round(weatherAdvisory.temperature_c)}°C</span>
@@ -2395,7 +2431,7 @@ export default function EmployeeDashboard() {
                     <button
                       type="button"
                       onClick={openCommuteChecker}
-                      className="mt-3 inline-flex items-center gap-1.5 px-3 py-2 rounded-full bg-slate-900 text-white text-[10px] font-bold hover:opacity-90 transition"
+                      className="mt-3 inline-flex min-h-11 items-center gap-1.5 rounded-full bg-green-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-green-700"
                     >
                       🚗 Check Weather & Live Traffic
                     </button>
@@ -2429,7 +2465,33 @@ export default function EmployeeDashboard() {
             )}
 
             {/* Quick Actions */}
-            <div className="employee-quick-actions grid grid-cols-4 gap-2 lg:grid-cols-4 lg:gap-2.5">
+            <EmployeeQuickActions
+              attendanceLabel={attendanceQuickLabel}
+              attendanceDisabled={attendanceQuickDisabled}
+              onAttendanceAction={runAttendanceQuickAction}
+              onAttendanceHistory={openAttendanceFromNav}
+              onLeave={() => setLeaveChoiceModalOpen(true)}
+              onDisputes={() => { setSelectedMyDisputeDetail(null); setMyDisputesModalOpen(true); fetchMyDisputes(); }}
+              onPayslips={() => { setPayslipsModalOpen(true); fetchPayslips(); }}
+              onDocuments={() => { setDocumentsModalOpen(true); fetchEmployeeDocuments(); }}
+              onCommute={() => setCommuteModalOpen(true)}
+              onHelpdesk={() => { setSupportModalOpen(true); fetchSupportRequests(); }}
+            />
+
+            <section aria-labelledby="more-employee-tools-title" className="card-style !rounded-2xl !p-4">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div>
+                  <h2 id="more-employee-tools-title" className="text-sm font-semibold">More Employee Tools</h2>
+                  <p className="mt-0.5 text-xs text-slate-500">Directory and company dates</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => { setDirectoryModalOpen(true); setDirectorySearch(''); fetchDirectory(); }} className="min-h-11 rounded-xl border border-slate-200 px-3 py-2 text-left text-xs font-semibold text-slate-700 transition hover:bg-slate-50">Employee Directory</button>
+                <button type="button" onClick={() => { setCalendarModalOpen(true); fetchCompanyHolidays(); }} className="min-h-11 rounded-xl border border-slate-200 px-3 py-2 text-left text-xs font-semibold text-slate-700 transition hover:bg-slate-50">Company Calendar</button>
+              </div>
+            </section>
+
+            <div className="hidden">
               <button type="button" onClick={() => setLeaveChoiceModalOpen(true)} className="card-style !p-3 flex items-center gap-2 hover:bg-slate-50 transition text-left">
                 <div className="w-8 h-8 rounded-xl bg-green-50 flex items-center justify-center flex-shrink-0">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-green-600"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
@@ -2673,6 +2735,27 @@ export default function EmployeeDashboard() {
         onHome={() => scrollToEmployeeSection('employee-dashboard-top')}
         onAttendance={openAttendanceFromNav}
         onLeave={() => setLeaveChoiceModalOpen(true)}
+        onActionCenter={() => scrollToEmployeeSection('employee-action-center')}
+        onProfile={openProfileFromNav}
+      />
+
+      <MobileAllToolsSheet
+        open={mobileToolsOpen}
+        attendanceLabel={attendanceQuickLabel}
+        attendanceDisabled={attendanceQuickDisabled}
+        onClose={() => setMobileToolsOpen(false)}
+        onHome={() => scrollToEmployeeSection('employee-dashboard-top')}
+        onAttendanceAction={runAttendanceQuickAction}
+        onAttendanceHistory={openAttendanceFromNav}
+        onLeave={() => setLeaveChoiceModalOpen(true)}
+        onDisputes={() => { setSelectedMyDisputeDetail(null); setMyDisputesModalOpen(true); fetchMyDisputes(); }}
+        onPayslips={() => { setPayslipsModalOpen(true); fetchPayslips(); }}
+        onDocuments={() => { setDocumentsModalOpen(true); fetchEmployeeDocuments(); }}
+        onDirectory={() => { setDirectoryModalOpen(true); setDirectorySearch(''); fetchDirectory(); }}
+        onCalendar={() => { setCalendarModalOpen(true); fetchCompanyHolidays(); }}
+        onNotifications={() => setNotificationsModalOpen(true)}
+        onCommute={() => setCommuteModalOpen(true)}
+        onHelpdesk={() => { setSupportModalOpen(true); fetchSupportRequests(); }}
         onActionCenter={() => scrollToEmployeeSection('employee-action-center')}
         onProfile={openProfileFromNav}
       />
