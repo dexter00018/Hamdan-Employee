@@ -1,18 +1,12 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
+import { createSupabaseAdminClient } from '@/lib/server/supabase-admin';
 
 // Service-role client -- same pattern as /api/create-employee. Needed
 // because banning/unbanning a login (auth.users.banned_until) requires
 // the Supabase Admin API, which only works with the service_role key,
 // never the anon/publishable key used on the client.
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { autoRefreshToken: false, persistSession: false } }
-);
-
 export async function POST(request: Request) {
   try {
     const { userId, deactivate } = await request.json();
@@ -70,6 +64,7 @@ export async function POST(request: Request) {
 
     // --- Step 2: Caller is confirmed super_admin -- safe to use the
     // service-role client for the privileged operation below. ---
+    const supabaseAdmin = createSupabaseAdminClient();
 
     // Guard: never let a super_admin account get deactivated through
     // this route -- prevents accidentally locking yourself (or another
@@ -120,7 +115,7 @@ export async function POST(request: Request) {
         ? `${targetProfile.full_name ?? 'Account'} has been deactivated.`
         : `${targetProfile.full_name ?? 'Account'} has been reactivated.`,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Error in deactivate-employee route:', err);
     return NextResponse.json({ error: 'Something went wrong.' }, { status: 500 });
   }
