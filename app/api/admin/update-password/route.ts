@@ -27,9 +27,9 @@ export async function POST(req: Request) {
       );
     }
 
-    if (typeof newPassword !== 'string' || newPassword.length < 6) {
+    if (typeof newPassword !== 'string' || newPassword.length < 12) {
       return NextResponse.json(
-        { error: 'Password must be at least 6 characters' },
+        { error: 'Password must be at least 12 characters' },
         { status: 400 }
       );
     }
@@ -90,9 +90,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Target user not found.' }, { status: 404 });
     }
 
-    if (targetProfile.role === 'super_admin' && callerProfile?.role !== 'super_admin') {
+    if (callerProfile?.role === 'admin' && targetProfile.role !== 'employee') {
       return NextResponse.json(
-        { error: 'Only a Super Admin can reset another Super Admin\'s password.' },
+        { error: 'Only a Super Admin can reset an admin or Super Admin password.' },
         { status: 403 }
       );
     }
@@ -120,10 +120,10 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ success: true, message: 'Password updated successfully' });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error updating password:', error);
     return NextResponse.json(
-      { error: error.message || 'Internal Server Error' },
+      { error: 'Unable to update the password.' },
       { status: 500 }
     );
   }

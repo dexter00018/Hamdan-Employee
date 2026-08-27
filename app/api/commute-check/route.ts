@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
+import { createSupabaseAdminClient } from '@/lib/server/supabase-admin';
 
 // app/api/commute-check/route.ts
 
@@ -8,6 +11,15 @@ const ALLOWED_ADVICE_OPTIONS = new Set([
   'traffic_delays',
   'best_departure',
 ]);
+
+const MAX_REQUEST_BYTES = 8_192;
+const COMMUTE_RATE_LIMIT = 10;
+const COMMUTE_RATE_WINDOW_SECONDS = 60;
+
+type JsonRecord = Record<string, unknown>;
+
+const isJsonRecord = (value: unknown): value is JsonRecord =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const inputError = (error: string, status = 400) =>
   NextResponse.json(
@@ -25,8 +37,8 @@ const serviceError = (
     { status }
   );
 
-const unwrapWorkflowPayload = (rawPayload: unknown): any => {
-  let current: any = rawPayload;
+const unwrapWorkflowPayload = (rawPayload: unknown): JsonRecord => {
+  let current: unknown = rawPayload;
 
   for (let depth = 0; depth < 5; depth += 1) {
     if (Array.isArray(current)) {
@@ -34,7 +46,7 @@ const unwrapWorkflowPayload = (rawPayload: unknown): any => {
       continue;
     }
 
-    if (!current || typeof current !== 'object') break;
+    if (!isJsonRecord(current)) break;
     if (current.data_status || current.error || current.error_type) break;
 
     const wrapped =
@@ -57,12 +69,97 @@ const unwrapWorkflowPayload = (rawPayload: unknown): any => {
     }
   }
 
-  return current && typeof current === 'object' ? current : {};
+  return isJsonRecord(current) ? current : {};
 };
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    const cookieStore = await cookies();
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return cookieStore.getAll();
+          },
+          setAll() {},
+        },
+      }
+    );
+
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      return NextResponse.json(
+        { success: false, error_type: 'authentication_error', error: 'Not authenticated.' },
+        { status: 401 }
+      );
+    }
+
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('role, is_active')
+      .eq('id', user.id)
+      .single();
+
+    if (
+      profileError ||
+      !['employee', 'admin', 'super_admin'].includes(profile?.role ?? '') ||
+      profile?.is_active === false
+    ) {
+      return NextResponse.json(
+        { success: false, error_type: 'authorization_error', error: 'Account is not authorized.' },
+        { status: 403 }
+      );
+    }
+
+    const supabaseAdmin = createSupabaseAdminClient();
+    const { data: rateAllowed, error: rateLimitError } = await supabaseAdmin.rpc(
+      'consume_api_rate_limit',
+      {
+        p_scope: 'commute-check',
+        p_user_id: user.id,
+        p_limit: COMMUTE_RATE_LIMIT,
+        p_window_seconds: COMMUTE_RATE_WINDOW_SECONDS,
+      }
+    );
+
+    if (rateLimitError) {
+      console.error('Commute rate-limit check failed:', rateLimitError.code);
+      return serviceError(
+        'Commute checker is temporarily unavailable.',
+        503,
+        'configuration_error'
+      );
+    }
+
+    if (!rateAllowed) {
+      return NextResponse.json(
+        {
+          success: false,
+          error_type: 'rate_limited',
+          error: 'Too many commute checks. Please wait a minute and try again.',
+        },
+        { status: 429, headers: { 'Retry-After': String(COMMUTE_RATE_WINDOW_SECONDS) } }
+      );
+    }
+
+    const declaredLength = Number(request.headers.get('content-length') ?? 0);
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_REQUEST_BYTES) {
+      return inputError('Request is too large.', 413);
+    }
+
+    const rawBody = await request.text();
+    if (new TextEncoder().encode(rawBody).length > MAX_REQUEST_BYTES) {
+      return inputError('Request is too large.', 413);
+    }
+
+    let body: Record<string, unknown>;
+    try {
+      body = JSON.parse(rawBody) as Record<string, unknown>;
+    } catch {
+      return inputError('Invalid JSON body.');
+    }
 
     const origin = String(body?.origin ?? '').trim();
     const destination = String(body?.destination ?? '').trim();
@@ -157,7 +254,7 @@ export async function POST(request: NextRequest) {
     const webhookUrl = process.env.N8N_COMMUTE_WEBHOOK_URL;
     const webhookSecret = process.env.N8N_COMMUTE_WEBHOOK_SECRET;
 
-    if (!webhookUrl) {
+    if (!webhookUrl || !webhookSecret) {
       return serviceError(
         'Commute checker is not configured yet.',
         503,
@@ -175,9 +272,7 @@ export async function POST(request: NextRequest) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(webhookSecret
-            ? { 'x-commute-secret': webhookSecret }
-            : {}),
+          'x-commute-secret': webhookSecret,
         },
         body: JSON.stringify({
           origin,
@@ -194,7 +289,7 @@ export async function POST(request: NextRequest) {
 
       const raw = await n8nResponse.text();
 
-      let parsedPayload: any = {};
+      let parsedPayload: unknown = {};
       try {
         parsedPayload = raw ? JSON.parse(raw) : {};
       } catch {
@@ -205,8 +300,9 @@ export async function POST(request: NextRequest) {
       const payload = unwrapWorkflowPayload(parsedPayload);
 
       if (!n8nResponse.ok) {
-        const message =
-          payload?.error || 'Unable to check this route right now.';
+        const message = typeof payload.error === 'string'
+          ? payload.error
+          : 'Unable to check this route right now.';
 
         if (n8nResponse.status === 400 || n8nResponse.status === 422) {
           return inputError(message, n8nResponse.status);
@@ -221,8 +317,9 @@ export async function POST(request: NextRequest) {
 
       if (!payload?.data_status || !payload?.origin || !payload?.destination) {
         return serviceError(
-          payload?.error ||
-            'The commute workflow returned an incomplete response. Check that the active n8n workflow ends at Format Response or Format Weather Only Partial.',
+          typeof payload.error === 'string'
+            ? payload.error
+            : 'The commute workflow returned an incomplete response. Check that the active n8n workflow ends at Format Response or Format Weather Only Partial.',
           502,
           'route_failed'
         );
@@ -238,8 +335,8 @@ export async function POST(request: NextRequest) {
     } finally {
       clearTimeout(timeout);
     }
-  } catch (error: any) {
-    if (error?.name === 'AbortError') {
+  } catch (error: unknown) {
+    if (error instanceof Error && error.name === 'AbortError') {
       return serviceError(
         'Traffic and weather services timed out. Please try again.',
         504,

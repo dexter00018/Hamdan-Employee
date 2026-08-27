@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
+import { createSupabaseAdminClient } from '@/lib/server/supabase-admin';
 
 function getClientIp(request: Request): string | null {
   const forwardedFor = request.headers.get('x-forwarded-for');
@@ -65,11 +66,25 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 });
     }
 
+    const { data: callerProfile, error: profileError } = await supabaseServer
+      .from('profiles')
+      .select('role, is_active')
+      .eq('id', user.id)
+      .single();
+
+    if (profileError || callerProfile?.role !== 'employee' || callerProfile.is_active === false) {
+      return NextResponse.json(
+        { error: 'Only active employee accounts can record attendance.' },
+        { status: 403 }
+      );
+    }
+
     // --- Step 3: Find today's log (Manila calendar day) for this user. ---
     const now = new Date();
     const logDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(now);
 
-    const { data: todayLog, error: fetchError } = await supabaseServer
+    const supabaseAdmin = createSupabaseAdminClient();
+    const { data: todayLog, error: fetchError } = await supabaseAdmin
       .from('attendance_logs')
       .select('id, time_out')
       .eq('user_id', user.id)
@@ -94,18 +109,28 @@ export async function POST(request: Request) {
 
     // --- Step 4: Set time_out to the server clock (can't be spoofed by
     // the client), same tamper-resistance approach as time_in. ---
-    const { error: updateError } = await supabaseServer
+    const { data: updatedLog, error: updateError } = await supabaseAdmin
       .from('attendance_logs')
       .update({ time_out: now.toISOString() })
-      .eq('id', todayLog.id);
+      .eq('id', todayLog.id)
+      .is('time_out', null)
+      .select('time_out')
+      .maybeSingle();
 
     if (updateError) throw updateError;
 
-    return NextResponse.json({ success: true, timeOut: now.toISOString() });
-  } catch (err: any) {
+    if (!updatedLog) {
+      return NextResponse.json(
+        { error: 'You have already timed out today.' },
+        { status: 409 }
+      );
+    }
+
+    return NextResponse.json({ success: true, timeOut: updatedLog.time_out });
+  } catch (err: unknown) {
     console.error('Error recording time-out:', err);
     return NextResponse.json(
-      { error: err?.message ?? 'Failed to record time-out.' },
+      { error: 'Failed to record time-out.' },
       { status: 500 }
     );
   }

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
+import { createSupabaseAdminClient } from '@/lib/server/supabase-admin';
 
 // Fallback values used only if app_settings is somehow unreachable or
 // missing rows -- keeps time-in from hard-failing over a settings read
@@ -74,6 +75,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 });
     }
 
+    const { data: callerProfile, error: profileError } = await supabaseServer
+      .from('profiles')
+      .select('role, is_active')
+      .eq('id', user.id)
+      .single();
+
+    if (profileError || callerProfile?.role !== 'employee' || callerProfile.is_active === false) {
+      return NextResponse.json(
+        { error: 'Only active employee accounts can record attendance.' },
+        { status: 403 }
+      );
+    }
+
     // --- Step 2.5: Read the configurable late cutoff from app_settings
     // (Super Admin -> App Settings). Falls back to the hardcoded
     // defaults above only if the rows are missing/unreachable, so a
@@ -102,7 +116,7 @@ export async function POST(request: Request) {
       hour12: false,
     })
       .formatToParts(now)
-      .reduce((acc: any, p) => {
+      .reduce<Record<string, string>>((acc, p) => {
         acc[p.type] = p.value;
         return acc;
       }, {});
@@ -116,12 +130,15 @@ export async function POST(request: Request) {
         : 'Present';
 
     // --- Step 4: Prevent double time-in for today. ---
-    const { data: existing } = await supabaseServer
+    const supabaseAdmin = createSupabaseAdminClient();
+    const { data: existing, error: existingError } = await supabaseAdmin
       .from('attendance_logs')
       .select('id')
       .eq('user_id', user.id)
       .eq('log_date', logDate)
       .maybeSingle();
+
+    if (existingError) throw existingError;
 
     if (existing) {
       return NextResponse.json(
@@ -130,21 +147,33 @@ export async function POST(request: Request) {
       );
     }
 
-    // --- Step 5: Insert. Uses the user's own authenticated session, so
-    // the existing "Users can insert own logs" RLS policy applies --
-    // no service role key needed here. time_in is intentionally omitted
-    // so the database's own `default now()` fills it in server-side. ---
-    const { error: insertError } = await supabaseServer
+    // --- Step 5: Insert through the server-only service-role client.
+    // Employee INSERT/UPDATE policies are deliberately removed by
+    // 06_attendance_rls_hardening.sql, so direct browser/Supabase REST
+    // writes cannot bypass the office-network check above. ---
+    const { error: insertError } = await supabaseAdmin
       .from('attendance_logs')
-      .insert([{ user_id: user.id, log_date: logDate, status }]);
+      .insert([{
+        user_id: user.id,
+        log_date: logDate,
+        time_in: now.toISOString(),
+        time_out: null,
+        status,
+      }]);
 
+    if (insertError?.code === '23505') {
+      return NextResponse.json(
+        { error: 'You have already timed in today.' },
+        { status: 409 }
+      );
+    }
     if (insertError) throw insertError;
 
     return NextResponse.json({ success: true, status, logDate });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Error recording time-in:', err);
     return NextResponse.json(
-      { error: err?.message ?? 'Failed to record time-in.' },
+      { error: 'Failed to record time-in.' },
       { status: 500 }
     );
   }

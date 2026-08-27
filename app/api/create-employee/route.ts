@@ -15,6 +15,13 @@ export async function POST(request: Request) {
       );
     }
 
+    if (typeof password !== 'string' || password.length < 12) {
+      return NextResponse.json(
+        { error: 'Password must be at least 12 characters.' },
+        { status: 400 }
+      );
+    }
+
     // --- Step 1: Verify the caller is an authenticated admin/super_admin ---
     // Without this check, anyone who discovers this URL could POST to it
     // and create accounts (including admin accounts) with no login at
@@ -69,13 +76,19 @@ export async function POST(request: Request) {
     // from the browser; only these two roles are ever creatable here,
     // and there is intentionally no path in this app that lets an
     // ordinary admin create or promote someone to super_admin.
-    const ALLOWED_CREATE_ROLES = ['employee', 'admin'] as const;
     const requestedRole = role || 'employee';
+    const allowedCreateRoles: readonly string[] = callerProfile.role === 'super_admin'
+      ? ['employee', 'admin']
+      : ['employee'];
 
-    if (!ALLOWED_CREATE_ROLES.includes(requestedRole)) {
+    if (!allowedCreateRoles.includes(requestedRole)) {
       return NextResponse.json(
-        { error: 'Invalid role. Accounts can only be created as "employee" or "admin".' },
-        { status: 400 }
+        {
+          error: callerProfile.role === 'admin' && requestedRole === 'admin'
+            ? 'Only a Super Admin can create another admin account.'
+            : 'Invalid account role.',
+        },
+        { status: callerProfile.role === 'admin' ? 403 : 400 }
       );
     }
 
@@ -132,10 +145,11 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({ success: true, userId: newUserId });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Error creating employee:', err);
+    const message = err instanceof Error ? err.message : 'Failed to create account.';
     return NextResponse.json(
-      { error: err?.message ?? 'Failed to create account.' },
+      { error: message },
       { status: 500 }
     );
   }
