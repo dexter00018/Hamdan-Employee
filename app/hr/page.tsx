@@ -21,6 +21,7 @@ import { supabase } from '@/lib/supabase';
 import Spinner, { LoadingRow } from '@/components/Spinner';
 import HelpDeskRequestsModal from '@/components/hr/modals/HelpDeskRequestsModal';
 import EmployeeDocumentsModal from '@/components/hr/modals/EmployeeDocumentsModal';
+import { BentoGrid, BentoGridItem } from '@/components/shared/BentoGrid';
 
 type AttendanceLog = {
   id: string;
@@ -1961,72 +1962,75 @@ export default function HRDashboard() {
 
         {/* MODULES -- compact icon buttons that open their own modal,
             same pattern as the Super Admin dashboard, so these don't
-            add another full-width accordion section to scroll past. */}
-        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
-          <button
-            type="button"
+            add another full-width accordion section to scroll past.
+            Rendered with the shared BentoGrid/BentoGridItem components. */}
+        <BentoGrid>
+          <BentoGridItem
             onClick={openLeaveCreditsModal}
-            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
-          >
-            <span className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center flex-shrink-0"><CalendarClock size={18} strokeWidth={2.4}/></span>
-            <span className="min-w-0"><span className="block font-bold text-slate-900 text-xs">Leave Credits</span><span className={`block text-[10px] mt-0.5 truncate ${lowLeaveCreditsCount > 0 ? 'text-orange-600 font-bold' : 'text-slate-400'}`}>{leaveCreditsLoading ? 'Checking balances...' : lowLeaveCreditsCount > 0 ? `${lowLeaveCreditsCount} low balance${lowLeaveCreditsCount === 1 ? '' : 's'}` : 'Balances healthy'}</span></span>
-          </button>
+            icon={<CalendarClock size={18} strokeWidth={2.4}/>}
+            iconWrapClassName="bg-amber-50 text-amber-600"
+            title="Leave Credits"
+            description={leaveCreditsLoading ? 'Checking balances...' : lowLeaveCreditsCount > 0 ? `${lowLeaveCreditsCount} low balance${lowLeaveCreditsCount === 1 ? '' : 's'}` : 'Balances healthy'}
+            className={lowLeaveCreditsCount > 0 ? '[&_.text-slate-400]:text-orange-600 [&_.text-slate-400]:font-bold' : ''}
+          />
 
-          <button
-            type="button"
+          <BentoGridItem
             onClick={() => { setExportModalOpen(true); setExportMsg(null); if (!exportCutoff) setExportCutoff(availableCutoffs[0] || ''); }}
-            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
-          >
-            <span className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center flex-shrink-0"><FileDown size={18} strokeWidth={2.4}/></span>
-            <span className="min-w-0"><span className="block font-bold text-slate-900 text-xs">Export Reports</span><span className="block text-slate-400 text-[10px] mt-0.5">CSV &amp; PDF</span></span>
-          </button>
+            icon={<FileDown size={18} strokeWidth={2.4}/>}
+            iconWrapClassName="bg-emerald-50 text-emerald-600"
+            title="Export Reports"
+            description="CSV & PDF"
+          />
 
-          <button
-            type="button"
+          <BentoGridItem
             onClick={() => setAnnouncementOpen(true)}
-            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
-          >
-            <span className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0"><Megaphone size={18} strokeWidth={2.4}/></span>
-            <span className="min-w-0"><span className="block font-bold text-slate-900 text-xs">Announcements</span><span className="block text-slate-400 text-[10px] mt-0.5 truncate">{announcementModuleLabel}</span></span>
-          </button>
+            icon={<Megaphone size={18} strokeWidth={2.4}/>}
+            iconWrapClassName="bg-blue-50 text-blue-600"
+            title="Announcements"
+            description={announcementModuleLabel}
+          />
 
-          <button
-            type="button"
+          <BentoGridItem
             onClick={() => { if (!holidaysOpen) toggleHolidays(); }}
-            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
-          >
-            <span className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center flex-shrink-0"><CalendarRange size={18} strokeWidth={2.4}/></span>
-            <span className="min-w-0"><span className="block font-bold text-slate-900 text-xs">Holidays</span><span className="block text-slate-400 text-[10px] mt-0.5">{holidaysLoading ? 'Checking calendar...' : `${upcomingHolidaysCount} upcoming`}</span></span>
-          </button>
+            icon={<CalendarRange size={18} strokeWidth={2.4}/>}
+            iconWrapClassName="bg-rose-50 text-rose-600"
+            title="Holidays"
+            description={holidaysLoading ? 'Checking calendar...' : `${upcomingHolidaysCount} upcoming`}
+          />
 
-          <button
-            type="button"
+          <BentoGridItem
             onClick={() => setEmployeesListOpen(true)}
-            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
-          >
-            <span className="w-10 h-10 rounded-2xl bg-violet-50 text-violet-600 flex items-center justify-center flex-shrink-0"><UsersRound size={18} strokeWidth={2.4}/></span>
-            <span className="min-w-0"><span className="block font-bold text-slate-900 text-xs">Employees</span><span className="block text-slate-400 text-[10px] mt-0.5">{profiles.length} total</span></span>
-          </button>
+            icon={<UsersRound size={18} strokeWidth={2.4}/>}
+            iconWrapClassName="bg-violet-50 text-violet-600"
+            title="Employees"
+            description={`${profiles.length} total`}
+          />
 
-          <button
-            type="button"
+          <BentoGridItem
             onClick={() => { setSelectedCalendarDate(null); setLeaveCalendarOpen(true); }}
-            className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]"
-          >
-            <span className="w-10 h-10 rounded-2xl bg-cyan-50 text-cyan-600 flex items-center justify-center flex-shrink-0"><CalendarRange size={18} strokeWidth={2.4}/></span>
-            <span className="min-w-0"><span className="block font-bold text-slate-900 text-xs">Leave Calendar</span><span className="block text-slate-400 text-[10px] mt-0.5">Approved leaves &amp; holidays</span></span>
-          </button>
+            icon={<CalendarRange size={18} strokeWidth={2.4}/>}
+            iconWrapClassName="bg-cyan-50 text-cyan-600"
+            title="Leave Calendar"
+            description="Approved leaves & holidays"
+          />
 
-          <button type="button" onClick={() => { setHrSupportModalOpen(true); fetchHrSupportRequests(); }} className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]">
-            <span className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center flex-shrink-0 text-base">🎫</span>
-            <span className="min-w-0"><span className="block font-bold text-slate-900 text-xs">Help Desk Requests</span><span className={`block text-[10px] mt-0.5 ${openHrSupportCount ? 'text-orange-600 font-bold' : 'text-slate-400'}`}>{openHrSupportCount ? `${openHrSupportCount} open` : 'No open requests'}</span></span>
-          </button>
+          <BentoGridItem
+            onClick={() => { setHrSupportModalOpen(true); fetchHrSupportRequests(); }}
+            icon={<span className="text-base">🎫</span>}
+            iconWrapClassName="bg-indigo-50 text-indigo-600"
+            title="Help Desk Requests"
+            description={openHrSupportCount ? `${openHrSupportCount} open` : 'No open requests'}
+            className={openHrSupportCount ? '[&_.text-slate-400]:text-orange-600 [&_.text-slate-400]:font-bold' : ''}
+          />
 
-          <button type="button" onClick={() => { setHrDocumentsModalOpen(true); fetchHrDocuments(); }} className="card-style !p-3 sm:!p-4 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition min-h-[76px]">
-            <span className="w-10 h-10 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center flex-shrink-0 text-base">📚</span>
-            <span className="min-w-0"><span className="block font-bold text-slate-900 text-xs">Employee Documents</span><span className="block text-slate-400 text-[10px] mt-0.5">{activeHrDocumentsCount} published</span></span>
-          </button>
-        </div>
+          <BentoGridItem
+            onClick={() => { setHrDocumentsModalOpen(true); fetchHrDocuments(); }}
+            icon={<span className="text-base">📚</span>}
+            iconWrapClassName="bg-teal-50 text-teal-600"
+            title="Employee Documents"
+            description={`${activeHrDocumentsCount} published`}
+          />
+        </BentoGrid>
 
         {/* Priority action center */}
         <section id="action-center" className="card-style !p-4 scroll-mt-4">

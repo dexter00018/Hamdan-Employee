@@ -6,6 +6,7 @@ import LeaveRequestsModal from '@/components/employee/modals/LeaveRequestsModal'
 import AttendanceDisputesModal from '@/components/employee/modals/AttendanceDisputesModal';
 import LeaveRequestModal from '@/components/employee/modals/LeaveRequestModal';
 import EarlyTimeOutModal from '@/components/employee/modals/EarlyTimeOutModal';
+import MobileBottomNav from '@/components/employee/MobileBottomNav';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
@@ -1529,23 +1530,25 @@ export default function EmployeeDashboard() {
     const presentLogs = cutoffLogs.filter(l => l.status?.toLowerCase() !== 'absent' && !isLeaveStatus(l.status));
     const lateLogs = cutoffLogs.filter(l => l.status?.toLowerCase() === 'late');
     const absentLogs = cutoffLogs.filter(l => l.status?.toLowerCase() === 'absent');
+    const leaveLogs = cutoffLogs.filter(l => isLeaveStatus(l.status));
     const onTime = presentLogs.length - lateLogs.length;
     const totalLateMinutes = lateLogs
       .filter(l => l.time_in)
       .reduce((sum, l) => sum + getMinutesLate(l.time_in), 0);
     // presentLogs/lateLogs/absentLogs carried along so the stat cards can
     // list the exact dates behind each number when tapped.
-    return { present: presentLogs.length, late: lateLogs.length, absent: absentLogs.length, onTime, totalLateMinutes, presentLogs, lateLogs, absentLogs };
+    return { present: presentLogs.length, late: lateLogs.length, leave: leaveLogs.length, absent: absentLogs.length, onTime, totalLateMinutes, presentLogs, lateLogs, leaveLogs, absentLogs };
   }, [history, summaryCutoffKey, lateCutoffHour, lateCutoffMinute]);
 
   // Which stat card's detail list is currently open (null = none).
-  const [summaryDetailType, setSummaryDetailType] = useState<'present' | 'late' | 'absent' | null>(null);
+  const [summaryDetailType, setSummaryDetailType] = useState<'present' | 'late' | 'leave' | 'absent' | null>(null);
 
   const summaryDetailInfo = useMemo(() => {
     if (!summaryDetailType) return null;
-    const map: Record<'present' | 'late' | 'absent', { title: string; accent: string; logs: any[]; emptyNote: string }> = {
+    const map: Record<'present' | 'late' | 'leave' | 'absent', { title: string; accent: string; logs: any[]; emptyNote: string }> = {
       present: { title: 'Present Days', accent: 'text-blue-600', logs: summary.presentLogs, emptyNote: "No present days on record for this period yet." },
       late: { title: 'Late Days', accent: 'text-orange-600', logs: summary.lateLogs, emptyNote: "No late days this period -- keep it up!" },
+      leave: { title: 'Days on Leave', accent: 'text-purple-600', logs: summary.leaveLogs, emptyNote: "No leave days recorded for this period." },
       absent: { title: 'Absent Days', accent: 'text-red-600', logs: summary.absentLogs, emptyNote: "No absences this period -- perfect attendance!" },
     };
     return map[summaryDetailType];
@@ -1880,8 +1883,26 @@ export default function EmployeeDashboard() {
     return new Date(`2000-01-01T${hhmm}:00`).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
   };
 
+  const employeeActionCount = (todayLog?.time_in && !todayLog.time_out ? 1 : 0)
+    + pendingLeavesCount + pendingDisputesCount + newPayslipsCount + openSupportCount
+    + (!initLoading && profileCompleteness.percent < 100 ? 1 : 0);
+
+  const scrollToEmployeeSection = (id: string) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const openAttendanceFromNav = () => {
+    setAttendanceHistoryOpen(true);
+    window.setTimeout(() => scrollToEmployeeSection('employee-attendance-history'), 0);
+  };
+
+  const openProfileFromNav = () => {
+    setShowGovIdsSection(true);
+    window.setTimeout(() => scrollToEmployeeSection('employee-profile'), 0);
+  };
+
   return (
-    <main className="min-h-screen p-3 sm:p-4 md:p-6 lg:p-8">
+    <main id="employee-dashboard-top" className="min-h-screen p-3 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:p-4 sm:pb-[calc(6rem+env(safe-area-inset-bottom))] md:p-6 md:pb-[calc(6rem+env(safe-area-inset-bottom))] lg:p-8">
       <style jsx global>{`
         /* DARK MODE — neutral dark gray, not pure black. */
         .dark { color-scheme: dark; }
@@ -2007,6 +2028,29 @@ export default function EmployeeDashboard() {
         .commute-theme-scope.dark [class*="bg-blue-50/"] { background-color: rgba(30, 49, 80, .72) !important; }
         .commute-theme-scope.dark [class*="bg-orange-50/"] { background-color: rgba(64, 45, 30, .78) !important; }
         .commute-theme-scope.dark [class*="bg-amber-50/"] { background-color: rgba(66, 53, 30, .78) !important; }
+        .employee-action-row { position: relative; padding-left: 1.75rem; }
+        .employee-action-row::before {
+          content: '';
+          position: absolute;
+          left: .25rem;
+          top: 1.25rem;
+          width: .625rem;
+          height: .625rem;
+          border-radius: 9999px;
+          background: #15803d;
+          box-shadow: 0 0 0 4px rgba(21, 128, 61, .12);
+        }
+        @media (max-width: 1023px) {
+          .employee-quick-actions > button {
+            min-height: 5.5rem;
+            flex-direction: column;
+            justify-content: center;
+            gap: .375rem;
+            text-align: center;
+          }
+          .employee-quick-actions > button > div:first-child { width: 2.75rem; height: 2.75rem; }
+          .employee-quick-actions > button > div:last-child p:last-child { display: none; }
+        }
       `}</style>
       <div className="max-w-7xl mx-auto space-y-3 sm:space-y-4 md:space-y-5">
 
@@ -2039,16 +2083,17 @@ export default function EmployeeDashboard() {
         {message && <div className={`p-3 rounded-xl text-xs font-bold ${message.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{message}</div>}
 
         {/* Mobile summary cards -- tap any of these to see which dates were counted. */}
-        <div className="grid grid-cols-3 gap-2 lg:hidden">
+        <div className="grid grid-cols-2 gap-2 lg:hidden">
           <button type="button" onClick={() => setSummaryDetailType('present')} className="card-style !p-3 text-center hover:bg-slate-50 transition"><p className="stat-number text-xl text-[#15803d] dark:text-[#5ee28b]">{summary.present}</p><p className="label-branded mt-0.5 dark:text-[#aab8ad]">Present</p></button>
           <button type="button" onClick={() => setSummaryDetailType('late')} className="card-style !p-3 text-center hover:bg-slate-50 transition"><p className="stat-number text-xl text-[#c2410c] dark:text-[#fb923c]">{summary.late}</p><p className="label-branded mt-0.5 dark:text-[#aab8ad]">Late</p></button>
-          <button type="button" onClick={() => setSummaryDetailType('absent')} className="card-style !p-3 text-center hover:bg-slate-50 transition"><p className="stat-number text-xl text-[#b91c1c] dark:text-[#f87171]">{summary.absent}</p><p className="label-branded mt-0.5 dark:text-[#aab8ad]">Absent</p></button>
+          <button type="button" onClick={() => setSummaryDetailType('leave')} className="card-style !p-3 text-center hover:bg-slate-50 transition"><p className="stat-number text-xl text-purple-600">{summary.leave}</p><p className="label-branded mt-0.5 dark:text-[#aab8ad]">On Leave</p></button>
+          <button type="button" onClick={() => setSummaryDetailType('absent')} className="card-style !p-3 text-center hover:bg-slate-50 transition"><p className="stat-number text-xl text-[#b91c1c] dark:text-[#f87171]">{summary.absent}</p><p className="label-branded mt-0.5 dark:text-[#aab8ad]">Not Timed In</p></button>
         </div>
 
         {/* Main layout */}
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 sm:gap-4 md:gap-5">
           {/* Profile Sidebar */}
-          <div className="lg:col-span-1">
+          <div id="employee-profile" className="scroll-mt-4 lg:col-span-1">
             <div className="card-style lg:sticky lg:top-6 !p-4">
               <div className="flex items-center gap-3 lg:flex-col lg:text-center lg:gap-0">
                 <div className="w-14 h-14 lg:w-20 lg:h-20 lg:mx-auto lg:mb-3 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 flex-shrink-0">
@@ -2177,7 +2222,7 @@ export default function EmployeeDashboard() {
             </div>
 
             {/* Employee Action Center */}
-            <section className="card-style !p-4">
+            <section id="employee-action-center" className="card-style scroll-mt-4 !p-4">
               <div className="flex items-center justify-between gap-2 mb-3">
                 <div>
                   <h3 className="mb-0 text-sm">Action Center</h3>
@@ -2188,39 +2233,39 @@ export default function EmployeeDashboard() {
                 </button>
               </div>
               {(todayLog?.time_in && !todayLog.time_out) || pendingLeavesCount > 0 || pendingDisputesCount > 0 || newPayslipsCount > 0 || openSupportCount > 0 || (!initLoading && profileCompleteness.percent < 100) ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                <div className="divide-y divide-slate-100 rounded-2xl border border-slate-100 bg-slate-50/80 px-3">
                   {todayLog?.time_in && !todayLog.time_out && (
-                    <button type="button" onClick={handleTimeOutClick} disabled={officeNetworkAllowed === false || timeOutLoading} className="p-3 rounded-xl bg-amber-50 border border-amber-100 text-left disabled:opacity-50">
+                    <button type="button" onClick={handleTimeOutClick} disabled={officeNetworkAllowed === false || timeOutLoading} className="employee-action-row block min-h-14 w-full py-3 text-left disabled:opacity-50">
                       <p className="font-bold text-amber-800 text-xs">Time Out pending</p>
                       <p className="text-amber-600 text-[10px] mt-1">Remember to complete today&apos;s attendance.</p>
                     </button>
                   )}
                   {pendingLeavesCount > 0 && (
-                    <button type="button" onClick={() => setMyLeavesModalOpen(true)} className="p-3 rounded-xl bg-green-50 border border-green-100 text-left">
+                    <button type="button" onClick={() => setMyLeavesModalOpen(true)} className="employee-action-row block min-h-14 w-full py-3 text-left">
                       <p className="font-bold text-green-800 text-xs">{pendingLeavesCount} pending leave request{pendingLeavesCount === 1 ? '' : 's'}</p>
                       <p className="text-green-600 text-[10px] mt-1">Tap to view the status.</p>
                     </button>
                   )}
                   {pendingDisputesCount > 0 && (
-                    <button type="button" onClick={() => setMyDisputesModalOpen(true)} className="p-3 rounded-xl bg-rose-50 border border-rose-100 text-left">
+                    <button type="button" onClick={() => setMyDisputesModalOpen(true)} className="employee-action-row block min-h-14 w-full py-3 text-left">
                       <p className="font-bold text-rose-800 text-xs">{pendingDisputesCount} pending dispute{pendingDisputesCount === 1 ? '' : 's'}</p>
                       <p className="text-rose-600 text-[10px] mt-1">Tap to review your request.</p>
                     </button>
                   )}
                   {newPayslipsCount > 0 && (
-                    <button type="button" onClick={() => setPayslipsModalOpen(true)} className="p-3 rounded-xl bg-blue-50 border border-blue-100 text-left">
+                    <button type="button" onClick={() => setPayslipsModalOpen(true)} className="employee-action-row block min-h-14 w-full py-3 text-left">
                       <p className="font-bold text-blue-800 text-xs">{newPayslipsCount} new payslip{newPayslipsCount === 1 ? '' : 's'}</p>
                       <p className="text-blue-600 text-[10px] mt-1">Review and acknowledge receipt.</p>
                     </button>
                   )}
                   {openSupportCount > 0 && (
-                    <button type="button" onClick={() => setSupportModalOpen(true)} className="p-3 rounded-xl bg-violet-50 border border-violet-100 text-left">
+                    <button type="button" onClick={() => setSupportModalOpen(true)} className="employee-action-row block min-h-14 w-full py-3 text-left">
                       <p className="font-bold text-violet-800 text-xs">{openSupportCount} open help request{openSupportCount === 1 ? '' : 's'}</p>
                       <p className="text-violet-600 text-[10px] mt-1">Check the latest status.</p>
                     </button>
                   )}
                   {!initLoading && profileCompleteness.percent < 100 && (
-                    <button type="button" onClick={() => setShowGovIdsSection(true)} className="p-3 rounded-xl bg-slate-50 border border-slate-100 text-left">
+                    <button type="button" onClick={openProfileFromNav} className="employee-action-row block min-h-14 w-full py-3 text-left">
                       <p className="font-bold text-slate-800 text-xs">Profile {profileCompleteness.percent}% complete</p>
                       <p className="text-slate-500 text-[10px] mt-1">{profileCompleteness.missing} detail{profileCompleteness.missing === 1 ? '' : 's'} still missing.</p>
                     </button>
@@ -2384,7 +2429,7 @@ export default function EmployeeDashboard() {
             )}
 
             {/* Quick Actions */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+            <div className="employee-quick-actions grid grid-cols-4 gap-2 lg:grid-cols-4 lg:gap-2.5">
               <button type="button" onClick={() => setLeaveChoiceModalOpen(true)} className="card-style !p-3 flex items-center gap-2 hover:bg-slate-50 transition text-left">
                 <div className="w-8 h-8 rounded-xl bg-green-50 flex items-center justify-center flex-shrink-0">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-green-600"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
@@ -2461,7 +2506,7 @@ export default function EmployeeDashboard() {
             </div>
 
             {/* Attendance History -- collapsed by default; tap the header to expand. */}
-            <div className="card-style !p-4">
+            <div id="employee-attendance-history" className="card-style scroll-mt-4 !p-4">
               <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -2622,6 +2667,15 @@ export default function EmployeeDashboard() {
       </div>
 
       <SummaryDetailModal formatMonthLabel={formatMonthLabel} setSummaryDetailType={setSummaryDetailType} statusTagClass={statusTagClass} summaryCutoffKey={summaryCutoffKey} summaryDetailInfo={summaryDetailInfo} summaryDetailType={summaryDetailType} />
+
+      <MobileBottomNav
+        actionCount={employeeActionCount}
+        onHome={() => scrollToEmployeeSection('employee-dashboard-top')}
+        onAttendance={openAttendanceFromNav}
+        onLeave={() => setLeaveChoiceModalOpen(true)}
+        onActionCenter={() => scrollToEmployeeSection('employee-action-center')}
+        onProfile={openProfileFromNav}
+      />
 
       {/* New Announcement Toast (auto-dismisses after 6s) */}
       {showAnnouncementToast && (
