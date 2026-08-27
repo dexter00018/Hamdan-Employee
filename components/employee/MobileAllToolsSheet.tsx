@@ -14,6 +14,7 @@ import {
   HandCoins,
   Headphones,
   Home,
+  IdCard,
   LogOut,
   Moon,
   Plane,
@@ -47,7 +48,7 @@ type Props = {
   onCommute: () => void;
   onHelpdesk: () => void;
   onActionCenter: () => void;
-  onProfile: () => void;
+  onGovernmentIds: () => void;
 };
 
 export default function MobileAllToolsSheet(props: Props) {
@@ -74,10 +75,14 @@ export default function MobileAllToolsSheet(props: Props) {
     { label: 'Commute', icon: CarFront, action: props.onCommute },
     { label: 'Helpdesk', icon: Headphones, action: props.onHelpdesk },
     { label: 'Action Center', icon: BriefcaseBusiness, action: props.onActionCenter },
-    { label: 'My Profile', icon: UserRound, action: props.onProfile },
+    { label: 'Government IDs', icon: IdCard, action: props.onGovernmentIds },
   ];
 
-  const runTool = (action: () => void) => {
+  const runTool = (action: () => void, keepOpen = false) => {
+    if (keepOpen) {
+      action();
+      return;
+    }
     props.onClose();
     window.setTimeout(action, 0);
   };
@@ -96,15 +101,17 @@ export default function MobileAllToolsSheet(props: Props) {
             <X size={19} />
           </button>
         </div>
-        <button type="button" onClick={() => runTool(props.onProfile)} className="mb-5 flex min-h-16 w-full items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-left transition-colors duration-150 hover:bg-slate-100 dark:bg-[#343b36] dark:hover:bg-[#3b433d]">
-          <span className="grid h-12 w-12 flex-none place-items-center overflow-hidden rounded-full bg-white text-slate-500 dark:bg-[#292f2b]">
-            {props.avatarUrl ? <Image src={props.avatarUrl} alt="" width={48} height={48} className="h-full w-full object-cover" /> : <UserRound size={20} />}
-          </span>
-          <span className="min-w-0">
-            <span className="block truncate text-sm font-bold text-slate-900">{props.employeeName}</span>
-            <span className="mt-0.5 block truncate text-xs text-slate-500">{props.designation || 'Employee'}</span>
-          </span>
-        </button>
+        <section className="mb-5 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-left dark:bg-[#343b36]">
+          <div className="flex min-h-14 items-center gap-3">
+            <span className="grid h-12 w-12 flex-none place-items-center overflow-hidden rounded-full bg-white text-slate-500 dark:bg-[#292f2b]">
+              {props.avatarUrl ? <Image src={props.avatarUrl} alt="" width={48} height={48} className="h-full w-full object-cover" /> : <UserRound size={20} />}
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-bold text-slate-900">{props.employeeName}</span>
+              <span className="mt-0.5 block truncate text-xs text-slate-500">{props.designation || 'Employee'}</span>
+            </span>
+          </div>
+        </section>
         <h3 className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">All Tools</h3>
         <div className="grid grid-cols-4 gap-2 sm:gap-3">
           {tools.map(({ label, icon: Icon, action, disabled }) => (

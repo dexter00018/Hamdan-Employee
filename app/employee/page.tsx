@@ -11,6 +11,8 @@ import EmployeeSummaryCard from '@/components/employee/EmployeeSummaryCard';
 import EmployeeQuickActions from '@/components/employee/EmployeeQuickActions';
 import EmployeeDesktopSidebar from '@/components/employee/EmployeeDesktopSidebar';
 import MobileAllToolsSheet from '@/components/employee/MobileAllToolsSheet';
+import EmployeeGovernmentIdsModal from '@/components/employee/modals/EmployeeGovernmentIdsModal';
+import EmployeeActionCenterModal from '@/components/employee/modals/EmployeeActionCenterModal';
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
@@ -1678,6 +1680,8 @@ export default function EmployeeDashboard() {
   };
   const [notificationsModalOpen, setNotificationsModalOpen] = useState(false);
   const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
+  const [governmentIdsModalOpen, setGovernmentIdsModalOpen] = useState(false);
+  const [actionCenterModalOpen, setActionCenterModalOpen] = useState(false);
   const [readNotificationIds, setReadNotificationIds] = useState<string[]>([]);
 
   useEffect(() => {
@@ -1898,6 +1902,10 @@ export default function EmployeeDashboard() {
   };
 
   const openProfileFromNav = () => {
+    if (window.matchMedia('(max-width: 1023px)').matches) {
+      setMobileToolsOpen(true);
+      return;
+    }
     setShowGovIdsSection(true);
     window.setTimeout(() => scrollToEmployeeSection('employee-profile'), 0);
   };
@@ -2137,7 +2145,7 @@ export default function EmployeeDashboard() {
             onLogout={handleLogout}
           />
           {/* Profile Sidebar */}
-          <div id="employee-profile" className="scroll-mt-4 lg:col-span-1">
+          <div id="employee-profile" className="hidden scroll-mt-4 lg:col-span-1 lg:block">
             <div className="card-style lg:sticky lg:top-6 !p-4">
               <div className="flex items-center gap-3 lg:flex-col lg:text-center lg:gap-0">
                 <div className="w-14 h-14 lg:w-20 lg:h-20 lg:mx-auto lg:mb-3 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 flex-shrink-0">
@@ -2737,7 +2745,7 @@ export default function EmployeeDashboard() {
         onHome={() => scrollToEmployeeSection('employee-dashboard-top')}
         onAttendance={openAttendanceFromNav}
         onLeave={() => setLeaveChoiceModalOpen(true)}
-        onActionCenter={() => scrollToEmployeeSection('employee-action-center')}
+        onActionCenter={() => setActionCenterModalOpen(true)}
         onProfile={openProfileFromNav}
       />
 
@@ -2764,8 +2772,45 @@ export default function EmployeeDashboard() {
         onNotifications={() => setNotificationsModalOpen(true)}
         onCommute={() => setCommuteModalOpen(true)}
         onHelpdesk={() => { setSupportModalOpen(true); fetchSupportRequests(); }}
-        onActionCenter={() => scrollToEmployeeSection('employee-action-center')}
-        onProfile={openProfileFromNav}
+        onActionCenter={() => setActionCenterModalOpen(true)}
+        onGovernmentIds={() => setGovernmentIdsModalOpen(true)}
+      />
+
+      <EmployeeGovernmentIdsModal
+        open={governmentIdsModalOpen}
+        onClose={() => setGovernmentIdsModalOpen(false)}
+        employeeName={profile?.full_name || 'Employee'}
+        designation={profile?.designation || 'Employee'}
+        avatarUrl={profile?.avatar_url}
+        details={<>
+          <div><div className="mb-1.5 flex items-center justify-between gap-2"><p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Profile completeness</p><p className="text-xs font-extrabold text-slate-700">{profileCompleteness.percent}%</p></div><div className="h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-green-600" style={{ width: `${profileCompleteness.percent}%` }} /></div></div>
+          <div><p className="label-branded mb-1">Employee ID</p><p className="text-sm font-medium text-slate-700">{profile?.employee_id || 'Not set'}</p></div>
+          {renderGovIdRow('SSS Number', governmentIds?.sss_number ?? null, 'sss')}
+          {renderGovIdRow('PhilHealth Number', governmentIds?.philhealth_number ?? null, 'philhealth')}
+          {renderGovIdRow('Pag-IBIG Number', governmentIds?.pagibig_number ?? null, 'pagibig')}
+          {renderGovIdRow('TIN Number', governmentIds?.tin_number ?? null, 'tin')}
+          <div><p className="label-branded mb-1">Hired Date</p><p className="text-sm font-medium text-slate-700">{governmentIds?.hired_date ? formatHiredDate(governmentIds.hired_date) : 'Not set'}</p></div>
+          <div><p className="label-branded mb-1">Employment Status</p>{governmentIds?.employment_status ? <span className={governmentIds.employment_status === 'Regular' ? 'tag-present' : governmentIds.employment_status === 'Probationary' ? 'tag-late' : 'tag-excused'}>{governmentIds.employment_status}</span> : <p className="text-sm font-medium text-slate-700">Not set</p>}</div>
+        </>}
+      />
+
+      <EmployeeActionCenterModal
+        open={actionCenterModalOpen}
+        onClose={() => setActionCenterModalOpen(false)}
+        timeOutPending={Boolean(todayLog?.time_in && !todayLog.time_out)}
+        timeOutDisabled={officeNetworkAllowed === false || timeOutLoading}
+        pendingLeaves={pendingLeavesCount}
+        pendingDisputes={pendingDisputesCount}
+        newPayslips={newPayslipsCount}
+        openSupport={openSupportCount}
+        profilePercent={profileCompleteness.percent}
+        profileIncomplete={!initLoading && profileCompleteness.percent < 100}
+        onTimeOut={handleTimeOutClick}
+        onLeaves={() => setMyLeavesModalOpen(true)}
+        onDisputes={() => setMyDisputesModalOpen(true)}
+        onPayslips={() => setPayslipsModalOpen(true)}
+        onSupport={() => setSupportModalOpen(true)}
+        onProfile={() => setGovernmentIdsModalOpen(true)}
       />
 
       {/* New Announcement Toast (auto-dismisses after 6s) */}
