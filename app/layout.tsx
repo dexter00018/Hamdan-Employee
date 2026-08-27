@@ -2,18 +2,21 @@ import type { Metadata } from "next";
 import { Plus_Jakarta_Sans, Inter, Oswald } from "next/font/google";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Analytics } from "@vercel/analytics/next";
+import ThemeRouteGuard from "@/components/ThemeRouteGuard";
 import "./globals.css";
 
 const themeInitializationScript = `
   (function () {
     try {
-      var savedTheme = localStorage.getItem('theme');
-      var useDark = savedTheme === 'dark' ||
-        (savedTheme !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      var isEmployeeRoute = location.pathname === '/employee' || location.pathname.indexOf('/employee/') === 0;
+      var savedTheme = isEmployeeRoute ? localStorage.getItem('theme') : 'light';
+      var useDark = isEmployeeRoute && (savedTheme === 'dark' ||
+        (savedTheme !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches));
       document.documentElement.classList.toggle('dark', useDark);
       document.documentElement.style.colorScheme = useDark ? 'dark' : 'light';
     } catch (error) {
-      var useSystemDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      var isEmployeeRoute = location.pathname === '/employee' || location.pathname.indexOf('/employee/') === 0;
+      var useSystemDark = isEmployeeRoute && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
       document.documentElement.classList.toggle('dark', useSystemDark);
       document.documentElement.style.colorScheme = useSystemDark ? 'dark' : 'light';
     }
@@ -65,6 +68,7 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeInitializationScript }} />
       </head>
       <body className="min-h-full flex flex-col">
+        <ThemeRouteGuard />
         {children}
         <SpeedInsights />
         <Analytics />

@@ -26,7 +26,7 @@ import NotificationsModal from '@/components/employee/modals/NotificationsModal'
 import PayslipsModal from '@/components/employee/modals/PayslipsModal';
 import EmployeeDirectoryModal from '@/components/employee/modals/EmployeeDirectoryModal';
 import CompanyCalendarModal from '@/components/employee/modals/CompanyCalendarModal';
-import { Bell, CalendarDays, CalendarX2, CheckCircle2, CircleAlert, Clock3, HandCoins, Headphones, Plane, UserRound } from 'lucide-react';
+import { Bell, CalendarX2, CheckCircle2, CircleAlert, Clock3, HandCoins, Headphones, Plane, UserRound } from 'lucide-react';
 
 function EyeIcon() {
   return (
@@ -1512,12 +1512,6 @@ export default function EmployeeDashboard() {
     return h === 0 ? `${m} min` : `${h}h ${m}m`;
   };
 
-  const formatLateCutoffLabel = () => {
-    const period = lateCutoffHour >= 12 ? 'PM' : 'AM';
-    const hour12 = lateCutoffHour % 12 === 0 ? 12 : lateCutoffHour % 12;
-    return `${hour12}:${String(lateCutoffMinute).padStart(2, '0')} ${period}`;
-  };
-
   // "Leave" here now covers any type-specific status ("Sick Leave",
   // "Vacation Leave", "Emergency Leave") set by settle_leave_day(), not
   // just the literal word "Leave" -- match by substring.
@@ -1788,13 +1782,30 @@ export default function EmployeeDashboard() {
   const newPayslipsCount = payslips.filter((payslip) => !payslip.acknowledged_at).length;
   const openSupportCount = supportRequests.filter((request) => request.status !== 'Resolved').length;
 
+  const isTodayLate = todayLog?.status?.toLowerCase() === 'late';
   const todayWorkStatus = !todayLog
-    ? { label: 'Not Timed In', color: 'bg-slate-100 text-slate-600' }
-    : todayLog.time_out
-      ? { label: 'Completed', color: 'bg-green-100 text-green-700' }
-      : todayLog.status?.toLowerCase() === 'late'
-        ? { label: 'Working · Late', color: 'bg-orange-100 text-orange-700' }
-        : { label: 'Working', color: 'bg-blue-100 text-blue-700' };
+    ? { label: 'No Time In', color: 'bg-red-100 text-red-700' }
+    : isTodayLate
+      ? { label: todayLog.time_out ? 'Completed · Late' : 'Working · Late', color: 'bg-orange-100 text-orange-700' }
+      : { label: todayLog.time_out ? 'Completed' : 'Working', color: 'bg-green-100 text-green-700' };
+
+  const workClockTone = !todayLog
+    ? {
+        panel: 'from-rose-500 to-red-700',
+        border: 'border-red-200 dark:border-red-900/60',
+        rail: 'from-rose-400 via-red-500 to-red-700',
+      }
+    : isTodayLate
+      ? {
+          panel: 'from-amber-400 to-orange-600',
+          border: 'border-orange-200 dark:border-orange-900/60',
+          rail: 'from-amber-300 via-orange-500 to-red-500',
+        }
+      : {
+          panel: 'from-emerald-500 to-green-700',
+          border: 'border-emerald-200 dark:border-emerald-900/60',
+          rail: 'from-emerald-400 via-green-500 to-teal-600',
+        };
 
   const expectedTimeOutLabel = (() => {
     const period = timeOutReminderHour >= 12 ? 'PM' : 'AM';
@@ -1921,14 +1932,6 @@ export default function EmployeeDashboard() {
     window.location.replace('/');
   };
 
-  const greeting = (() => {
-    const hour = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', hour12: false }).format(new Date()));
-    if (hour < 12) return 'Good morning';
-    if (hour < 18) return 'Good afternoon';
-    return 'Good evening';
-  })();
-
-  const employeeFirstName = profile?.full_name?.trim().split(/\s+/)[0] || 'there';
   const attendanceQuickLabel: 'Time In' | 'Time Out' | 'Completed' = !todayLog ? 'Time In' : !todayLog.time_out ? 'Time Out' : 'Completed';
   const attendanceQuickDisabled = loading || initLoading || timeOutLoading || checkingNetwork || officeNetworkAllowed === false || Boolean(todayLog?.time_out);
   const runAttendanceQuickAction = () => {
@@ -2087,9 +2090,8 @@ export default function EmployeeDashboard() {
         <header className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_4px_18px_rgba(15,23,42,0.04)] dark:bg-[#292f2b] sm:p-4">
           <div className="min-w-0">
             <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#16a34a] lg:hidden">Hamdan Engineering</p>
-            <h1 className="mt-0.5 truncate text-xl font-bold leading-tight sm:text-2xl">{greeting}, {employeeFirstName}!</h1>
-            <p className="mt-1 hidden text-xs text-slate-500 sm:block">Here&apos;s what&apos;s happening with your workday.</p>
-            <p className="mt-1 text-xs font-medium text-slate-500">{date} <span className="mx-1 text-slate-300">•</span> {time || '--:--:--'}</p>
+            <h1 className="mt-0.5 truncate text-xl font-bold leading-tight sm:text-2xl">{profile?.full_name || 'Employee'}</h1>
+            <p className="mt-1 truncate text-xs font-semibold uppercase tracking-wide text-slate-500">{profile?.designation || 'Employee'}</p>
           </div>
           <div className="flex flex-none items-center gap-1.5 sm:gap-2">
             <button
@@ -2116,11 +2118,10 @@ export default function EmployeeDashboard() {
         {message && <div className={`p-3 rounded-xl text-xs font-bold ${message.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{message}</div>}
 
         {/* Mobile summary cards -- tap any of these to see which dates were counted. */}
-        <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
+        <div className="grid grid-cols-3 gap-2 sm:gap-3">
           <EmployeeSummaryCard label="Present" value={summary.present} icon={CheckCircle2} tone="green" onClick={() => setSummaryDetailType('present')} />
-          <EmployeeSummaryCard label="Late" value={summary.late} icon={Clock3} tone="orange" onClick={() => setSummaryDetailType('late')} />
-          <EmployeeSummaryCard label="On Leave" value={summary.leave} icon={CalendarDays} tone="purple" onClick={() => setSummaryDetailType('leave')} />
-          <EmployeeSummaryCard label="Not Timed In" value={summary.absent} icon={CalendarX2} tone="red" onClick={() => setSummaryDetailType('absent')} />
+          <EmployeeSummaryCard label="Late" value={summary.late} icon={Clock3} tone="orange" detail={`${formatLateDuration(summary.totalLateMinutes)} total`} onClick={() => setSummaryDetailType('late')} />
+          <EmployeeSummaryCard label="Absent" value={summary.absent} icon={CalendarX2} tone="red" onClick={() => setSummaryDetailType('absent')} />
         </div>
 
         {/* Main layout */}
@@ -2216,16 +2217,25 @@ export default function EmployeeDashboard() {
 
             {/* Clock + Time buttons */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="card-style !p-4 text-center">
-                <div className="flex items-center justify-center gap-2 mb-2">
-                  <span className={`px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wide ${todayWorkStatus.color}`}>
+              <div className={`relative flex min-h-40 overflow-hidden rounded-3xl border bg-white shadow-[0_12px_30px_rgba(15,23,42,0.08)] dark:bg-[#292f2b] ${workClockTone.border}`}>
+                <div className={`relative flex w-[34%] min-w-28 flex-col items-center justify-center overflow-hidden bg-gradient-to-br px-3 py-5 text-center text-white transition-colors duration-300 ${workClockTone.panel}`}>
+                  <span className="absolute -left-7 -top-8 h-20 w-20 rounded-full border-[14px] border-white/10" aria-hidden="true" />
+                  <span className="grid h-11 w-11 place-items-center rounded-2xl bg-white/15 shadow-inner ring-1 ring-white/25">
+                    <Clock3 aria-hidden="true" size={21} strokeWidth={2.2} />
+                  </span>
+                  <p className="mt-3 text-[9px] font-black uppercase tracking-[0.18em] text-white/75">Work clock</p>
+                  <span className={`mt-2 rounded-full px-2.5 py-1 text-[8px] font-extrabold uppercase tracking-wide shadow-sm ${todayWorkStatus.color}`}>
                     {todayWorkStatus.label}
                   </span>
                 </div>
-                <h1 className="stat-number text-blue-600 text-3xl md:text-4xl lg:text-5xl tracking-tight normal-case">{time || '--:--:--'}</h1>
-                <p className="mt-1 text-slate-400 font-medium uppercase text-[9px] tracking-widest">{date}</p>
-                <p className="mt-1 text-[10px] text-slate-400">Late cutoff: {formatLateCutoffLabel()} (PH Time)</p>
-                <p className="mt-1 text-[10px] text-slate-400">Expected Time Out: {expectedTimeOutLabel}</p>
+                <div className="relative flex min-w-0 flex-1 flex-col justify-center px-4 py-5 text-left sm:px-5">
+                  <span className={`absolute right-0 top-0 h-full w-1 bg-gradient-to-b transition-colors duration-300 ${workClockTone.rail}`} aria-hidden="true" />
+                  <p className="text-[9px] font-extrabold uppercase tracking-[0.18em] text-slate-400">Philippine time</p>
+                  <p className="mt-1 font-mono text-[clamp(2rem,8vw,3rem)] font-black leading-none tabular-nums tracking-[-0.08em] text-slate-950 dark:text-white">{time || '--:--:--'}</p>
+                  <div className="mt-3 border-t border-dashed border-slate-200 pt-2 dark:border-slate-700">
+                    <p className="truncate text-[9px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-300">{date}</p>
+                  </div>
+                </div>
               </div>
               <div className="flex flex-col gap-2 justify-center">
                 {!todayLog ? (
@@ -2260,16 +2270,6 @@ export default function EmployeeDashboard() {
                     <button onClick={checkOfficeNetwork} className="text-blue-600 text-xs font-bold hover:underline flex-shrink-0">Retry</button>
                   </div>
                 )}
-                {/* Total Minutes Late (accumulated for the cutoff) */}
-                <div className="flex items-center gap-3 card-style !p-3">
-                  <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center flex-shrink-0">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-600"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                  </div>
-                  <div>
-                    <p className="font-semibold text-slate-900 text-xs">{formatLateDuration(summary.totalLateMinutes)} Late</p>
-                    <p className="text-slate-400 text-[10px]">{formatMonthLabel(summaryCutoffKey)}</p>
-                  </div>
-                </div>
               </div>
             </div>
 
@@ -2480,30 +2480,15 @@ export default function EmployeeDashboard() {
 
             {/* Quick Actions */}
             <EmployeeQuickActions
-              attendanceLabel={attendanceQuickLabel}
-              attendanceDisabled={attendanceQuickDisabled}
-              onAttendanceAction={runAttendanceQuickAction}
               onAttendanceHistory={openAttendanceFromNav}
               onLeave={() => setLeaveChoiceModalOpen(true)}
               onDisputes={() => { setSelectedMyDisputeDetail(null); setMyDisputesModalOpen(true); fetchMyDisputes(); }}
               onPayslips={() => { setPayslipsModalOpen(true); fetchPayslips(); }}
               onDocuments={() => { setDocumentsModalOpen(true); fetchEmployeeDocuments(); }}
-              onCommute={() => setCommuteModalOpen(true)}
+              onDirectory={() => { setDirectoryModalOpen(true); setDirectorySearch(''); fetchDirectory(); }}
+              onCompanyCalendar={() => { setCalendarModalOpen(true); fetchCompanyHolidays(); }}
               onHelpdesk={() => { setSupportModalOpen(true); fetchSupportRequests(); }}
             />
-
-            <section aria-labelledby="more-employee-tools-title" className="card-style !rounded-2xl !p-4">
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <div>
-                  <h2 id="more-employee-tools-title" className="text-sm font-semibold">More Employee Tools</h2>
-                  <p className="mt-0.5 text-xs text-slate-500">Directory and company dates</p>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <button type="button" onClick={() => { setDirectoryModalOpen(true); setDirectorySearch(''); fetchDirectory(); }} className="min-h-11 rounded-xl border border-slate-200 px-3 py-2 text-left text-xs font-semibold text-slate-700 transition hover:bg-slate-50">Employee Directory</button>
-                <button type="button" onClick={() => { setCalendarModalOpen(true); fetchCompanyHolidays(); }} className="min-h-11 rounded-xl border border-slate-200 px-3 py-2 text-left text-xs font-semibold text-slate-700 transition hover:bg-slate-50">Company Calendar</button>
-              </div>
-            </section>
 
             <div className="hidden">
               <button type="button" onClick={() => setLeaveChoiceModalOpen(true)} className="card-style !p-3 flex items-center gap-2 hover:bg-slate-50 transition text-left">

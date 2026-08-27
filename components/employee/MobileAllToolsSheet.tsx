@@ -77,6 +77,16 @@ export default function MobileAllToolsSheet(props: Props) {
     { label: 'Action Center', icon: BriefcaseBusiness, action: props.onActionCenter },
     { label: 'Government IDs', icon: IdCard, action: props.onGovernmentIds },
   ];
+  const toolTones = [
+    'from-emerald-500 to-green-600',
+    'from-green-500 to-teal-600',
+    'from-sky-500 to-blue-600',
+    'from-teal-500 to-emerald-600',
+    'from-orange-500 to-rose-500',
+    'from-amber-400 to-orange-500',
+    'from-cyan-500 to-teal-600',
+    'from-violet-500 to-purple-600',
+  ];
 
   const runTool = (action: () => void, keepOpen = false) => {
     if (keepOpen) {
@@ -114,12 +124,14 @@ export default function MobileAllToolsSheet(props: Props) {
         </section>
         <h3 className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">All Tools</h3>
         <div className="grid grid-cols-4 gap-2 sm:gap-3">
-          {tools.map(({ label, icon: Icon, action, disabled }) => (
-            <button key={label} type="button" onClick={() => runTool(action)} disabled={disabled} className="flex min-h-24 min-w-0 flex-col items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-1.5 py-3 text-center transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 dark:bg-[#303632]">
-              <span className="grid h-10 w-10 place-items-center rounded-full bg-green-50 text-[#16a34a] dark:bg-[#263b2f] dark:text-[#8ee6a7]">
-                <Icon size={19} strokeWidth={2} aria-hidden="true" />
+          {tools.map(({ label, icon: Icon, action, disabled }, index) => (
+            <button key={label} type="button" onClick={() => runTool(action)} disabled={disabled} className="group relative flex min-h-24 min-w-0 flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border border-slate-200 bg-white px-1.5 py-3 text-center shadow-[0_5px_16px_rgba(15,23,42,0.06)] transition duration-200 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 dark:bg-[#303632]">
+              <span className="absolute -right-4 -top-4 h-12 w-12 rounded-full bg-green-100/60 transition-transform group-active:scale-125 dark:bg-green-900/20" aria-hidden="true" />
+              <span className={`relative grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br text-white shadow-md ${toolTones[index % toolTones.length]}`}>
+                <span className="absolute inset-[3px] rounded-[13px] border border-white/25" aria-hidden="true" />
+                <Icon size={20} strokeWidth={2.2} aria-hidden="true" />
               </span>
-              <span className="line-clamp-2 min-h-7 w-full text-[10px] font-semibold leading-tight text-slate-700 dark:text-slate-200 sm:text-[11px]">{label}</span>
+              <span className="relative line-clamp-2 min-h-7 w-full text-[10px] font-bold leading-tight text-slate-800 dark:text-slate-100 sm:text-[11px]">{label}</span>
             </button>
           ))}
         </div>

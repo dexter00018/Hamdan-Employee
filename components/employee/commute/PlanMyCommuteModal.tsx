@@ -386,25 +386,6 @@ export default function PlanMyCommuteModal({
     setCommuteHasAttempted(false);
   };
 
-  const swapCommuteAddresses = () => {
-    setCommuteOrigin(commuteDestination);
-    setCommuteDestination(commuteOrigin);
-    setSelectedOriginAddress(selectedDestinationAddress);
-    setSelectedDestinationAddress(selectedOriginAddress);
-    setOriginSuggestions([]);
-    setDestinationSuggestions([]);
-    setOriginSearchError(null);
-    setDestinationSearchError(null);
-    setOriginActiveSuggestion(-1);
-    setDestinationActiveSuggestion(-1);
-    setShowOriginSuggestions(false);
-    setShowDestinationSuggestions(false);
-    setCommuteError(null);
-    setCommuteResult(null);
-    setCommuteUIState('idle');
-    setCommuteHasAttempted(false);
-  };
-
   // Modal-level accessibility: Escape closes the whole modal (not just an
   // address-suggestion dropdown), focus moves into the modal on open and
   // is trapped inside it while open, and focus returns to whatever
@@ -800,7 +781,7 @@ export default function PlanMyCommuteModal({
                 </div>
               </div>
             )}
-            <section className={`rounded-3xl bg-white border border-slate-200 p-3.5 sm:p-4 lg:p-5 shadow-sm   ${isCommuteFormCollapsed ? 'hidden' : 'block'}`}>
+            <section className={`rounded-3xl border border-slate-200 bg-white p-3 sm:p-4 lg:p-5 shadow-sm ${isCommuteFormCollapsed ? 'hidden' : 'block'}`}>
               <div className="flex items-center justify-between gap-3 mb-3">
                 <div>
                   <p className="text-[9px] uppercase tracking-[0.16em] font-extrabold text-slate-500">
@@ -814,7 +795,7 @@ export default function PlanMyCommuteModal({
                   PH · Philippines only
                 </span>
               </div>
-            <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_56px_minmax(0,1fr)] lg:items-end lg:gap-3">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
               <div className="relative">
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="label-branded mb-0">From</label>
@@ -939,20 +920,6 @@ export default function PlanMyCommuteModal({
                     </button>
                   )}
                 </div>
-              </div>
-
-              <div className="relative flex h-12 items-center justify-center lg:h-14">
-                <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-blue-200 lg:hidden " aria-hidden="true" />
-                <button
-                  type="button"
-                  onClick={swapCommuteAddresses}
-                  disabled={!commuteOrigin && !commuteDestination}
-                  className="relative z-10 flex h-11 min-w-11 items-center justify-center rounded-full border border-blue-200 bg-white px-3 text-base font-extrabold text-blue-700 shadow-sm transition hover:bg-blue-50 disabled:opacity-40   "
-                  title="Swap starting point and destination"
-                  aria-label="Swap starting point and destination"
-                >
-                  ⇄
-                </button>
               </div>
 
               <div className="relative">

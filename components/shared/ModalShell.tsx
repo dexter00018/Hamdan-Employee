@@ -97,7 +97,7 @@ export default function ModalShell({
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-950/45 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !closeDisabled) onCloseRef.current();
       }}
@@ -109,7 +109,7 @@ export default function ModalShell({
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
-        className={`flex max-h-[96dvh] w-full flex-col overflow-hidden rounded-t-[28px] border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900 sm:max-h-[92vh] sm:rounded-[28px] ${widthClasses[size]} ${className}`}
+        className={`flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900 ${widthClasses[size]} ${className}`}
       >
         <header className="flex flex-shrink-0 items-start gap-3 border-b border-slate-200 px-4 py-4 dark:border-slate-700 sm:px-6">
           {icon && (
