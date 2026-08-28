@@ -12,6 +12,8 @@ import Image from 'next/image';
 import dynamic from 'next/dynamic';
 import Spinner, { LoadingRow } from '@/components/Spinner';
 import { Bell, CalendarX2, CheckCircle2, Clock3, UserRound } from 'lucide-react';
+import { DEFAULT_APP_SETTINGS, normalizeAppSettings, type AppSettingsValues } from '@/lib/app-settings';
+import { resolveSeasonalTheme, SEASONAL_THEME_PRESENTATION } from '@/lib/seasonal-theme';
 
 const SummaryDetailModal = dynamic(() => import('@/components/employee/modals/SummaryDetailModal'));
 const AttendanceDisputeFormModal = dynamic(() => import('@/components/employee/modals/AttendanceDisputeFormModal'));
@@ -92,12 +94,16 @@ export default function EmployeeDashboard() {
   const [fallbackLeaveCredits, setFallbackLeaveCredits] = useState(FALLBACK_LEAVE_CREDITS);
   const [timeOutReminderHour, setTimeOutReminderHour] = useState(FALLBACK_TIME_OUT_REMINDER_HOUR);
   const [attendanceRecordingEnabled, setAttendanceRecordingEnabled] = useState(true);
+  const [seasonalSettings, setSeasonalSettings] = useState<AppSettingsValues>({ ...DEFAULT_APP_SETTINGS });
+  const [dismissedSeasonalBanner, setDismissedSeasonalBanner] = useState<string | null>(null);
+  const seasonalTheme = useMemo(() => resolveSeasonalTheme(seasonalSettings, 'employee'), [seasonalSettings]);
+  const seasonalPresentation = SEASONAL_THEME_PRESENTATION[seasonalTheme.variant];
 
   const fetchAppSettings = async () => {
     const { data, error } = await supabase
       .from('app_settings')
       .select('key, value')
-      .in('key', ['late_cutoff_hour', 'late_cutoff_minute', 'default_leave_credits', 'time_out_reminder_hour', 'attendance_recording_enabled']);
+      .in('key', ['late_cutoff_hour', 'late_cutoff_minute', 'default_leave_credits', 'time_out_reminder_hour', 'attendance_recording_enabled', 'seasonal_theme_enabled', 'seasonal_theme_variant', 'seasonal_theme_scope', 'seasonal_theme_start_date', 'seasonal_theme_end_date', 'seasonal_theme_intensity', 'seasonal_snow_enabled', 'seasonal_banner_enabled']);
     if (error) {
       console.error('Error fetching app settings:', error);
       return;
@@ -108,6 +114,7 @@ export default function EmployeeDashboard() {
     if (typeof map.default_leave_credits === 'number') setFallbackLeaveCredits(map.default_leave_credits);
     if (typeof map.time_out_reminder_hour === 'number') setTimeOutReminderHour(map.time_out_reminder_hour);
     if (typeof map.attendance_recording_enabled === 'boolean') setAttendanceRecordingEnabled(map.attendance_recording_enabled);
+    setSeasonalSettings(normalizeAppSettings(data));
   };
 
   // --- Dark Mode ---
@@ -402,27 +409,30 @@ export default function EmployeeDashboard() {
     checkTimeOutReminder();
     const reminderTimer = window.setInterval(checkTimeOutReminder, 60_000);
 
-    const runStartupSweeps = async () => {
-      // Catch-up sweeps, run once per login/page load, before pulling
-      // attendance history or the leave credit balance -- so anything they
-      // generate (a fresh 'Absent' row for a day with no time-in, a
-      // newly-deducted leave credit) is already reflected in what loads
-      // right after.
-      const [{ error: leaveSweepError }, { error: absenceSweepError }] = await Promise.all([
-        supabase.rpc('settle_overdue_leave_days'),
-        supabase.rpc('settle_overdue_absences'),
-      ]);
-      if (leaveSweepError) console.error('Error settling overdue leave days:', leaveSweepError);
-      if (absenceSweepError) console.error('Error settling overdue absences:', absenceSweepError);
-
-      initializeDashboard();
-    };
-    runStartupSweeps();
+    // Global leave/absence settlement changes records across employees and is
+    // intentionally run only from the authorized HR dashboard. Employee
+    // sessions should load their own data directly instead of invoking those
+    // privileged RPCs (which correctly return "Not authorized").
+    void initializeDashboard();
     fetchAppSettings();
     fetchAnnouncement();
     fetchWeatherAdvisory();
     checkOfficeNetwork();
     return () => window.clearInterval(reminderTimer);
+  }, []);
+
+  // Apply Super Admin seasonal changes to an open Employee dashboard without
+  // requiring a sign-out or manual refresh. If Realtime is unavailable, the
+  // normal page-load fetch above remains the safe fallback.
+  useEffect(() => {
+    const channel = supabase
+      .channel('employee-app-settings')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, (payload) => {
+        const key = String((payload.new as { key?: string } | null)?.key || '');
+        if (key.startsWith('seasonal_')) void fetchAppSettings();
+      })
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
   }, []);
 
   // Live announcement updates -- listens for INSERT/UPDATE on the
@@ -1914,7 +1924,7 @@ export default function EmployeeDashboard() {
   };
 
   return (
-    <main id="employee-dashboard-top" className="employee-dashboard min-h-screen p-3 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:p-4 sm:pb-[calc(6rem+env(safe-area-inset-bottom))] md:p-6 md:pb-[calc(6rem+env(safe-area-inset-bottom))] lg:p-8">
+    <main id="employee-dashboard-top" className={`employee-dashboard relative min-h-screen overflow-x-hidden p-3 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:p-4 sm:pb-[calc(6rem+env(safe-area-inset-bottom))] md:p-6 md:pb-[calc(6rem+env(safe-area-inset-bottom))] lg:p-8 ${seasonalTheme.active ? `seasonal-theme seasonal-${seasonalTheme.variant} seasonal-${seasonalTheme.intensity}` : ''}`}>
       <style jsx global>{`
         /* DARK MODE — neutral dark gray, not pure black. */
         .dark { color-scheme: dark; }
@@ -1930,6 +1940,44 @@ export default function EmployeeDashboard() {
           box-shadow: 0 4px 18px rgba(15, 23, 42, .045);
         }
         .dark .employee-dashboard .card-style { border-color: #414944 !important; }
+        .seasonal-theme {
+          background-color: #eef8f1;
+          background-image: radial-gradient(circle at 8% 2%, rgba(220,38,38,.16), transparent 22rem), radial-gradient(circle at 92% 8%, rgba(22,163,74,.2), transparent 25rem);
+        }
+        .seasonal-theme > .seasonal-content { position: relative; z-index: 3; }
+        .seasonal-theme header { position: relative; overflow: hidden; border-color: rgba(202,138,4,.35) !important; box-shadow: 0 8px 24px rgba(127,29,29,.08) !important; }
+        .seasonal-christmas { background-color: #edf7ef; background-image: linear-gradient(115deg, rgba(21,128,61,.24) 0%, rgba(240,253,244,.78) 46%, rgba(254,242,242,.76) 54%, rgba(220,38,38,.23) 100%), radial-gradient(circle at 50% 0%, rgba(202,138,4,.2), transparent 24rem); }
+        .seasonal-christmas header::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 4px; border-radius: inherit; background: linear-gradient(#15803d,#dc2626,#ca8a04); }
+        .seasonal-christmas .card-dark { background: linear-gradient(135deg,#064e3b 0%,#14532d 58%,#7f1d1d 100%) !important; }
+        .seasonal-christmas .employee-bottom-nav [aria-current="page"] { color: #b91c1c !important; }
+        .seasonal-halloween { background-color: #f5edf9; background-image: radial-gradient(circle at 12% 3%, rgba(249,115,22,.24), transparent 23rem), radial-gradient(circle at 90% 10%, rgba(126,34,206,.23), transparent 27rem); }
+        .seasonal-halloween header::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 4px; border-radius: inherit; background: linear-gradient(#f97316,#7e22ce,#111827); }
+        .seasonal-halloween .card-dark { background: linear-gradient(135deg,#111827 0%,#3b0764 62%,#9a3412 100%) !important; }
+        .seasonal-new_year { background-color: #edf3fb; background-image: radial-gradient(circle at 10% 2%, rgba(250,204,21,.24), transparent 23rem), radial-gradient(circle at 90% 8%, rgba(37,99,235,.22), transparent 27rem); }
+        .seasonal-new_year header::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 4px; border-radius: inherit; background: linear-gradient(#facc15,#2563eb,#e2e8f0); }
+        .seasonal-new_year .card-dark { background: linear-gradient(135deg,#0f172a 0%,#172554 60%,#854d0e 100%) !important; }
+        .seasonal-rainy { background-color: #e6f0f7; background-image: radial-gradient(circle at 8% 4%, rgba(14,116,144,.25), transparent 24rem), radial-gradient(circle at 92% 8%, rgba(71,85,105,.22), transparent 28rem), linear-gradient(160deg, rgba(224,242,254,.85), rgba(203,213,225,.78)); }
+        .seasonal-rainy header::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 4px; border-radius: inherit; background: linear-gradient(#0891b2,#2563eb,#64748b); }
+        .seasonal-rainy .card-dark { background: linear-gradient(135deg,#164e63 0%,#1e3a5f 58%,#334155 100%) !important; }
+        .seasonal-sunny { background-color: #fff5d6; background-image: radial-gradient(circle at 88% 4%, rgba(250,204,21,.38), transparent 25rem), radial-gradient(circle at 8% 10%, rgba(249,115,22,.22), transparent 27rem), linear-gradient(160deg, rgba(254,249,195,.85), rgba(255,237,213,.72)); }
+        .seasonal-sunny::before { content: '☀'; pointer-events: none; position: fixed; right: -1.5rem; top: 4.5rem; z-index: 1; font-size: clamp(7rem, 28vw, 13rem); line-height: 1; color: rgba(245,158,11,.2); filter: drop-shadow(0 0 2rem rgba(250,204,21,.35)); }
+        .seasonal-sunny header::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 4px; border-radius: inherit; background: linear-gradient(#facc15,#f97316,#16a34a); }
+        .seasonal-sunny .card-dark { background: linear-gradient(135deg,#854d0e 0%,#c2410c 58%,#166534 100%) !important; }
+        .seasonal-festive .card-style { box-shadow: 0 10px 28px rgba(127,29,29,.07); }
+        .dark .seasonal-christmas { background-color: #101713; background-image: linear-gradient(115deg, rgba(21,128,61,.2) 0%, rgba(16,23,19,.82) 47%, rgba(24,18,18,.82) 53%, rgba(185,28,28,.2) 100%), radial-gradient(circle at 50% 0%, rgba(202,138,4,.12), transparent 24rem); }
+        .dark .seasonal-halloween { background-color: #100d12; }
+        .dark .seasonal-new_year { background-color: #0d1320; }
+        .dark .seasonal-rainy { background-color: #0e1820; background-image: radial-gradient(circle at 8% 4%, rgba(14,116,144,.22), transparent 24rem), radial-gradient(circle at 92% 8%, rgba(71,85,105,.2), transparent 28rem); }
+        .dark .seasonal-sunny { background-color: #1b170d; background-image: radial-gradient(circle at 88% 4%, rgba(234,179,8,.2), transparent 25rem), radial-gradient(circle at 8% 10%, rgba(234,88,12,.16), transparent 27rem); }
+        .seasonal-theme > .seasonal-particles { pointer-events: none; position: fixed; inset: 0; z-index: 2; overflow: hidden; }
+        .seasonal-particles span { position: absolute; top: -1.5rem; color: #fff; opacity: .72; text-shadow: 0 1px 5px rgba(15,23,42,.28); animation: seasonal-snowfall var(--snow-speed) linear infinite; animation-delay: var(--snow-delay); }
+        .seasonal-halloween .seasonal-particles span { color: #fb923c; opacity: .6; }
+        .seasonal-new_year .seasonal-particles span { color: #fde68a; opacity: .78; }
+        .seasonal-rainy .seasonal-particles span { color: #38bdf8; opacity: .62; animation-name: seasonal-rainfall; }
+        .seasonal-sunny .seasonal-particles { display: none; }
+        @keyframes seasonal-snowfall { to { transform: translate3d(var(--snow-drift), calc(100vh + 3rem), 0) rotate(180deg); } }
+        @keyframes seasonal-rainfall { to { transform: translate3d(var(--snow-drift), calc(100vh + 3rem), 0); } }
+        @media (prefers-reduced-motion: reduce) { .seasonal-particles span { animation: none; top: var(--snow-static-top); opacity: .35; } }
 
         .dark .text-slate-950, .dark .text-slate-900, .dark .text-slate-800 { color: #f8faf9 !important; }
         .dark .text-slate-700, .dark .text-slate-600 { color: #dce3de !important; }
@@ -2058,7 +2106,8 @@ export default function EmployeeDashboard() {
           .employee-quick-actions > button > div:last-child p:last-child { display: none; }
         }
       `}</style>
-      <div className="mx-auto max-w-[1600px] space-y-4 md:space-y-6">
+      {seasonalTheme.active && seasonalTheme.snowEnabled ? <div className="seasonal-particles" aria-hidden="true">{Array.from({ length: seasonalTheme.intensity === 'festive' ? 22 : 14 }, (_, index) => <span key={index} style={{ left: `${(index * 37) % 100}%`, fontSize: `${10 + (index % 4) * 3}px`, ['--snow-speed' as string]: `${9 + (index % 6) * 2}s`, ['--snow-delay' as string]: `${-(index % 8) * 1.7}s`, ['--snow-drift' as string]: `${(index % 2 ? 1 : -1) * (18 + index)}px`, ['--snow-static-top' as string]: `${8 + (index * 41) % 84}%` }}>{seasonalPresentation.particle}</span>)}</div> : null}
+      <div className="seasonal-content mx-auto max-w-[1600px] space-y-4 md:space-y-6">
 
         {/* Header */}
         <header className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_4px_18px_rgba(15,23,42,0.04)] dark:bg-[#292f2b] sm:p-4">
@@ -2088,6 +2137,8 @@ export default function EmployeeDashboard() {
             </button>
           </div>
         </header>
+
+        {seasonalTheme.active && seasonalTheme.bannerEnabled && dismissedSeasonalBanner !== seasonalTheme.variant ? <section className={`relative overflow-hidden rounded-2xl border border-amber-300/50 bg-gradient-to-r px-4 py-3 text-white shadow-lg ${seasonalPresentation.bannerTone}`} aria-label="Seasonal greeting"><span className="absolute -right-3 -top-5 text-6xl text-white/10" aria-hidden="true">{seasonalPresentation.symbol}</span><div className="flex items-center gap-3"><span className="grid h-9 w-9 flex-none place-items-center rounded-xl bg-white/15 text-lg ring-1 ring-white/20" aria-hidden="true">{seasonalPresentation.symbol}</span><div className="min-w-0 flex-1"><p className="text-[9px] font-black uppercase tracking-[0.18em] text-amber-200">{seasonalPresentation.label}</p><p className="truncate text-sm font-bold">{seasonalPresentation.greeting}</p></div><button type="button" onClick={() => setDismissedSeasonalBanner(seasonalTheme.variant)} className="grid h-9 w-9 flex-none place-items-center rounded-full bg-white/10 text-lg text-white/80 transition hover:bg-white/20" aria-label="Dismiss seasonal greeting">×</button></div></section> : null}
 
         {message && <div className={`p-3 rounded-xl text-xs font-bold ${message.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{message}</div>}
 

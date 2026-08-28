@@ -1,8 +1,8 @@
 export type AppSettingValue = number | boolean | string;
 export type AppSettingsValues = Record<string, AppSettingValue>;
-export type AppSettingCategory = 'attendance' | 'leave' | 'services' | 'notifications' | 'features' | 'system' | 'security';
+export type AppSettingCategory = 'attendance' | 'leave' | 'services' | 'notifications' | 'features' | 'seasonal' | 'system' | 'security';
 export type AppSettingStatus = 'active' | 'future';
-export type AppSettingType = 'number' | 'boolean' | 'string' | 'select' | 'time';
+export type AppSettingType = 'number' | 'boolean' | 'string' | 'select' | 'time' | 'date';
 
 export type AppSettingDefinition = {
   key: string;
@@ -17,6 +17,7 @@ export type AppSettingDefinition = {
   step?: number;
   unit?: string;
   dangerous?: boolean;
+  options?: Array<{ value: string; label: string }>;
 };
 
 export const APP_SETTING_CATEGORIES: Record<AppSettingCategory, string> = {
@@ -25,6 +26,7 @@ export const APP_SETTING_CATEGORIES: Record<AppSettingCategory, string> = {
   services: 'Employee Services',
   notifications: 'Notifications',
   features: 'Feature Controls',
+  seasonal: 'Seasonal Theme',
   system: 'System & Performance',
   security: 'Security & Maintenance',
 };
@@ -62,6 +64,14 @@ export const APP_SETTING_DEFINITIONS: AppSettingDefinition[] = [
   booleanSetting({ key: 'timeout_reminder_enabled', category: 'notifications', label: 'Time-Out Reminders', description: 'Reserved master switch for future reminder delivery.', defaultValue: true, status: 'future' }),
   booleanSetting({ key: 'payslip_reminders_enabled', category: 'notifications', label: 'Payslip Reminders', description: 'Reserved master switch for future payslip reminders.', defaultValue: true, status: 'future' }),
   ...['commute', 'helpdesk', 'documents', 'directory', 'company_calendar', 'leave', 'disputes'].map((feature) => booleanSetting({ key: `feature_${feature}_enabled`, category: 'features', label: `${feature.split('_').map((part) => part[0].toUpperCase() + part.slice(1)).join(' ')} Feature`, description: 'Saved feature control. It remains visible until every direct-entry path is safely guarded.', defaultValue: true, status: 'future' })),
+  booleanSetting({ key: 'seasonal_theme_enabled', category: 'seasonal', label: 'Enable Seasonal Theme', description: 'Turns the selected seasonal appearance on when its optional schedule is active.', defaultValue: false, status: 'active' }),
+  { key: 'seasonal_theme_variant', category: 'seasonal', label: 'Theme Variant', description: 'Selects the active seasonal visual layer without changing Employee workflows.', type: 'select', defaultValue: 'christmas', status: 'active', options: [{ value: 'christmas', label: 'Christmas Special' }, { value: 'halloween', label: 'Halloween Special' }, { value: 'new_year', label: 'New Year Special' }, { value: 'rainy', label: 'Rainy Day' }, { value: 'sunny', label: 'Sunny Day' }] },
+  { key: 'seasonal_theme_scope', category: 'seasonal', label: 'Apply To', description: 'Employee scope is active. Employee and HR is stored as a future control until HR styling is fully wired.', type: 'select', defaultValue: 'employee_only', status: 'active', options: [{ value: 'employee_only', label: 'Employee only' }, { value: 'employee_and_hr', label: 'Employee and HR (future)' }] },
+  { key: 'seasonal_theme_start_date', category: 'seasonal', label: 'Start Date', description: 'Optional Philippine date when the theme begins. Leave empty to start immediately.', type: 'date', defaultValue: '', status: 'active' },
+  { key: 'seasonal_theme_end_date', category: 'seasonal', label: 'End Date', description: 'Optional Philippine date through which the theme remains active.', type: 'date', defaultValue: '', status: 'active' },
+  { key: 'seasonal_theme_intensity', category: 'seasonal', label: 'Theme Intensity', description: 'Subtle keeps accents restrained; Festive adds a little more holiday detail.', type: 'select', defaultValue: 'subtle', status: 'active', options: [{ value: 'subtle', label: 'Subtle' }, { value: 'festive', label: 'Festive' }] },
+  booleanSetting({ key: 'seasonal_snow_enabled', category: 'seasonal', label: 'Seasonal Particles', description: 'Shows lightweight snow, sparkles, or floating accents for the selected theme and respects reduced-motion preferences.', defaultValue: true, status: 'active' }),
+  booleanSetting({ key: 'seasonal_banner_enabled', category: 'seasonal', label: 'Holiday Banner', description: 'Shows a compact, session-dismissible holiday greeting on the Employee dashboard.', defaultValue: true, status: 'active' }),
   numberSetting({ key: 'dashboard_refresh_seconds', category: 'system', label: 'Dashboard Auto Refresh', description: 'Saved interval for a future shared dashboard refresh scheduler.', defaultValue: 60, min: 30, max: 600, step: 10, unit: 'seconds', status: 'future' }),
   numberSetting({ key: 'archive_after_months', category: 'system', label: 'Archive After', description: 'Reserved retention threshold; the protected archive RPC currently remains fixed at one year.', defaultValue: 12, min: 6, max: 120, unit: 'months', status: 'future' }),
   numberSetting({ key: 'backup_reminder_days', category: 'system', label: 'Backup Reminder', description: 'Reserved reminder threshold for future health warnings.', defaultValue: 7, min: 1, max: 90, unit: 'days', status: 'future' }),

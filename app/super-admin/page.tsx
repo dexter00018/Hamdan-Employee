@@ -305,6 +305,12 @@ export default function SuperAdminDashboard() {
     setAppSettingsSaving(true);
     setAppSettingsMsg(null);
     try {
+      const seasonalStart = String(appSettings.seasonal_theme_start_date || '');
+      const seasonalEnd = String(appSettings.seasonal_theme_end_date || '');
+      if (seasonalStart && seasonalEnd && seasonalStart > seasonalEnd) {
+        setAppSettingsMsg({ type: 'error', text: 'Seasonal Theme end date must be on or after its start date.' });
+        return false;
+      }
       const changedDefinitions = APP_SETTING_DEFINITIONS.filter((setting) => savedAppSettings?.[setting.key] !== appSettings[setting.key]);
       if (!changedDefinitions.length) return true;
       const reviewSummary = changedDefinitions.map((setting) => `${setting.label}: ${String(savedAppSettings?.[setting.key] ?? 'unset')} → ${String(appSettings[setting.key])}`);
@@ -323,11 +329,12 @@ export default function SuperAdminDashboard() {
         .map((key) => `${labels[key]} ${savedAppSettings?.[key] ?? 'unset'} → ${appSettings[key]}`);
       setSavedAppSettings({ ...appSettings });
       setAppSettingsMsg({ type: 'success', text: 'Settings saved. ACTIVE controls take effect through their current consumers; FUTURE CONTROL values are stored only.' });
+      const seasonalChanges = changes.filter((change) => change.toLowerCase().includes('seasonal') || change.startsWith('Theme ') || change.startsWith('Apply To') || change.startsWith('Start Date') || change.startsWith('End Date') || change.startsWith('Snow Effect') || change.startsWith('Holiday Banner'));
       await logAuditEvent(
-        'app_settings_updated',
+        seasonalChanges.length ? 'seasonal_theme_updated' : 'app_settings_updated',
         'system',
         null,
-        `Updated App Settings: ${changes.join('; ') || 'no value changes'}`
+        `${seasonalChanges.length ? 'Seasonal Theme updated' : 'Updated App Settings'}: ${changes.join('; ') || 'no value changes'}`
       );
       return true;
     } catch (err: any) {
