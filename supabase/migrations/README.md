@@ -19,7 +19,7 @@ CLI, or upgrading to the Pro plan for automatic daily backups.
 
 | File | What it does |
 |---|---|
-| `01_tables.sql` | All tables: profiles, attendance_logs, leave system, holidays, archive tables, etc. |
+| `01_tables.sql` | All tables: profiles, attendance_logs, leave system, holidays, typed app settings, archive tables, etc. |
 | `02_indexes.sql` | Performance indexes beyond the primary/unique keys already in the table definitions |
 | `03_functions_and_triggers.sql` | All business logic: leave credit deduction, auto-absence marking, data archival, plus the triggers that wire them up |
 | `04_rls_policies.sql` | Row Level Security — who can read/write what |

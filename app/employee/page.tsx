@@ -91,12 +91,13 @@ export default function EmployeeDashboard() {
   const [lateCutoffMinute, setLateCutoffMinute] = useState(FALLBACK_LATE_CUTOFF_MINUTE);
   const [fallbackLeaveCredits, setFallbackLeaveCredits] = useState(FALLBACK_LEAVE_CREDITS);
   const [timeOutReminderHour, setTimeOutReminderHour] = useState(FALLBACK_TIME_OUT_REMINDER_HOUR);
+  const [attendanceRecordingEnabled, setAttendanceRecordingEnabled] = useState(true);
 
   const fetchAppSettings = async () => {
     const { data, error } = await supabase
       .from('app_settings')
       .select('key, value')
-      .in('key', ['late_cutoff_hour', 'late_cutoff_minute', 'default_leave_credits', 'time_out_reminder_hour']);
+      .in('key', ['late_cutoff_hour', 'late_cutoff_minute', 'default_leave_credits', 'time_out_reminder_hour', 'attendance_recording_enabled']);
     if (error) {
       console.error('Error fetching app settings:', error);
       return;
@@ -106,6 +107,7 @@ export default function EmployeeDashboard() {
     if (typeof map.late_cutoff_minute === 'number') setLateCutoffMinute(map.late_cutoff_minute);
     if (typeof map.default_leave_credits === 'number') setFallbackLeaveCredits(map.default_leave_credits);
     if (typeof map.time_out_reminder_hour === 'number') setTimeOutReminderHour(map.time_out_reminder_hour);
+    if (typeof map.attendance_recording_enabled === 'boolean') setAttendanceRecordingEnabled(map.attendance_recording_enabled);
   };
 
   // --- Dark Mode ---
@@ -647,6 +649,7 @@ export default function EmployeeDashboard() {
   };
 
   const handleTimeIn = async () => {
+    if (!attendanceRecordingEnabled) { setMessage('Error: Attendance recording is temporarily unavailable.'); return; }
     setLoading(true);
     setMessage('');
     try {
@@ -673,6 +676,7 @@ export default function EmployeeDashboard() {
   // Called when the employee clicks Time Out.
   // If it's before 7PM Manila time, show a warning first.
   const handleTimeOutClick = () => {
+    if (!attendanceRecordingEnabled) { setMessage('Error: Attendance recording is temporarily unavailable.'); return; }
     const now = new Date();
     const manilaHour = parseInt(
       new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', hour12: false }).format(now),
@@ -2186,15 +2190,16 @@ export default function EmployeeDashboard() {
           <div className="space-y-4 lg:col-span-3 md:space-y-5">
 
             {/* Clock + Time buttons */}
+            {!attendanceRecordingEnabled ? <div role="status" className="rounded-2xl border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:!text-white">Attendance recording is temporarily unavailable.</div> : null}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <EmployeeWorkClock todayLog={todayLog} />
               <div className="flex flex-col justify-center gap-2 sm:min-h-40">
                 {!todayLog ? (
-                  <button onClick={handleTimeIn} disabled={loading || initLoading || checkingNetwork || officeNetworkAllowed === false} className="btn-primary !py-3">
+                  <button onClick={handleTimeIn} disabled={!attendanceRecordingEnabled || loading || initLoading || checkingNetwork || officeNetworkAllowed === false} className="btn-primary !py-3">
                     {loading ? <span className="flex items-center justify-center gap-2"><Spinner size="sm"/>Processing...</span> : checkingNetwork ? <span className="flex items-center justify-center gap-2"><Spinner size="sm"/>Checking...</span> : officeNetworkAllowed === false ? (officeNetworkIssue === 'unavailable' ? 'Attendance Unavailable' : 'Not on Office Network') : 'Time In'}
                   </button>
                 ) : !todayLog.time_out ? (
-                  <button onClick={handleTimeOutClick} disabled={timeOutLoading || checkingNetwork || officeNetworkAllowed === false} className="btn-danger !py-3">
+                  <button onClick={handleTimeOutClick} disabled={!attendanceRecordingEnabled || timeOutLoading || checkingNetwork || officeNetworkAllowed === false} className="btn-danger !py-3">
                     {timeOutLoading ? <span className="flex items-center justify-center gap-2"><Spinner size="sm"/>Processing...</span> : checkingNetwork ? <span className="flex items-center justify-center gap-2"><Spinner size="sm"/>Checking...</span> : officeNetworkAllowed === false ? (officeNetworkIssue === 'unavailable' ? 'Attendance Unavailable' : 'Not on Office Network') : 'Time Out'}
                   </button>
                 ) : (
@@ -2492,7 +2497,7 @@ export default function EmployeeDashboard() {
         open={actionCenterModalOpen}
         onClose={() => setActionCenterModalOpen(false)}
         timeOutPending={Boolean(todayLog?.time_in && !todayLog.time_out)}
-        timeOutDisabled={officeNetworkAllowed === false || timeOutLoading}
+        timeOutDisabled={!attendanceRecordingEnabled || officeNetworkAllowed === false || timeOutLoading}
         pendingLeaves={pendingLeavesCount}
         pendingDisputes={pendingDisputesCount}
         newPayslips={newPayslipsCount}

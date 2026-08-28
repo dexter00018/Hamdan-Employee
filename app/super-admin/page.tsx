@@ -1,24 +1,33 @@
 'use client';
-import AccountFormModal from '@/components/super-admin/modals/AccountFormModal';
-import ResetPasswordModal from '@/components/super-admin/modals/ResetPasswordModal';
-import UserAccountsModal from '@/components/super-admin/modals/UserAccountsModal';
-import AttendanceRecordsModal from '@/components/super-admin/modals/AttendanceRecordsModal';
-import AppSettingsModal from '@/components/super-admin/modals/AppSettingsModal';
-import DataArchiveModal from '@/components/super-admin/modals/DataArchiveModal';
-import DatabaseBackupModal from '@/components/super-admin/modals/DatabaseBackupModal';
 import ArchivePasswordModal from '@/components/super-admin/modals/ArchivePasswordModal';
 import BackupPasswordModal from '@/components/super-admin/modals/BackupPasswordModal';
-import EditAttendanceModal from '@/components/super-admin/modals/EditAttendanceModal';
-
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase, supabaseAuthActions } from '@/lib/supabase';
-import Spinner from '@/components/Spinner';
-import SystemHealthModal from '@/components/super-admin/modals/SystemHealthModal';
-import AuditLogModal from '@/components/super-admin/modals/AuditLogModal';
+import dynamic from 'next/dynamic';
+import { Activity, AlertTriangle, ChevronRight, Clock3, Moon, ShieldCheck, Sun, UserRound, Users } from 'lucide-react';
+import SuperAdminQuickActions from '@/components/super-admin/SuperAdminQuickActions';
+import SuperAdminMobileBottomNav from '@/components/super-admin/SuperAdminMobileBottomNav';
+import SuperAdminMobileToolsSheet from '@/components/super-admin/SuperAdminMobileToolsSheet';
+import SuperAdminDesktopSidebar from '@/components/super-admin/SuperAdminDesktopSidebar';
+import { APP_SETTING_DEFINITIONS, DEFAULT_APP_SETTINGS, normalizeAppSettings, type AppSettingsValues } from '@/lib/app-settings';
+
+const AccountFormModal = dynamic(() => import('@/components/super-admin/modals/AccountFormModal'));
+const ResetPasswordModal = dynamic(() => import('@/components/super-admin/modals/ResetPasswordModal'));
+const UserAccountsModal = dynamic(() => import('@/components/super-admin/modals/UserAccountsModal'));
+const AttendanceRecordsModal = dynamic(() => import('@/components/super-admin/modals/AttendanceRecordsModal'));
+const AppSettingsModal = dynamic(() => import('@/components/super-admin/modals/AppSettingsModal'));
+const DataArchiveModal = dynamic(() => import('@/components/super-admin/modals/DataArchiveModal'));
+const DatabaseBackupModal = dynamic(() => import('@/components/super-admin/modals/DatabaseBackupModal'));
+const EditAttendanceModal = dynamic(() => import('@/components/super-admin/modals/EditAttendanceModal'));
+const SystemHealthModal = dynamic(() => import('@/components/super-admin/modals/SystemHealthModal'));
+const AuditLogModal = dynamic(() => import('@/components/super-admin/modals/AuditLogModal'));
+const AdminAttentionModal = dynamic(() => import('@/components/super-admin/modals/AdminAttentionModal'));
 
 const PAGE_SIZE = 5;
 
 export default function SuperAdminDashboard() {
+  const [darkMode, setDarkMode] = useState(false);
+  const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
   const [employees, setEmployees] = useState<any[]>([]);
   const [employeesLoading, setEmployeesLoading] = useState(true);
 
@@ -112,15 +121,9 @@ export default function SuperAdminDashboard() {
   const [auditLogModalOpen, setAuditLogModalOpen] = useState(false);
   const [healthModalOpen, setHealthModalOpen] = useState(false);
   const [appSettingsModalOpen, setAppSettingsModalOpen] = useState(false);
-  const [appSettings, setAppSettings] = useState<{
-    late_cutoff_hour: number;
-    late_cutoff_minute: number;
-    default_leave_credits: number;
-    time_out_reminder_hour: number;
-    support_response_target_hours: number;
-    payslip_ack_reminder_days: number;
-    dashboard_refresh_seconds: number;
-  }>({ late_cutoff_hour: 9, late_cutoff_minute: 15, default_leave_credits: 10, time_out_reminder_hour: 19, support_response_target_hours: 24, payslip_ack_reminder_days: 3, dashboard_refresh_seconds: 60 });
+  const [attentionModalOpen, setAttentionModalOpen] = useState(false);
+  const [appSettings, setAppSettings] = useState<AppSettingsValues>({ ...DEFAULT_APP_SETTINGS });
+  const [savedAppSettings, setSavedAppSettings] = useState<AppSettingsValues | null>(null);
   const [appSettingsLoading, setAppSettingsLoading] = useState(false);
   const [appSettingsSaving, setAppSettingsSaving] = useState(false);
   const [appSettingsMsg, setAppSettingsMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -131,6 +134,28 @@ export default function SuperAdminDashboard() {
   const [healthStatusLoading, setHealthStatusLoading] = useState(false);
   const [currentAdminEmail, setCurrentAdminEmail] = useState<string | null>(null);
 
+  const applyTheme = useCallback((nextDark: boolean) => {
+    document.documentElement.classList.toggle('dark', nextDark);
+    document.documentElement.style.colorScheme = nextDark ? 'dark' : 'light';
+    try { localStorage.setItem('theme', nextDark ? 'dark' : 'light'); } catch { /* unavailable storage */ }
+    setDarkMode(nextDark);
+  }, []);
+
+  const toggleTheme = () => applyTheme(!darkMode);
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    window.location.replace('/');
+  };
+
+  useEffect(() => {
+    queueMicrotask(() => setDarkMode(document.documentElement.classList.contains('dark')));
+    const syncTheme = (event: StorageEvent) => {
+      if (event.key === 'theme' && (event.newValue === 'dark' || event.newValue === 'light')) applyTheme(event.newValue === 'dark');
+    };
+    window.addEventListener('storage', syncTheme);
+    return () => window.removeEventListener('storage', syncTheme);
+  }, [applyTheme]);
+
   // Audit Log -- read-only trail of admin/system actions. Entries are
   // written via the log_audit_event() RPC (see migration), which stamps
   // actor_id from the caller's own session -- never trusted from client
@@ -139,6 +164,7 @@ export default function SuperAdminDashboard() {
   const [auditLogsLoading, setAuditLogsLoading] = useState(false);
   const [auditLogsFetched, setAuditLogsFetched] = useState(false);
   const [auditLogPage, setAuditLogPage] = useState(1);
+  const [recentAuditLogs, setRecentAuditLogs] = useState<any[]>([]);
 
   const fetchAuditLogs = async () => {
     setAuditLogsLoading(true);
@@ -199,14 +225,8 @@ export default function SuperAdminDashboard() {
   // currently logged-in admin's own email) since that's already wired
   // through the exact same custom SMTP path every other auth email
   // uses -- a real end-to-end proof it works, not a synthetic check.
-  const openHealthModal = async () => {
-    setTestEmailResult(null);
-    setHealthModalOpen(true);
+  const fetchHealthStatus = async () => {
     setHealthStatusLoading(true);
-
-    const { data: { user } } = await supabase.auth.getUser();
-    setCurrentAdminEmail(user?.email ?? null);
-
     const [{ data: backupRow }, { data: archiveRow }] = await Promise.all([
       supabase.from('audit_logs').select('created_at').eq('action', 'database_backup').order('created_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('audit_logs').select('created_at').eq('action', 'data_archived').order('created_at', { ascending: false }).limit(1).maybeSingle(),
@@ -215,6 +235,19 @@ export default function SuperAdminDashboard() {
     setLastArchiveAt(archiveRow?.created_at ?? null);
     setHealthStatusLoading(false);
   };
+
+  const openHealthModal = async () => {
+    setTestEmailResult(null);
+    setHealthModalOpen(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    setCurrentAdminEmail(user?.email ?? null);
+    await fetchHealthStatus();
+  };
+
+  useEffect(() => {
+    fetchHealthStatus();
+    supabase.from('audit_logs').select('id, created_at, action, summary').order('created_at', { ascending: false }).limit(3).then(({ data }) => setRecentAuditLogs(data || []));
+  }, []);
 
   const sendTestEmail = async () => {
     if (!currentAdminEmail) {
@@ -255,23 +288,16 @@ export default function SuperAdminDashboard() {
     const { data, error } = await supabase
       .from('app_settings')
       .select('key, value')
-      .in('key', ['late_cutoff_hour', 'late_cutoff_minute', 'default_leave_credits', 'time_out_reminder_hour', 'support_response_target_hours', 'payslip_ack_reminder_days', 'dashboard_refresh_seconds']);
+      .in('key', APP_SETTING_DEFINITIONS.map((setting) => setting.key));
     if (error) {
       console.error('Error fetching app settings:', error);
       setAppSettingsMsg({ type: 'error', text: error.message });
       setAppSettingsLoading(false);
       return;
     }
-    const map = Object.fromEntries((data || []).map((r) => [r.key, r.value]));
-    setAppSettings({
-      late_cutoff_hour: typeof map.late_cutoff_hour === 'number' ? map.late_cutoff_hour : 9,
-      late_cutoff_minute: typeof map.late_cutoff_minute === 'number' ? map.late_cutoff_minute : 15,
-      default_leave_credits: typeof map.default_leave_credits === 'number' ? map.default_leave_credits : 10,
-      time_out_reminder_hour: typeof map.time_out_reminder_hour === 'number' ? map.time_out_reminder_hour : 19,
-      support_response_target_hours: typeof map.support_response_target_hours === 'number' ? map.support_response_target_hours : 24,
-      payslip_ack_reminder_days: typeof map.payslip_ack_reminder_days === 'number' ? map.payslip_ack_reminder_days : 3,
-      dashboard_refresh_seconds: typeof map.dashboard_refresh_seconds === 'number' ? map.dashboard_refresh_seconds : 60,
-    });
+    const loadedSettings = normalizeAppSettings(data);
+    setAppSettings(loadedSettings);
+    setSavedAppSettings(loadedSettings);
     setAppSettingsLoading(false);
   };
 
@@ -279,32 +305,35 @@ export default function SuperAdminDashboard() {
     setAppSettingsSaving(true);
     setAppSettingsMsg(null);
     try {
+      const changedDefinitions = APP_SETTING_DEFINITIONS.filter((setting) => savedAppSettings?.[setting.key] !== appSettings[setting.key]);
+      if (!changedDefinitions.length) return true;
+      const reviewSummary = changedDefinitions.map((setting) => `${setting.label}: ${String(savedAppSettings?.[setting.key] ?? 'unset')} → ${String(appSettings[setting.key])}`);
+      if (!confirm(`Save ${changedDefinitions.length} global setting change${changedDefinitions.length === 1 ? '' : 's'}?\n\n${reviewSummary.slice(0, 8).join('\n')}${reviewSummary.length > 8 ? `\n+${reviewSummary.length - 8} more` : ''}`)) return false;
       const { data: { user } } = await supabase.auth.getUser();
-      const rows = [
-        { key: 'late_cutoff_hour', value: appSettings.late_cutoff_hour },
-        { key: 'late_cutoff_minute', value: appSettings.late_cutoff_minute },
-        { key: 'default_leave_credits', value: appSettings.default_leave_credits },
-        { key: 'time_out_reminder_hour', value: appSettings.time_out_reminder_hour },
-        { key: 'support_response_target_hours', value: appSettings.support_response_target_hours },
-        { key: 'payslip_ack_reminder_days', value: appSettings.payslip_ack_reminder_days },
-        { key: 'dashboard_refresh_seconds', value: appSettings.dashboard_refresh_seconds },
-      ];
-      for (const row of rows) {
-        const { error } = await supabase
-          .from('app_settings')
-          .upsert({ key: row.key, value: row.value, updated_at: new Date().toISOString(), updated_by: user?.id ?? null }, { onConflict: 'key' });
-        if (error) throw error;
-      }
-      setAppSettingsMsg({ type: 'success', text: 'Settings saved. Takes effect immediately for new time-ins and dashboard loads.' });
+      const rows = APP_SETTING_DEFINITIONS.map((setting) => ({ key: setting.key, value: appSettings[setting.key] }));
+      const timestamp = new Date().toISOString();
+      const { error } = await supabase.from('app_settings').upsert(
+        rows.map((row) => ({ ...row, updated_at: timestamp, updated_by: user?.id ?? null })),
+        { onConflict: 'key' }
+      );
+      if (error) throw error;
+      const labels = Object.fromEntries(APP_SETTING_DEFINITIONS.map((setting) => [setting.key, setting.label])) as Record<string, string>;
+      const changes = (Object.keys(appSettings) as Array<keyof typeof appSettings>)
+        .filter((key) => savedAppSettings?.[key] !== appSettings[key])
+        .map((key) => `${labels[key]} ${savedAppSettings?.[key] ?? 'unset'} → ${appSettings[key]}`);
+      setSavedAppSettings({ ...appSettings });
+      setAppSettingsMsg({ type: 'success', text: 'Settings saved. ACTIVE controls take effect through their current consumers; FUTURE CONTROL values are stored only.' });
       await logAuditEvent(
         'app_settings_updated',
         'system',
         null,
-        `Updated app settings: late cutoff ${appSettings.late_cutoff_hour}:${String(appSettings.late_cutoff_minute).padStart(2, '0')}, leave credits ${appSettings.default_leave_credits}, support target ${appSettings.support_response_target_hours}h, payslip reminder ${appSettings.payslip_ack_reminder_days}d, refresh ${appSettings.dashboard_refresh_seconds}s`
+        `Updated App Settings: ${changes.join('; ') || 'no value changes'}`
       );
+      return true;
     } catch (err: any) {
       console.error('Error saving app settings:', err);
       setAppSettingsMsg({ type: 'error', text: err?.message ?? 'Failed to save settings.' });
+      return false;
     } finally {
       setAppSettingsSaving(false);
     }
@@ -331,6 +360,7 @@ export default function SuperAdminDashboard() {
 
   useEffect(() => {
     fetchEmployees();
+    supabase.auth.getUser().then(({ data }) => setCurrentAdminEmail(data.user?.email ?? null));
   }, []);
 
   const fetchEmployees = async () => {
@@ -681,6 +711,12 @@ export default function SuperAdminDashboard() {
     setCreateAccountModalOpen(true);
   };
 
+  const openResetPasswordModal = () => {
+    setResetEmail('');
+    setResetPasswordMsg(null);
+    setResetPasswordModalOpen(true);
+  };
+
   const startEdit = (emp: any) => {
     setEditingId(emp.id);
     setFullName(emp.full_name ?? '');
@@ -947,47 +983,53 @@ export default function SuperAdminDashboard() {
   const totalAdmins = employees.filter((e) => e.role === 'admin').length;
   const totalEmployeesCount = employees.filter((e) => e.role === 'employee').length;
   const incompleteProfilesCount = employees.filter((e) => e.role === 'employee' && (!e.full_name || !e.employee_id || !e.designation || !e.avatar_url || !e.employee_email)).length;
+  const attentionItems: Array<{ id: string; title: string; description: string; actionLabel: string; action: () => void }> = [];
+  if (incompleteProfilesCount > 0) attentionItems.push({ id: 'profiles', title: 'Incomplete Profiles', description: `${incompleteProfilesCount} employee profile${incompleteProfilesCount === 1 ? ' needs' : 's need'} required information.`, actionLabel: 'Review accounts', action: openUserAccountsModal });
+  if (!healthStatusLoading && !lastBackupAt) attentionItems.push({ id: 'backup', title: 'No Backup Recorded', description: 'No successful database backup appears in the administrative audit trail.', actionLabel: 'Open backup', action: () => setBackupModalOpen(true) });
+  if (!healthStatusLoading && !lastArchiveAt) attentionItems.push({ id: 'archive', title: 'No Archive Recorded', description: 'No completed data archival appears in the administrative audit trail.', actionLabel: 'Open archival', action: () => setArchivalModalOpen(true) });
 
   return (
-    <main className="min-h-screen p-3 sm:p-4 md:p-6 lg:p-8">
-      <div className="max-w-7xl mx-auto space-y-3 sm:space-y-4 md:space-y-5">
+    <main id="super-admin-dashboard-top" className="min-h-screen bg-slate-50 p-3 pb-24 transition-colors dark:bg-[#111512] sm:p-4 md:p-6 lg:pb-6 lg:pl-[300px]">
+      <SuperAdminDesktopSidebar darkMode={darkMode} email={currentAdminEmail} onToggleTheme={toggleTheme} onLogout={handleLogout} onHome={() => document.getElementById('super-admin-dashboard-top')?.scrollIntoView({ behavior: 'smooth' })} onCreate={openCreateAccountModal} onAccounts={openUserAccountsModal} onAttendance={openAttendanceRecordsModal} onSettings={openAppSettingsModal} onReset={openResetPasswordModal} onAudit={openAuditLogModal} onHealth={openHealthModal} onBackup={() => setBackupModalOpen(true)} onArchive={() => setArchivalModalOpen(true)} />
+      <div className="mx-auto max-w-7xl space-y-4 md:space-y-5">
         {/* SUPER ADMIN HEADER — aligned with HR / Employee hierarchy */}
-        <header className="branding-box !p-4 sm:!p-5">
+        <header className="rounded-[26px] border border-slate-200 bg-white p-4 shadow-[0_10px_30px_rgba(15,23,42,0.07)] dark:border-slate-700 dark:bg-[#202521] sm:p-5">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex items-start gap-3 min-w-0">
-              <div className="w-11 h-11 rounded-2xl bg-slate-950 text-white flex items-center justify-center text-lg flex-shrink-0 shadow-sm">
-                🛡️
+              <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-green-50 text-green-700 shadow-sm dark:bg-green-950/50 dark:text-green-300">
+                <ShieldCheck size={20} />
               </div>
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="text-base sm:text-lg md:text-xl leading-tight">HAMDAN ENGINEERING</h1>
-                  <span className="px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 text-[8px] font-extrabold uppercase tracking-wider">
-                    Super Admin
-                  </span>
+                  <h1 className="text-base leading-tight text-slate-950 dark:text-white sm:text-lg md:text-xl">HAMDAN ENGINEERING</h1>
                 </div>
-                <p className="text-slate-400 text-[10px] font-medium mt-1">
-                  Manage workforce access, shared HR rules, security, and system operations.
+                <p className="mt-1 text-[11px] font-bold text-green-700 dark:text-green-400">
+                  Super Administrator
                 </p>
+                <p className="mt-0.5 text-[10px] text-slate-500 dark:!text-[#aab8ad]">System & Access Management</p>
               </div>
             </div>
 
             <div className="flex items-center gap-2 sm:flex-shrink-0">
+              <button type="button" onClick={toggleTheme} className="grid h-11 w-11 place-items-center rounded-full border border-slate-200 text-slate-600 dark:border-slate-700 dark:!text-white" aria-label={darkMode ? 'Use light mode' : 'Use dark mode'}>
+                {darkMode ? <Sun size={19} /> : <Moon size={19} />}
+              </button>
               <button
                 type="button"
                 onClick={openHealthModal}
-                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-700 text-[10px] font-extrabold hover:bg-emerald-100 transition"
+                className="relative grid h-11 w-11 place-items-center rounded-full border border-slate-200 text-slate-600 dark:border-slate-700 dark:!text-white"
+                aria-label="Open system health"
               >
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                System status
+                <Activity size={19} />
+                {attentionItems.length > 0 && <span className="absolute right-0.5 top-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-orange-500 dark:border-[#202521]" />}
               </button>
               <button
-                onClick={() =>
-                  supabase.auth.signOut().then(() => (window.location.href = '/'))
-                }
-                className="px-3 py-2 rounded-xl bg-slate-100 text-slate-600 font-bold text-[10px] hover:bg-red-50 hover:text-red-600 transition"
+                onClick={() => setMobileToolsOpen(true)}
+                className="grid h-11 w-11 place-items-center rounded-full border border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:!text-white lg:hidden"
                 type="button"
+                aria-label="Open Super Admin menu"
               >
-                Log Out
+                <UserRound size={19} />
               </button>
             </div>
           </div>
@@ -1005,16 +1047,13 @@ export default function SuperAdminDashboard() {
           </div>
         )}
 
+        <div className="hidden lg:block"><h2 className="text-xl font-black text-slate-950 dark:text-white">Dashboard</h2><p className="mt-1 text-xs text-slate-500 dark:!text-[#aab8ad]">System overview and administrative control center</p></div>
+
         {/* ADMIN OVERVIEW */}
         <section className="space-y-2.5">
           <div className="flex items-end justify-between gap-3">
             <div>
-              <p className="text-[9px] uppercase tracking-[0.18em] font-extrabold text-slate-400">
-                Administration overview
-              </p>
-              <h2 className="text-sm sm:text-base font-extrabold text-slate-900 mt-0.5">
-                Workforce & access
-              </h2>
+              <h2 className="text-xs font-extrabold uppercase tracking-[0.14em] text-slate-600 dark:!text-[#c3d0c5] sm:text-sm">Account Overview</h2>
             </div>
             <button
               type="button"
@@ -1029,226 +1068,107 @@ export default function SuperAdminDashboard() {
             <button
               type="button"
               onClick={openUserAccountsModal}
-              className="card-dark !p-3.5 sm:!p-4 flex items-center gap-3 text-left hover:-translate-y-0.5 transition"
+              className="card-style !p-3.5 sm:!p-4 flex min-h-24 items-center gap-3 text-left hover:-translate-y-0.5 transition dark:bg-[#292f2b]"
             >
-              <span className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center text-base flex-shrink-0">👥</span>
+              <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-green-50 text-green-700 dark:bg-green-950/50 dark:text-green-300"><Users size={17}/></span>
               <span className="min-w-0">
-                <span className="stat-number text-xl sm:text-2xl text-white block leading-none">{totalAccounts}</span>
-                <span className="text-white/60 text-[8px] sm:text-[9px] font-extrabold uppercase tracking-wide block mt-1">Total Accounts</span>
+                <span className="stat-number block text-xl leading-none text-green-700 dark:text-green-300 sm:text-2xl">{totalAccounts}</span>
+                <span className="mt-1 block text-[10px] font-extrabold uppercase tracking-wide text-slate-500 dark:text-slate-300 sm:text-[11px]">Total Accounts</span>
               </span>
             </button>
 
             <button
               type="button"
               onClick={openUserAccountsModal}
-              className="card-style !p-3.5 sm:!p-4 flex items-center gap-3 text-left hover:bg-sky-50/50 hover:-translate-y-0.5 transition"
+              className="card-style !p-3.5 sm:!p-4 flex min-h-24 items-center gap-3 text-left hover:-translate-y-0.5 transition dark:bg-[#292f2b]"
             >
-              <span className="w-9 h-9 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center text-base flex-shrink-0">🧑‍💼</span>
+              <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700 dark:bg-teal-950/50 dark:text-teal-300"><UserRound size={17}/></span>
               <span className="min-w-0">
                 <span className="stat-number text-xl sm:text-2xl text-sky-600 block leading-none">{totalEmployeesCount}</span>
-                <span className="text-slate-500 text-[8px] sm:text-[9px] font-extrabold uppercase tracking-wide block mt-1">Employees</span>
+                <span className="mt-1 block text-[10px] font-extrabold uppercase tracking-wide text-slate-500 dark:text-slate-300 sm:text-[11px]">Employees</span>
               </span>
             </button>
 
             <button
               type="button"
               onClick={openUserAccountsModal}
-              className="card-style !p-3.5 sm:!p-4 flex items-center gap-3 text-left hover:bg-violet-50/50 hover:-translate-y-0.5 transition"
+              className="card-style !p-3.5 sm:!p-4 flex min-h-24 items-center gap-3 text-left hover:-translate-y-0.5 transition dark:bg-[#292f2b]"
             >
-              <span className="w-9 h-9 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center text-base flex-shrink-0">🧑‍💻</span>
+              <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300"><ShieldCheck size={17}/></span>
               <span className="min-w-0">
-                <span className="stat-number text-xl sm:text-2xl text-violet-600 block leading-none">{totalAdmins}</span>
-                <span className="text-slate-500 text-[8px] sm:text-[9px] font-extrabold uppercase tracking-wide block mt-1">HR Admins</span>
+                <span className="stat-number block text-xl leading-none text-blue-700 dark:text-blue-300 sm:text-2xl">{totalAdmins}</span>
+                <span className="mt-1 block text-[10px] font-extrabold uppercase tracking-wide text-slate-500 dark:text-slate-300 sm:text-[11px]">HR Admins</span>
               </span>
             </button>
 
             <button
               type="button"
               onClick={openUserAccountsModal}
-              className="card-style !p-3.5 sm:!p-4 flex items-center gap-3 text-left hover:bg-amber-50/50 hover:-translate-y-0.5 transition"
+              className="card-style !p-3.5 sm:!p-4 flex min-h-24 items-center gap-3 text-left hover:-translate-y-0.5 transition dark:bg-[#292f2b]"
             >
               <span className={`w-9 h-9 rounded-xl flex items-center justify-center text-base flex-shrink-0 ${
                 incompleteProfilesCount ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'
               }`}>
-                {incompleteProfilesCount ? '⚠️' : '✓'}
+                {incompleteProfilesCount ? <AlertTriangle size={17}/> : <ShieldCheck size={17}/>}
               </span>
               <span className="min-w-0">
                 <span className={`stat-number text-xl sm:text-2xl block leading-none ${
                   incompleteProfilesCount ? 'text-amber-600' : 'text-emerald-600'
                 }`}>{incompleteProfilesCount}</span>
-                <span className="text-slate-500 text-[8px] sm:text-[9px] font-extrabold uppercase tracking-wide block mt-1">Incomplete</span>
+                <span className="mt-1 block text-[10px] font-extrabold uppercase tracking-wide text-slate-500 dark:text-slate-300 sm:text-[11px]">Incomplete Profiles</span>
               </span>
             </button>
           </div>
         </section>
 
-        {/* PRIMARY MANAGEMENT — mirrors HR / Employee module hierarchy */}
-        <section className="card-style !p-3.5 sm:!p-4">
-          <div className="flex items-center justify-between gap-3 mb-3">
-            <div>
-              <p className="text-[9px] uppercase tracking-[0.18em] font-extrabold text-slate-400">
-                Primary management
-              </p>
-              <h2 className="text-sm font-extrabold text-slate-900 mt-0.5">
-                People, attendance & shared rules
-              </h2>
-            </div>
-            <span className="hidden sm:inline-flex px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[8px] font-extrabold">
-              HR + Employee aligned
-            </span>
-          </div>
+        {attentionItems.length > 0 ? <button type="button" onClick={() => setAttentionModalOpen(true)} className="flex w-full items-center gap-3 rounded-[22px] border border-orange-200 bg-white p-4 text-left shadow-[0_8px_24px_rgba(15,23,42,0.05)] dark:border-orange-900 dark:bg-[#202521]"><span className="grid h-10 w-10 flex-none place-items-center rounded-xl bg-orange-50 text-orange-700 dark:bg-orange-950/50 dark:text-orange-300"><AlertTriangle size={18}/></span><span className="min-w-0 flex-1"><span className="flex items-center justify-between gap-2"><span className="text-sm font-bold text-slate-950 dark:text-white">Needs Attention</span><span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-black text-orange-800 dark:bg-orange-950 dark:text-orange-200">{attentionItems.length}</span></span><span className="mt-1 block truncate text-xs font-semibold text-slate-700 dark:!text-[#e3ece4]">{attentionItems[0].title}</span><span className="mt-0.5 block truncate text-[10px] text-slate-500 dark:!text-[#aab8ad]">{attentionItems[0].description}</span>{attentionItems.length > 1 ? <span className="mt-1 block text-[10px] font-bold text-orange-700 dark:text-orange-300">+{attentionItems.length - 1} more</span> : null}</span><ChevronRight size={18} className="flex-none text-slate-400"/></button> : null}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5">
-            <button
-              type="button"
-              onClick={openCreateAccountModal}
-              className="rounded-2xl border border-slate-200 bg-white p-3 flex items-center gap-3 text-left hover:bg-sky-50/60 hover:border-sky-100 hover:-translate-y-0.5 transition min-h-[72px]"
-            >
-              <span className="w-10 h-10 rounded-2xl bg-sky-50 flex items-center justify-center text-lg flex-shrink-0">➕</span>
-              <span className="min-w-0">
-                <span className="block font-extrabold text-slate-900 text-xs">Create Account</span>
-                <span className="block text-slate-400 text-[9px] mt-1">Employee or HR access</span>
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={openUserAccountsModal}
-              className="rounded-2xl border border-slate-200 bg-white p-3 flex items-center gap-3 text-left hover:bg-blue-50/60 hover:border-blue-100 hover:-translate-y-0.5 transition min-h-[72px]"
-            >
-              <span className="w-10 h-10 rounded-2xl bg-blue-50 flex items-center justify-center text-lg flex-shrink-0">👥</span>
-              <span className="min-w-0">
-                <span className="block font-extrabold text-slate-900 text-xs">User Accounts</span>
-                <span className="block text-slate-400 text-[9px] mt-1">Roles, profile details & access</span>
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={openAttendanceRecordsModal}
-              className="rounded-2xl border border-slate-200 bg-white p-3 flex items-center gap-3 text-left hover:bg-emerald-50/60 hover:border-emerald-100 hover:-translate-y-0.5 transition min-h-[72px]"
-            >
-              <span className="w-10 h-10 rounded-2xl bg-emerald-50 flex items-center justify-center text-lg flex-shrink-0">📋</span>
-              <span className="min-w-0">
-                <span className="block font-extrabold text-slate-900 text-xs">Attendance Records</span>
-                <span className="block text-slate-400 text-[9px] mt-1">Review & correct employee logs</span>
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={openAppSettingsModal}
-              className="rounded-2xl border border-slate-200 bg-white p-3 flex items-center gap-3 text-left hover:bg-orange-50/60 hover:border-orange-100 hover:-translate-y-0.5 transition min-h-[72px]"
-            >
-              <span className="w-10 h-10 rounded-2xl bg-orange-50 flex items-center justify-center text-lg flex-shrink-0">⚙️</span>
-              <span className="min-w-0">
-                <span className="block font-extrabold text-slate-900 text-xs">Shared App Settings</span>
-                <span className="block text-slate-400 text-[9px] mt-1">Rules used by HR & Employee</span>
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => { setResetEmail(''); setResetPasswordMsg(null); setResetPasswordModalOpen(true); }}
-              className="rounded-2xl border border-slate-200 bg-white p-3 flex items-center gap-3 text-left hover:bg-amber-50/60 hover:border-amber-100 hover:-translate-y-0.5 transition min-h-[72px]"
-            >
-              <span className="w-10 h-10 rounded-2xl bg-amber-50 flex items-center justify-center text-lg flex-shrink-0">🔑</span>
-              <span className="min-w-0">
-                <span className="block font-extrabold text-slate-900 text-xs">Password Reset</span>
-                <span className="block text-slate-400 text-[9px] mt-1">Secure account recovery</span>
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={openAuditLogModal}
-              className="rounded-2xl border border-slate-200 bg-white p-3 flex items-center gap-3 text-left hover:bg-indigo-50/60 hover:border-indigo-100 hover:-translate-y-0.5 transition min-h-[72px]"
-            >
-              <span className="w-10 h-10 rounded-2xl bg-indigo-50 flex items-center justify-center text-lg flex-shrink-0">📜</span>
-              <span className="min-w-0">
-                <span className="block font-extrabold text-slate-900 text-xs">Audit Log</span>
-                <span className="block text-slate-400 text-[9px] mt-1">Administrative activity trail</span>
-              </span>
-            </button>
-          </div>
-        </section>
-
-        {/* SYSTEM OPERATIONS — lower visual priority */}
-        <section className="space-y-2.5">
-          <div>
-            <p className="text-[9px] uppercase tracking-[0.18em] font-extrabold text-slate-400">
-              System operations
-            </p>
-            <h2 className="text-sm font-extrabold text-slate-900 mt-0.5">
-              Maintenance & resilience
-            </h2>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-            <button
-              type="button"
-              onClick={openHealthModal}
-              className="card-style !p-3 flex items-center gap-3 text-left hover:bg-emerald-50/50 hover:-translate-y-0.5 transition"
-            >
-              <span className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center text-base flex-shrink-0">💚</span>
-              <span className="min-w-0">
-                <span className="block font-extrabold text-slate-900 text-[11px]">System Health</span>
-                <span className="block text-slate-400 text-[9px] mt-0.5">Check backup, archive & email</span>
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setBackupModalOpen(true)}
-              className="card-style !p-3 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition"
-            >
-              <span className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center text-base flex-shrink-0">🗄️</span>
-              <span className="min-w-0">
-                <span className="block font-extrabold text-slate-900 text-[11px]">Database Backup</span>
-                <span className="block text-slate-400 text-[9px] mt-0.5">Create an off-site copy</span>
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setArchivalModalOpen(true)}
-              className="card-style !p-3 flex items-center gap-3 text-left hover:bg-slate-50 hover:-translate-y-0.5 transition"
-            >
-              <span className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center text-base flex-shrink-0">🗃️</span>
-              <span className="min-w-0">
-                <span className="block font-extrabold text-slate-900 text-[11px]">Data Archival</span>
-                <span className="block text-slate-400 text-[9px] mt-0.5">Move records older than one year</span>
-              </span>
-            </button>
-          </div>
-        </section>
+        <SuperAdminQuickActions
+          onCreateAccount={openCreateAccountModal}
+          onAccounts={openUserAccountsModal}
+          onAttendance={openAttendanceRecordsModal}
+          onSettings={openAppSettingsModal}
+          onResetPassword={openResetPasswordModal}
+          onAuditLog={openAuditLogModal}
+          onSystemHealth={openHealthModal}
+          onBackup={() => setBackupModalOpen(true)}
+        />
+        <div className="grid gap-4 xl:grid-cols-[1.3fr_0.7fr]">
+          <button type="button" onClick={openHealthModal} className="rounded-[24px] border border-slate-200 bg-white p-4 text-left shadow-[0_8px_24px_rgba(15,23,42,0.06)] dark:border-slate-700 dark:bg-[#202521]"><div className="flex items-center justify-between gap-3"><div><div className="flex items-center gap-2"><p className="text-base font-semibold text-slate-950 dark:text-white">System Health</p><span className={`rounded-full px-2 py-0.5 text-[9px] font-black ${healthStatusLoading ? 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:!text-white' : lastBackupAt && lastArchiveAt ? 'bg-green-100 text-green-800 dark:bg-green-950 dark:!text-white' : 'bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-200'}`}>{healthStatusLoading ? 'CHECKING' : lastBackupAt && lastArchiveAt ? 'HEALTHY' : 'ATTENTION'}</span></div><p className="mt-0.5 text-xs text-slate-500 dark:!text-[#aab8ad]">Backup, archive, and email delivery</p></div><span className="grid h-10 w-10 place-items-center rounded-xl bg-green-50 text-green-700 dark:bg-green-950/50 dark:text-green-300"><Activity size={18}/></span></div><div className="mt-3 grid grid-cols-2 gap-2"><div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-800"><p className="text-[10px] font-bold text-slate-500 dark:!text-[#aab8ad]">Last backup</p><p className="mt-1 text-xs font-bold text-slate-950 dark:text-white">{healthStatusLoading ? 'Checking…' : formatHealthTimestamp(lastBackupAt)}</p></div><div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-800"><p className="text-[10px] font-bold text-slate-500 dark:!text-[#aab8ad]">Last archive</p><p className="mt-1 text-xs font-bold text-slate-950 dark:text-white">{healthStatusLoading ? 'Checking…' : formatHealthTimestamp(lastArchiveAt)}</p></div></div></button>
+          <section className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.06)] dark:border-slate-700 dark:bg-[#202521]"><div className="flex items-center justify-between gap-3"><div><p className="text-base font-semibold text-slate-950 dark:text-white">Recent Admin Activity</p><p className="mt-0.5 text-xs text-slate-500 dark:!text-[#aab8ad]">Latest security and configuration events</p></div><Clock3 size={18} className="text-green-700 dark:text-green-300"/></div><div className="mt-3 space-y-1.5">{recentAuditLogs.length ? recentAuditLogs.map((log) => <div key={log.id} className="flex items-start gap-2 rounded-xl bg-slate-50 p-2.5 dark:bg-slate-800"><span className="mt-1 h-2 w-2 flex-none rounded-full bg-green-500"/><span className="min-w-0"><span className="block truncate text-[11px] font-bold text-slate-900 dark:text-white">{auditActionMeta(log.action).label}</span><span className="block truncate text-[9px] text-slate-500 dark:!text-[#aab8ad]">{new Date(log.created_at).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span></span></div>) : <p className="rounded-xl bg-slate-50 p-3 text-[10px] text-slate-500 dark:bg-slate-800 dark:!text-[#aab8ad]">No recent administrative activity.</p>}</div><button type="button" onClick={openAuditLogModal} className="mt-2 min-h-11 w-full text-xs font-bold text-green-700 dark:text-green-300">View Audit Log →</button></section>
+        </div>
       </div>
 
-      <AccountFormModal open={createAccountModalOpen} onClose={() => setCreateAccountModalOpen(false)} confirmPassword={confirmPassword} deactivating={deactivating} designation={designation} editingId={editingId} email={email} emailChecking={emailChecking} emailConflict={emailConflict} employeeId={employeeId} employeeIdConflict={employeeIdConflict} employees={employees} fullName={fullName} fullNameConflict={fullNameConflict} handleSave={handleSave} loading={loading} password={password} passwordMismatch={passwordMismatch} resetForm={resetForm} role={role} setConfirmPassword={setConfirmPassword} setDesignation={setDesignation} setEmail={setEmail} setEmployeeId={setEmployeeId} setFullName={setFullName} setPassword={setPassword} setRole={setRole} toggleAccountActive={toggleAccountActive} />
+      <SuperAdminMobileBottomNav onHome={() => document.getElementById('super-admin-dashboard-top')?.scrollIntoView({ behavior: 'smooth' })} onAccounts={openUserAccountsModal} onSettings={openAppSettingsModal} onHealth={openHealthModal} onMore={() => setMobileToolsOpen(true)} />
+      <SuperAdminMobileToolsSheet open={mobileToolsOpen} darkMode={darkMode} email={currentAdminEmail} onClose={() => setMobileToolsOpen(false)} onToggleTheme={toggleTheme} onLogout={handleLogout} onCreate={openCreateAccountModal} onAccounts={openUserAccountsModal} onAttendance={openAttendanceRecordsModal} onSettings={openAppSettingsModal} onReset={openResetPasswordModal} onAudit={openAuditLogModal} onHealth={openHealthModal} onBackup={() => setBackupModalOpen(true)} onArchive={() => setArchivalModalOpen(true)} />
 
-      <ResetPasswordModal open={resetPasswordModalOpen} onClose={() => setResetPasswordModalOpen(false)} handleResetPassword={handleResetPassword} resetEmail={resetEmail} resetLoading={resetLoading} resetPasswordMsg={resetPasswordMsg} setResetEmail={setResetEmail} setResetPasswordMsg={setResetPasswordMsg} />
+      {createAccountModalOpen && <AccountFormModal open={createAccountModalOpen} onClose={() => setCreateAccountModalOpen(false)} confirmPassword={confirmPassword} deactivating={deactivating} designation={designation} editingId={editingId} email={email} emailChecking={emailChecking} emailConflict={emailConflict} employeeId={employeeId} employeeIdConflict={employeeIdConflict} employees={employees} fullName={fullName} fullNameConflict={fullNameConflict} handleSave={handleSave} loading={loading} password={password} passwordMismatch={passwordMismatch} resetForm={resetForm} role={role} setConfirmPassword={setConfirmPassword} setDesignation={setDesignation} setEmail={setEmail} setEmployeeId={setEmployeeId} setFullName={setFullName} setPassword={setPassword} setRole={setRole} toggleAccountActive={toggleAccountActive} />}
 
-      <UserAccountsModal open={userAccountsModalOpen} onClose={() => setUserAccountsModalOpen(false)} pageSize={PAGE_SIZE} employees={employees} employeesLoading={employeesLoading} employeesPage={employeesPage} employeesTotalPages={employeesTotalPages} initials={initials} paginatedEmployees={paginatedEmployees} roleTagClass={roleTagClass} setEmployeesPage={setEmployeesPage} startEdit={startEdit} totalAccounts={totalAccounts} />
+      {resetPasswordModalOpen && <ResetPasswordModal open={resetPasswordModalOpen} onClose={() => setResetPasswordModalOpen(false)} handleResetPassword={handleResetPassword} resetEmail={resetEmail} resetLoading={resetLoading} resetPasswordMsg={resetPasswordMsg} setResetEmail={setResetEmail} setResetPasswordMsg={setResetPasswordMsg} />}
 
-      <AttendanceRecordsModal open={attendanceRecordsModalOpen} onClose={() => setAttendanceRecordsModalOpen(false)} pageSize={PAGE_SIZE} attendanceDateFilter={attendanceDateFilter} attendanceLoading={attendanceLoading} attendancePage={attendancePage} attendanceSearch={attendanceSearch} attendanceTotalPages={attendanceTotalPages} filteredAttendanceLogs={filteredAttendanceLogs} handleAttendanceDateChange={handleAttendanceDateChange} handleAttendanceSearchChange={handleAttendanceSearchChange} paginatedAttendanceLogs={paginatedAttendanceLogs} setAttendancePage={setAttendancePage} startEditLog={startEditLog} statusTagClass={statusTagClass} todayManila={todayManila} />
+      {userAccountsModalOpen && <UserAccountsModal open={userAccountsModalOpen} onClose={() => setUserAccountsModalOpen(false)} pageSize={PAGE_SIZE} employees={employees} employeesLoading={employeesLoading} employeesPage={employeesPage} employeesTotalPages={employeesTotalPages} initials={initials} paginatedEmployees={paginatedEmployees} roleTagClass={roleTagClass} setEmployeesPage={setEmployeesPage} startEdit={startEdit} totalAccounts={totalAccounts} />}
 
-      <AppSettingsModal open={appSettingsModalOpen} onClose={() => setAppSettingsModalOpen(false)} appSettings={appSettings} appSettingsLoading={appSettingsLoading} appSettingsMsg={appSettingsMsg} appSettingsSaving={appSettingsSaving} saveAppSettings={saveAppSettings} setAppSettings={setAppSettings} />
+      {attendanceRecordsModalOpen && <AttendanceRecordsModal open={attendanceRecordsModalOpen} onClose={() => setAttendanceRecordsModalOpen(false)} pageSize={PAGE_SIZE} attendanceDateFilter={attendanceDateFilter} attendanceLoading={attendanceLoading} attendancePage={attendancePage} attendanceSearch={attendanceSearch} attendanceTotalPages={attendanceTotalPages} filteredAttendanceLogs={filteredAttendanceLogs} handleAttendanceDateChange={handleAttendanceDateChange} handleAttendanceSearchChange={handleAttendanceSearchChange} paginatedAttendanceLogs={paginatedAttendanceLogs} setAttendancePage={setAttendancePage} startEditLog={startEditLog} statusTagClass={statusTagClass} todayManila={todayManila} />}
+
+      {appSettingsModalOpen && <AppSettingsModal open={appSettingsModalOpen} onClose={() => setAppSettingsModalOpen(false)} appSettings={appSettings} savedAppSettings={savedAppSettings} appSettingsLoading={appSettingsLoading} appSettingsMsg={appSettingsMsg} appSettingsSaving={appSettingsSaving} saveAppSettings={saveAppSettings} setAppSettings={setAppSettings} />}
+
+      {attentionModalOpen && <AdminAttentionModal open={attentionModalOpen} onClose={() => setAttentionModalOpen(false)} items={attentionItems} />}
 
       {/* SYSTEM HEALTH MODAL */}
-      <SystemHealthModal open={healthModalOpen} onClose={() => setHealthModalOpen(false)} loading={healthStatusLoading} lastBackupAt={lastBackupAt} lastArchiveAt={lastArchiveAt} formatTimestamp={formatHealthTimestamp} adminEmail={currentAdminEmail} result={testEmailResult} sending={testEmailLoading} onSendTestEmail={sendTestEmail} />
+      {healthModalOpen && <SystemHealthModal open={healthModalOpen} onClose={() => setHealthModalOpen(false)} loading={healthStatusLoading} lastBackupAt={lastBackupAt} lastArchiveAt={lastArchiveAt} formatTimestamp={formatHealthTimestamp} adminEmail={currentAdminEmail} result={testEmailResult} sending={testEmailLoading} onSendTestEmail={sendTestEmail} />}
 
       {/* AUDIT LOG MODAL */}
-      <AuditLogModal open={auditLogModalOpen} onClose={() => setAuditLogModalOpen(false)} loading={auditLogsLoading} logs={paginatedAuditLogs} allCount={auditLogs.length} pageSize={PAGE_SIZE} page={auditLogPage} totalPages={auditLogTotalPages} onPageChange={setAuditLogPage} actionMeta={auditActionMeta} />
+      {auditLogModalOpen && <AuditLogModal open={auditLogModalOpen} onClose={() => setAuditLogModalOpen(false)} loading={auditLogsLoading} logs={paginatedAuditLogs} allCount={auditLogs.length} pageSize={PAGE_SIZE} page={auditLogPage} totalPages={auditLogTotalPages} onPageChange={setAuditLogPage} actionMeta={auditActionMeta} />}
 
-      <DataArchiveModal open={archivalModalOpen} onClose={() => setArchivalModalOpen(false)} archiveLoading={archiveLoading} archiveResult={archiveResult} handleArchiveOldRecords={handleArchiveOldRecords} />
+      {archivalModalOpen && <DataArchiveModal open={archivalModalOpen} onClose={() => setArchivalModalOpen(false)} archiveLoading={archiveLoading} archiveResult={archiveResult} handleArchiveOldRecords={handleArchiveOldRecords} />}
 
-      <DatabaseBackupModal open={backupModalOpen} onClose={() => setBackupModalOpen(false)} backupLoading={backupLoading} backupResult={backupResult} handleBackupDatabase={handleBackupDatabase} />
+      {backupModalOpen && <DatabaseBackupModal open={backupModalOpen} onClose={() => setBackupModalOpen(false)} backupLoading={backupLoading} backupResult={backupResult} handleBackupDatabase={handleBackupDatabase} />}
 
       <ArchivePasswordModal open={archivePasswordModalOpen} onClose={() => setArchivePasswordModalOpen(false)} archivePasswordError={archivePasswordError} archivePasswordInput={archivePasswordInput} archivePasswordVerifying={archivePasswordVerifying} confirmArchiveWithPassword={confirmArchiveWithPassword} setArchivePasswordError={setArchivePasswordError} setArchivePasswordInput={setArchivePasswordInput} />
 
       <BackupPasswordModal open={backupPasswordModalOpen} onClose={() => setBackupPasswordModalOpen(false)} backupPasswordError={backupPasswordError} backupPasswordInput={backupPasswordInput} backupPasswordVerifying={backupPasswordVerifying} confirmBackupWithPassword={confirmBackupWithPassword} setBackupPasswordError={setBackupPasswordError} setBackupPasswordInput={setBackupPasswordInput} />
 
-      <EditAttendanceModal editingLog={editingLog} logSaving={logSaving} saveEditLog={saveEditLog} setEditingLog={setEditingLog} />
+      {editingLog && <EditAttendanceModal editingLog={editingLog} logSaving={logSaving} saveEditLog={saveEditLog} setEditingLog={setEditingLog} />}
 
 
     </main>

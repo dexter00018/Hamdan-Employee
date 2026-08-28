@@ -95,9 +95,15 @@ export async function POST(request: Request) {
     const { data: settingsRows } = await supabaseServer
       .from('app_settings')
       .select('key, value')
-      .in('key', ['late_cutoff_hour', 'late_cutoff_minute']);
+      .in('key', ['late_cutoff_hour', 'late_cutoff_minute', 'attendance_recording_enabled']);
 
     const settingsMap = Object.fromEntries((settingsRows || []).map((r) => [r.key, r.value]));
+    if (settingsMap.attendance_recording_enabled === false) {
+      return NextResponse.json(
+        { code: 'ATTENDANCE_RECORDING_DISABLED', error: 'Attendance recording is temporarily unavailable.' },
+        { status: 503 }
+      );
+    }
     const lateCutoffHour = typeof settingsMap.late_cutoff_hour === 'number' ? settingsMap.late_cutoff_hour : FALLBACK_LATE_CUTOFF_HOUR;
     const lateCutoffMinute = typeof settingsMap.late_cutoff_minute === 'number' ? settingsMap.late_cutoff_minute : FALLBACK_LATE_CUTOFF_MINUTE;
 

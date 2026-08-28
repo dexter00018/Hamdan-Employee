@@ -12,10 +12,27 @@ alter table public.leave_requests enable row level security;
 alter table public.leave_credits enable row level security;
 alter table public.leave_request_days enable row level security;
 alter table public.holidays enable row level security;
+alter table public.app_settings enable row level security;
 alter table public.attendance_logs_archive enable row level security;
 alter table public.attendance_disputes_archive enable row level security;
 alter table public.leave_requests_archive enable row level security;
 alter table public.leave_request_days_archive enable row level security;
+
+-- Global settings are readable by signed-in application users because
+-- server and client consumers need current values. Only Super Admin may
+-- create or change settings rows.
+create policy "Authenticated can read app settings"
+  on public.app_settings for select to authenticated
+  using (true);
+
+create policy "Super Admin can insert app settings"
+  on public.app_settings for insert to authenticated
+  with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'super_admin'));
+
+create policy "Super Admin can update app settings"
+  on public.app_settings for update to authenticated
+  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'super_admin'))
+  with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'super_admin'));
 
 -- ----------------------------------------------------------------------------
 -- profiles

@@ -447,3 +447,37 @@
    border-white utilities directly instead of going through .card-style.
    This catches those without having to hunt every occurrence. */
 .dark .bg-white { background-color: var(--color-slate-100) !important; }
+
+/* Dark surfaces use slate-600/700 as text tokens elsewhere, so those
+   remapped variables are intentionally bright. Keep border utilities
+   visually separate with quiet charcoal-green values instead of letting
+   cards and controls receive a white-looking outline. */
+.dark .border-slate-600,
+.dark .dark\:border-slate-600 { border-color: #405047 !important; }
+.dark .border-slate-700,
+.dark .dark\:border-slate-700 { border-color: #303d35 !important; }
+
+/* Super Admin dark mode relies on layered surfaces and shadow depth.
+   Remove neutral box outlines entirely so the control center does not
+   look like every card has a white wireframe around it. Semantic warning
+   borders (orange/red) remain available where they communicate status. */
+.dark #super-admin-dashboard-top .border-slate-200,
+.dark #super-admin-dashboard-top .border-slate-300,
+.dark #super-admin-dashboard-top .dark\:border-slate-600,
+.dark #super-admin-dashboard-top .dark\:border-slate-700 {
+  border-color: transparent !important;
+}
+
+/* HR dark-mode contrast correction. In this theme slate-100/200 are
+   surface and border tokens, so using them through dark:text-* makes
+   labels disappear into cards. Keep this scoped to the HR dashboard. */
+.dark #hr-dashboard-top .dark\:text-slate-100 {
+  color: #f4faf5 !important;
+}
+.dark #hr-dashboard-top .dark\:text-slate-200 {
+  color: #e3ece4 !important;
+}
+.dark #hr-dashboard-top .text-slate-500,
+.dark #hr-dashboard-top .dark\:text-slate-400 {
+  color: #aab8ad !important;
+}

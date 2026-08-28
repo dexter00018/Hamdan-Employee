@@ -13,6 +13,7 @@ type ModalShellProps = {
   size?: 'sm' | 'md' | 'lg' | 'xl' | 'full';
   closeDisabled?: boolean;
   className?: string;
+  placement?: 'center' | 'right';
 };
 
 const widthClasses = {
@@ -34,6 +35,7 @@ export default function ModalShell({
   size = 'md',
   closeDisabled = false,
   className = '',
+  placement = 'center',
 }: ModalShellProps) {
   const titleId = useId();
   const descriptionId = useId();
@@ -97,7 +99,7 @@ export default function ModalShell({
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm"
+      className={`fixed inset-0 z-[70] flex bg-slate-950/45 backdrop-blur-sm ${placement === 'right' ? 'items-stretch justify-end p-0 sm:p-3' : 'items-center justify-center p-4'}`}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !closeDisabled) onCloseRef.current();
       }}
@@ -109,7 +111,7 @@ export default function ModalShell({
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
-        className={`flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900 ${widthClasses[size]} ${className}`}
+        className={`flex w-full flex-col overflow-hidden border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900 ${placement === 'right' ? 'h-full max-h-none rounded-none sm:rounded-[28px]' : 'max-h-[92dvh] rounded-[28px]'} ${widthClasses[size]} ${className}`}
       >
         <header className="flex flex-shrink-0 items-start gap-3 border-b border-slate-200 px-4 py-4 dark:border-slate-700 sm:px-6">
           {icon && (

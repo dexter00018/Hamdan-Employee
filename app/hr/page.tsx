@@ -1912,16 +1912,16 @@ export default function HRDashboard() {
   const openAttendanceLog = () => { setAttendanceHistoryOpen(true); scrollToDashboardSection('attendance-history'); };
 
   return (
-    <main id="hr-dashboard-top" className="min-h-screen p-3 pb-24 transition-colors sm:p-4 sm:pb-24 md:p-6 lg:py-6 lg:pl-[260px] lg:pr-6">
+    <main id="hr-dashboard-top" className="min-h-screen bg-slate-50 p-3 pb-24 text-slate-950 transition-colors dark:bg-[#111512] dark:text-slate-100 sm:p-4 sm:pb-24 md:p-6 lg:py-6 lg:pl-[260px] lg:pr-6">
       <HRDesktopSidebar darkMode={darkMode} requestCount={pendingHrActionCount} onDashboard={() => scrollToDashboardSection('hr-dashboard-top')} onAttendance={openAttendanceLog} onEmployees={() => setEmployeesListOpen(true)} onLeave={() => scrollToDashboardSection('leave-requests')} onDisputes={() => scrollToDashboardSection('attendance-disputes')} onPayslips={() => setEmployeesListOpen(true)} onDocuments={openDocuments} onAnnouncements={() => setAnnouncementOpen(true)} onHolidays={openHolidays} onReports={openReports} onHelpdesk={openHelpdesk} onToggleTheme={toggleTheme} onLogout={handleLogout} />
       <div className="max-w-7xl mx-auto space-y-3 sm:space-y-4 md:space-y-5">
         {/* Header */}
         <header className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_4px_18px_rgba(15,23,42,0.05)] dark:border-slate-700 dark:bg-[#292f2b] sm:p-4">
-          <div className="min-w-0"><p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-green-600">Hamdan Engineering</p><h1 className="mt-0.5 truncate text-xl font-bold leading-tight sm:text-2xl">HR Dashboard</h1><p className="mt-1 hidden text-xs text-slate-500 sm:block">People, attendance, and employee operations.</p></div>
+          <div className="min-w-0"><p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-green-700 dark:text-green-300">Hamdan Engineering</p><h1 className="mt-0.5 truncate text-xl font-bold leading-tight text-slate-950 dark:text-white sm:text-2xl">HR Dashboard</h1><p className="mt-1 hidden text-xs text-slate-600 dark:text-slate-300 sm:block">People, attendance, and employee operations.</p></div>
           <div className="flex flex-none items-center gap-1.5">
-            <button type="button" onClick={toggleTheme} className="grid h-11 w-11 place-items-center rounded-full border border-slate-200 text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800 lg:hidden" aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}>{darkMode ? <Sun size={18}/> : <Moon size={18}/>}</button>
-            <button type="button" onClick={() => scrollToDashboardSection('action-center')} className="relative grid h-11 w-11 place-items-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800" aria-label={`${pendingHrActionCount} pending HR actions`}><Bell size={18}/>{pendingHrActionCount ? <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[9px] font-black text-white">{pendingHrActionCount > 9 ? '9+' : pendingHrActionCount}</span> : null}</button>
-            <button type="button" onClick={() => setMobileToolsOpen(true)} className="grid h-11 w-11 place-items-center rounded-full border border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 lg:hidden" aria-label="Open HR tools"><UserRound size={18}/></button>
+            <button type="button" onClick={toggleTheme} className="grid h-11 w-11 place-items-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:!text-white dark:hover:bg-slate-800 lg:hidden" aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}>{darkMode ? <Sun size={18}/> : <Moon size={18}/>}</button>
+            <button type="button" onClick={() => scrollToDashboardSection('action-center')} className="relative grid h-11 w-11 place-items-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:!text-white dark:hover:bg-slate-800" aria-label={`${pendingHrActionCount} pending HR actions`}><Bell size={18}/>{pendingHrActionCount ? <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[9px] font-black text-white">{pendingHrActionCount > 9 ? '9+' : pendingHrActionCount}</span> : null}</button>
+            <button type="button" onClick={() => setMobileToolsOpen(true)} className="grid h-11 w-11 place-items-center rounded-full border border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:!text-white lg:hidden" aria-label="Open HR tools"><UserRound size={18}/></button>
           </div>
         </header>
 
@@ -1939,7 +1939,7 @@ export default function HRDashboard() {
               className="input-field !pl-9 !py-2 !text-xs !min-h-0 w-full"
             />
             {globalEmployeeSearch.trim() && (
-              <div className="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden max-h-72 overflow-y-auto z-50">
+              <div className="absolute left-0 right-0 top-full z-50 mt-2 max-h-72 overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
                 {globalEmployeeMatches.length === 0 ? (
                   <p className="p-4 text-slate-400 text-xs text-center">No matching employee found.</p>
                 ) : globalEmployeeMatches.map((profile) => (
@@ -1947,7 +1947,7 @@ export default function HRDashboard() {
                     key={profile.id}
                     type="button"
                     onClick={() => { setQuickViewProfile(profile); setGlobalEmployeeSearch(''); }}
-                    className="w-full flex items-center gap-3 p-3 text-left hover:bg-slate-50 border-b border-slate-100 last:border-0 transition"
+                    className="flex w-full items-center gap-3 border-b border-slate-100 p-3 text-left transition last:border-0 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
                   >
                     <span className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center text-[10px] font-bold flex-shrink-0">{initials(profile.full_name)}</span>
                     <span className="min-w-0"><span className="block text-xs font-bold text-slate-900 truncate">{profile.full_name || 'Unknown'}</span><span className="block text-[10px] text-slate-400 truncate">{profile.employee_id || 'No ID'} · {profile.designation || 'No designation'}</span></span>
@@ -1961,7 +1961,7 @@ export default function HRDashboard() {
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5" />
               {lastUpdatedAt ? `Updated ${lastUpdatedAt.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}` : 'Loading live data'}
             </span>
-            <button type="button" onClick={refreshAllData} disabled={refreshing} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold hover:bg-slate-200 disabled:opacity-50 transition">
+            <button type="button" onClick={refreshAllData} disabled={refreshing} className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-2 text-[10px] font-bold text-slate-700 transition hover:bg-slate-200 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700">
               <RefreshCw size={13} className={refreshing ? 'animate-spin' : ''} /> Refresh
             </button>
           </div>
@@ -2003,7 +2003,7 @@ export default function HRDashboard() {
               <h3 className="mb-0 text-sm">Action Center</h3>
               <p className="text-slate-400 text-[10px] mt-0.5">Items that may need HR attention today</p>
             </div>
-            <span className="text-[10px] font-bold text-slate-500 bg-slate-100 rounded-full px-2.5 py-1">
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
               {pendingHrActionCount} open
             </span>
           </div>
@@ -2036,7 +2036,7 @@ export default function HRDashboard() {
               { key: 'late' as const, label: 'Late', value: attendanceInsights.current.late, tone: 'text-orange-600' },
               { key: 'absent' as const, label: 'Absent', value: attendanceInsights.current.absent, tone: 'text-rose-600' },
               { key: 'leave' as const, label: 'Leave', value: attendanceInsights.current.leave, tone: 'text-blue-600' },
-            ].map((item) => <button type="button" key={item.key} onClick={() => setAttendanceInsightModal(item.key)} className="min-h-16 rounded-xl border border-slate-100 bg-slate-50 p-2.5 text-left transition hover:bg-white dark:border-slate-700 dark:bg-slate-800" aria-label={`View ${item.label}`}><p className={`stat-number text-lg leading-none ${item.tone}`}>{item.value}</p><p className="mt-1 text-[10px] font-bold text-slate-500">{item.label}</p></button>)}
+            ].map((item) => <button type="button" key={item.key} onClick={() => setAttendanceInsightModal(item.key)} className="min-h-16 rounded-xl border border-slate-100 bg-slate-50 p-2.5 text-left transition hover:bg-white dark:border-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700" aria-label={`View ${item.label}`}><p className={`stat-number text-lg leading-none ${item.tone}`}>{item.value}</p><p className="mt-1 text-[10px] font-bold text-slate-600 dark:text-slate-200">{item.label}</p></button>)}
           </div>
         </section>
 

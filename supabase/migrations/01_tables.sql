@@ -131,6 +131,18 @@ create table if not exists public.holidays (
   created_at timestamptz not null default now()
 );
 
+-- Typed global configuration. JSONB intentionally supports numeric,
+-- boolean, and string controls without weakening per-row authorization.
+create table if not exists public.app_settings (
+  key text primary key,
+  value jsonb not null,
+  updated_at timestamptz not null default now(),
+  updated_by uuid references public.profiles(id)
+);
+
+grant select on table public.app_settings to authenticated;
+grant insert, update on table public.app_settings to authenticated;
+
 -- ============================================================================
 -- Archive tables (1-year data retention). Same columns as their live
 -- counterparts, deliberately WITHOUT foreign keys -- archived rows are

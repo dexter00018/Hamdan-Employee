@@ -1,107 +1,41 @@
 'use client';
 
-import type { Dispatch, SetStateAction } from 'react';
+import { useMemo, useState, type Dispatch, type SetStateAction } from 'react';
+import { AlertTriangle, Bell, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, Gauge, Headphones, Plane, RotateCcw, Search, Settings, Shield, ShieldAlert, SlidersHorizontal } from 'lucide-react';
 import Spinner from '@/components/Spinner';
 import ModalShell from '@/components/shared/ModalShell';
+import { APP_SETTING_CATEGORIES, APP_SETTING_DEFINITIONS, type AppSettingCategory, type AppSettingDefinition, type AppSettingsValues } from '@/lib/app-settings';
 
-type AppSettings = { late_cutoff_hour: number; late_cutoff_minute: number; default_leave_credits: number; time_out_reminder_hour: number; support_response_target_hours: number; payslip_ack_reminder_days: number; dashboard_refresh_seconds: number };
-type Props = { open: boolean; onClose: () => void; appSettings: AppSettings; appSettingsLoading: boolean; appSettingsMsg: { type: 'success' | 'error'; text: string } | null; appSettingsSaving: boolean; saveAppSettings: () => void | Promise<void>; setAppSettings: Dispatch<SetStateAction<AppSettings>> };
+type Props = { open: boolean; onClose: () => void; appSettings: AppSettingsValues; savedAppSettings: AppSettingsValues | null; appSettingsLoading: boolean; appSettingsMsg: { type: 'success' | 'error'; text: string } | null; appSettingsSaving: boolean; saveAppSettings: () => boolean | void | Promise<boolean | void>; setAppSettings: Dispatch<SetStateAction<AppSettingsValues>> };
+const categories = Object.keys(APP_SETTING_CATEGORIES) as AppSettingCategory[];
+const categoryMeta = {
+  attendance: { icon: CalendarClock, description: 'Work hours, late rules, and attendance' }, leave: { icon: Plane, description: 'Leave rules and policies' }, services: { icon: Headphones, description: 'Support, documents, directory, etc.' }, notifications: { icon: Bell, description: 'Reminders and notification rules' }, features: { icon: SlidersHorizontal, description: 'Enable or disable application features' }, system: { icon: Gauge, description: 'Performance and system behavior' }, security: { icon: Shield, description: 'Security, access, and maintenance' },
+} satisfies Record<AppSettingCategory, { icon: typeof Settings; description: string }>;
 
-export default function AppSettingsModal({ open, onClose, appSettings, appSettingsLoading, appSettingsMsg, appSettingsSaving, saveAppSettings, setAppSettings }: Props) {
-  return (
-    <ModalShell open={open} onClose={onClose} title="App Settings" icon="⚙️" size="sm" closeDisabled={appSettingsSaving}>
-            {appSettingsMsg && (
-              <div className={`p-3 rounded-xl text-sm font-bold mb-4 ${appSettingsMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                {appSettingsMsg.text}
-              </div>
-            )}
+function SettingControl({ definition, value, onChange }: { definition: AppSettingDefinition; value: string | number | boolean; onChange: (value: string | number | boolean) => void }) {
+  if (definition.type === 'boolean') return <button type="button" role="switch" aria-checked={Boolean(value)} onClick={() => onChange(!value)} className={`relative h-7 w-12 flex-none rounded-full transition ${value ? 'bg-green-600' : 'bg-slate-300 dark:bg-slate-600'}`}><span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition ${value ? 'left-6' : 'left-1'}`}/><span className="sr-only">{value ? 'Enabled' : 'Disabled'}</span></button>;
+  if (definition.type === 'string') return <textarea value={String(value)} onChange={(event) => onChange(event.target.value)} rows={3} className="input-field mt-3 resize-none text-xs"/>;
+  return <div className="mt-3 flex items-center gap-2"><input type="number" min={definition.min} max={definition.max} step={definition.step || 1} value={Number(value)} onChange={(event) => onChange(Math.min(definition.max ?? Infinity, Math.max(definition.min ?? -Infinity, Number(event.target.value))))} className="input-field !min-h-11 flex-1 !py-2 text-sm"/><span className="min-w-14 text-right text-[10px] font-semibold text-slate-500 dark:!text-[#aab8ad]">{definition.unit}</span></div>;
+}
 
-            {appSettingsLoading ? (
-              <div className="py-8 text-center text-slate-400 text-sm">Loading settings...</div>
-            ) : (
-              <div className="space-y-5">
-                <div>
-                  <label className="label-branded">Late Cutoff Time</label>
-                  <p className="text-slate-400 text-[11px] mb-2">Time-ins after this are tagged &quot;Late&quot;. Used by Time In, attendance history, and dispute review.</p>
-                  <div className="flex items-center gap-2">
-                    <select
-                      className="input-field"
-                      value={appSettings.late_cutoff_hour}
-                      onChange={(e) => setAppSettings((s) => ({ ...s, late_cutoff_hour: parseInt(e.target.value, 10) }))}
-                    >
-                      {Array.from({ length: 24 }).map((_, h) => (
-                        <option key={h} value={h}>{h.toString().padStart(2, '0')}</option>
-                      ))}
-                    </select>
-                    <span className="text-slate-400 font-bold">:</span>
-                    <select
-                      className="input-field"
-                      value={appSettings.late_cutoff_minute}
-                      onChange={(e) => setAppSettings((s) => ({ ...s, late_cutoff_minute: parseInt(e.target.value, 10) }))}
-                    >
-                      {[0, 5, 10, 15, 16, 20, 25, 30, 35, 40, 45, 50, 55].map((m) => (
-                        <option key={m} value={m}>{m.toString().padStart(2, '0')}</option>
-                      ))}
-                    </select>
-                    <span className="text-slate-400 text-xs">(24h, PH time)</span>
-                  </div>
-                </div>
+export default function AppSettingsModal({ open, onClose, appSettings, savedAppSettings, appSettingsLoading, appSettingsMsg, appSettingsSaving, saveAppSettings, setAppSettings }: Props) {
+  const [category, setCategory] = useState<AppSettingCategory | null>(null);
+  const [query, setQuery] = useState('');
+  const dirty = savedAppSettings !== null && JSON.stringify(appSettings) !== JSON.stringify(savedAppSettings);
+  const changedCount = savedAppSettings ? Object.keys(appSettings).filter((key) => appSettings[key] !== savedAppSettings[key]).length : 0;
+  const visibleDefinitions = useMemo(() => { const normalized = query.trim().toLowerCase(); return APP_SETTING_DEFINITIONS.filter((item) => normalized ? `${item.label} ${item.description} ${APP_SETTING_CATEGORIES[item.category]}`.toLowerCase().includes(normalized) : item.category === category); }, [category, query]);
+  const requestClose = () => { if (!dirty || confirm('Discard your unsaved App Settings changes?')) onClose(); };
+  const resetCategory = () => { if (!category) return; const definitions = APP_SETTING_DEFINITIONS.filter((item) => item.category === category); const changes = definitions.filter((item) => appSettings[item.key] !== item.defaultValue).map((item) => `${item.label}: ${String(appSettings[item.key])} → ${String(item.defaultValue)}`); if (!changes.length || !confirm(`Reset ${APP_SETTING_CATEGORIES[category]} to defaults?\n\n${changes.join('\n')}\n\nThese changes remain unsaved until Save Changes is selected.`)) return; setAppSettings((current) => ({ ...current, ...Object.fromEntries(definitions.map((item) => [item.key, item.defaultValue])) })); };
+  const updateSetting = (definition: AppSettingDefinition, value: string | number | boolean) => { if (definition.dangerous && value !== definition.defaultValue && !confirm(`${definition.label} is a sensitive global control. Continue with this unsaved change?`)) return; setAppSettings((current) => ({ ...current, [definition.key]: value })); };
+  const showOverview = !category && !query;
+  const footer = appSettingsLoading ? undefined : showOverview ? <button type="button" onClick={() => setCategory('attendance')} className="btn-primary min-h-11 w-full">Manage App Settings <ChevronRight size={16}/></button> : <div className="flex items-center justify-between gap-3"><div><p className={`text-xs font-bold ${dirty ? 'text-orange-700 dark:text-orange-300' : 'text-slate-500 dark:!text-[#aab8ad]'}`}>{dirty ? `${changedCount} unsaved change${changedCount === 1 ? '' : 's'}` : 'All changes saved'}</p>{dirty ? <button type="button" onClick={() => savedAppSettings && setAppSettings({ ...savedAppSettings })} className="mt-1 text-[10px] font-bold text-slate-600 underline dark:!text-[#e3ece4]">Discard changes</button> : null}</div><button type="button" onClick={() => void saveAppSettings()} disabled={appSettingsSaving || !dirty} className="btn-primary min-h-11 px-4 disabled:opacity-50">{appSettingsSaving ? <span className="flex items-center gap-2"><Spinner size="sm"/>Saving…</span> : 'Review & Save'}</button></div>;
 
-                <div>
-                  <label className="label-branded">Default Leave Credits (per year)</label>
-                  <p className="text-slate-400 text-[11px] mb-2">Applied to new Regular employees. Doesn&apos;t retroactively change existing employees&apos; credits.</p>
-                  <input
-                    type="number"
-                    min={0}
-                    className="input-field"
-                    value={appSettings.default_leave_credits}
-                    onChange={(e) => setAppSettings((s) => ({ ...s, default_leave_credits: parseInt(e.target.value, 10) || 0 }))}
-                  />
-                </div>
-
-                <div>
-                  <label className="label-branded">Time-Out Reminder Hour</label>
-                  <p className="text-slate-400 text-[11px] mb-2">Employees get a &quot;don&apos;t forget to time out&quot; reminder starting this hour (24h, PH time).</p>
-                  <select
-                    className="input-field"
-                    value={appSettings.time_out_reminder_hour}
-                    onChange={(e) => setAppSettings((s) => ({ ...s, time_out_reminder_hour: parseInt(e.target.value, 10) }))}
-                  >
-                    {Array.from({ length: 24 }).map((_, h) => (
-                      <option key={h} value={h}>{h.toString().padStart(2, '0')}:00</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="pt-4 border-t border-slate-100">
-                  <p className="label-branded mb-1">Employee Service Settings</p>
-                  <p className="text-slate-400 text-[11px] mb-4">Shared controls for the Employee and HR modules.</p>
-
-                  <label className="label-branded">Help Desk Response Target (hours)</label>
-                  <p className="text-slate-400 text-[11px] mb-2">Target time for HR to respond to a newly submitted employee request.</p>
-                  <input type="number" min={1} max={168} className="input-field mb-4" value={appSettings.support_response_target_hours} onChange={(e) => setAppSettings((s) => ({ ...s, support_response_target_hours: Math.max(1, parseInt(e.target.value, 10) || 1) }))} />
-
-                  <label className="label-branded">Payslip Acknowledgment Reminder (days)</label>
-                  <p className="text-slate-400 text-[11px] mb-2">How many days after publishing before an unacknowledged payslip is considered overdue.</p>
-                  <input type="number" min={1} max={30} className="input-field mb-4" value={appSettings.payslip_ack_reminder_days} onChange={(e) => setAppSettings((s) => ({ ...s, payslip_ack_reminder_days: Math.max(1, parseInt(e.target.value, 10) || 1) }))} />
-
-                  <label className="label-branded">Dashboard Auto-Refresh (seconds)</label>
-                  <p className="text-slate-400 text-[11px] mb-2">Recommended live-data refresh interval. Minimum 30 seconds to avoid excessive queries.</p>
-                  <input type="number" min={30} max={600} step={10} className="input-field" value={appSettings.dashboard_refresh_seconds} onChange={(e) => setAppSettings((s) => ({ ...s, dashboard_refresh_seconds: Math.min(600, Math.max(30, parseInt(e.target.value, 10) || 60)) }))} />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={saveAppSettings}
-                  disabled={appSettingsSaving}
-                  className="w-full btn-primary disabled:opacity-50"
-                >
-                  {appSettingsSaving ? (
-                    <span className="flex items-center justify-center gap-2"><Spinner size="sm" />Saving...</span>
-                  ) : 'Save Settings'}
-                </button>
-              </div>
-            )}
-    </ModalShell>
-  );
+  return <ModalShell open={open} onClose={requestClose} title="App Settings" description="Configure global application settings" icon={<Settings size={20}/>} size="sm" placement="right" closeDisabled={appSettingsSaving} footer={footer}>
+    <div className="relative mb-4"><Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search settings…" className="input-field !min-h-11 !pl-9 text-xs"/></div>
+    {appSettingsMsg ? <div role="status" className={`mb-4 rounded-xl border p-3 text-xs font-bold ${appSettingsMsg.type === 'success' ? 'border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-950/50 dark:!text-white' : 'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950/50 dark:!text-white'}`}>{appSettingsMsg.text}</div> : null}
+    {appSettingsLoading ? <div className="py-12 text-center text-sm text-slate-500 dark:!text-[#aab8ad]">Loading settings…</div> : showOverview ? <>
+      <div className="space-y-2.5">{categories.map((key) => { const meta = categoryMeta[key]; const Icon = meta.icon; const count = APP_SETTING_DEFINITIONS.filter((item) => item.category === key).length; return <button key={key} type="button" onClick={() => setCategory(key)} className="flex min-h-20 w-full items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-left transition hover:border-green-300 hover:bg-green-50/40 dark:border-slate-700 dark:bg-[#202521] dark:hover:border-green-800"><span className="grid h-10 w-10 flex-none place-items-center rounded-xl bg-green-50 text-green-700 dark:bg-green-950/50 dark:text-green-300"><Icon size={18}/></span><span className="min-w-0 flex-1"><span className="block text-xs font-bold text-slate-950 dark:text-white">{APP_SETTING_CATEGORIES[key]}</span><span className="mt-1 block truncate text-[10px] text-slate-500 dark:!text-[#aab8ad]">{meta.description}</span></span><span className="grid h-6 min-w-6 place-items-center rounded-full bg-slate-200 px-1.5 text-[9px] font-black text-slate-700 dark:bg-slate-700 dark:!text-white">{count}</span></button>; })}</div>
+      <section className="mt-5 rounded-2xl border border-slate-200 p-3 dark:border-slate-700"><p className="text-[10px] font-black text-slate-800 dark:!text-white">Settings Status Legend</p><div className="mt-3 space-y-3"><div className="flex gap-2"><span className="mt-1 h-2 w-2 rounded-full bg-green-500"/><span><span className="block text-[10px] font-bold text-slate-800 dark:!text-white">Active</span><span className="text-[9px] text-slate-500 dark:!text-[#aab8ad]">Currently affecting the application</span></span></div><div className="flex gap-2"><span className="mt-1 h-2 w-2 rounded-full bg-orange-500"/><span><span className="block text-[10px] font-bold text-slate-800 dark:!text-white">Future Control</span><span className="text-[9px] text-slate-500 dark:!text-[#aab8ad]">Saved for future use / not yet active</span></span></div></div></section>
+    </> : <section><div className="mb-4 flex items-start justify-between gap-2"><button type="button" onClick={() => { setCategory(null); setQuery(''); }} className="inline-flex min-h-11 items-center gap-1 text-[10px] font-bold text-slate-600 dark:!text-[#e3ece4]"><ChevronLeft size={15}/>Categories</button>{category && !query ? <button type="button" onClick={resetCategory} className="inline-flex min-h-11 items-center gap-1 text-[10px] font-bold text-slate-600 dark:!text-[#e3ece4]"><RotateCcw size={14}/>Reset</button> : null}</div><h3 className="mb-1 text-base font-black text-slate-950 dark:text-white">{query ? 'Search Results' : category ? APP_SETTING_CATEGORIES[category] : 'Settings'}</h3><p className="mb-4 text-[10px] text-slate-500 dark:!text-[#aab8ad]">ACTIVE controls are enforced now. FUTURE CONTROL values are stored only.</p><div className="space-y-3">{visibleDefinitions.map((item) => <article key={item.key} className={`rounded-2xl border p-3 ${item.dangerous ? 'border-orange-200 bg-orange-50/50 dark:border-orange-800 dark:bg-orange-950/20' : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-[#202521]'}`}><div className="flex items-start gap-3"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h4 className="text-xs font-bold text-slate-950 dark:text-white">{item.label}</h4><span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[8px] font-black ${item.status === 'active' ? 'bg-green-100 text-green-800 dark:bg-green-950 dark:!text-white' : 'bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-200'}`}>{item.status === 'active' ? <CheckCircle2 size={9}/> : <AlertTriangle size={9}/>} {item.status === 'active' ? 'ACTIVE' : 'FUTURE'}</span>{item.dangerous ? <ShieldAlert size={14} className="text-orange-600"/> : null}</div><p className="mt-1 text-[10px] leading-relaxed text-slate-600 dark:!text-[#c3d0c5]">{item.description}</p></div>{item.type === 'boolean' ? <SettingControl definition={item} value={appSettings[item.key]} onChange={(value) => updateSetting(item, value)}/> : null}</div>{item.type !== 'boolean' ? <SettingControl definition={item} value={appSettings[item.key]} onChange={(value) => updateSetting(item, value)}/> : null}</article>)}{visibleDefinitions.length === 0 ? <p className="py-10 text-center text-xs text-slate-500">No matching settings.</p> : null}</div></section>}
+  </ModalShell>;
 }

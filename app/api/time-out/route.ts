@@ -79,6 +79,19 @@ export async function POST(request: Request) {
       );
     }
 
+    const { data: recordingSetting } = await supabaseServer
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'attendance_recording_enabled')
+      .maybeSingle();
+
+    if (recordingSetting?.value === false) {
+      return NextResponse.json(
+        { code: 'ATTENDANCE_RECORDING_DISABLED', error: 'Attendance recording is temporarily unavailable.' },
+        { status: 503 }
+      );
+    }
+
     // --- Step 3: Find today's log (Manila calendar day) for this user. ---
     const now = new Date();
     const logDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(now);
