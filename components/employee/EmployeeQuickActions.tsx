@@ -1,7 +1,7 @@
 import {
-  CalendarClock,
   CalendarDays,
   CircleAlert,
+  CloudSun,
   FileText,
   HandCoins,
   Headphones,
@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 
 type Props = {
-  onAttendanceHistory: () => void;
+  onWeather: () => void;
   onLeave: () => void;
   onDisputes: () => void;
   onPayslips: () => void;
@@ -21,7 +21,7 @@ type Props = {
 };
 
 export default function EmployeeQuickActions({
-  onAttendanceHistory,
+  onWeather,
   onLeave,
   onDisputes,
   onPayslips,
@@ -32,7 +32,7 @@ export default function EmployeeQuickActions({
 }: Props) {
   const actions = [
     { label: 'Employee Directory', icon: IdCard, action: onDirectory, tone: 'from-emerald-500 to-green-600 shadow-green-500/25' },
-    { label: 'Attendance', icon: CalendarClock, action: onAttendanceHistory, tone: 'from-sky-500 to-blue-600 shadow-blue-500/25' },
+    { label: 'Weather', icon: CloudSun, action: onWeather, tone: 'from-sky-400 to-cyan-600 shadow-cyan-500/25' },
     { label: 'My Leave', icon: Plane, action: onLeave, tone: 'from-teal-500 to-emerald-600 shadow-emerald-500/25' },
     { label: 'Disputes', icon: CircleAlert, action: onDisputes, tone: 'from-orange-500 to-rose-500 shadow-orange-500/25' },
     { label: 'Payslips', icon: HandCoins, action: onPayslips, tone: 'from-amber-400 to-orange-500 shadow-amber-500/25' },

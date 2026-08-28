@@ -1,32 +1,35 @@
 'use client';
-import SummaryDetailModal from '@/components/employee/modals/SummaryDetailModal';
-import AttendanceDisputeFormModal from '@/components/employee/modals/AttendanceDisputeFormModal';
-import LeaveChoiceModal from '@/components/employee/modals/LeaveChoiceModal';
-import LeaveRequestsModal from '@/components/employee/modals/LeaveRequestsModal';
-import AttendanceDisputesModal from '@/components/employee/modals/AttendanceDisputesModal';
-import LeaveRequestModal from '@/components/employee/modals/LeaveRequestModal';
-import EarlyTimeOutModal from '@/components/employee/modals/EarlyTimeOutModal';
 import MobileBottomNav from '@/components/employee/MobileBottomNav';
 import EmployeeSummaryCard from '@/components/employee/EmployeeSummaryCard';
 import EmployeeQuickActions from '@/components/employee/EmployeeQuickActions';
 import EmployeeDesktopSidebar from '@/components/employee/EmployeeDesktopSidebar';
 import MobileAllToolsSheet from '@/components/employee/MobileAllToolsSheet';
-import EmployeeGovernmentIdsModal from '@/components/employee/modals/EmployeeGovernmentIdsModal';
-import EmployeeActionCenterModal from '@/components/employee/modals/EmployeeActionCenterModal';
+import EmployeeWorkClock from '@/components/employee/EmployeeWorkClock';
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import Image from 'next/image';
+import dynamic from 'next/dynamic';
 import Spinner, { LoadingRow } from '@/components/Spinner';
-import PlanMyCommuteModal from '@/components/employee/commute/PlanMyCommuteModal';
-import AttendanceCalendarModal from '@/components/employee/modals/AttendanceCalendarModal';
-import EmployeeDocumentsModal from '@/components/employee/modals/EmployeeDocumentsModal';
-import HelpDeskModal from '@/components/employee/modals/HelpDeskModal';
-import NotificationsModal from '@/components/employee/modals/NotificationsModal';
-import PayslipsModal from '@/components/employee/modals/PayslipsModal';
-import EmployeeDirectoryModal from '@/components/employee/modals/EmployeeDirectoryModal';
-import CompanyCalendarModal from '@/components/employee/modals/CompanyCalendarModal';
-import { Bell, CalendarX2, CheckCircle2, CircleAlert, Clock3, HandCoins, Headphones, Plane, UserRound } from 'lucide-react';
+import { Bell, CalendarX2, CheckCircle2, Clock3, UserRound } from 'lucide-react';
+
+const SummaryDetailModal = dynamic(() => import('@/components/employee/modals/SummaryDetailModal'));
+const AttendanceDisputeFormModal = dynamic(() => import('@/components/employee/modals/AttendanceDisputeFormModal'));
+const LeaveChoiceModal = dynamic(() => import('@/components/employee/modals/LeaveChoiceModal'));
+const LeaveRequestsModal = dynamic(() => import('@/components/employee/modals/LeaveRequestsModal'));
+const AttendanceDisputesModal = dynamic(() => import('@/components/employee/modals/AttendanceDisputesModal'));
+const LeaveRequestModal = dynamic(() => import('@/components/employee/modals/LeaveRequestModal'));
+const EarlyTimeOutModal = dynamic(() => import('@/components/employee/modals/EarlyTimeOutModal'));
+const EmployeeGovernmentIdsModal = dynamic(() => import('@/components/employee/modals/EmployeeGovernmentIdsModal'));
+const EmployeeActionCenterModal = dynamic(() => import('@/components/employee/modals/EmployeeActionCenterModal'));
+const PlanMyCommuteModal = dynamic(() => import('@/components/employee/commute/PlanMyCommuteModal'), { ssr: false });
+const AttendanceCalendarModal = dynamic(() => import('@/components/employee/modals/AttendanceCalendarModal'));
+const EmployeeDocumentsModal = dynamic(() => import('@/components/employee/modals/EmployeeDocumentsModal'));
+const HelpDeskModal = dynamic(() => import('@/components/employee/modals/HelpDeskModal'));
+const NotificationsModal = dynamic(() => import('@/components/employee/modals/NotificationsModal'));
+const PayslipsModal = dynamic(() => import('@/components/employee/modals/PayslipsModal'));
+const EmployeeDirectoryModal = dynamic(() => import('@/components/employee/modals/EmployeeDirectoryModal'));
+const CompanyCalendarModal = dynamic(() => import('@/components/employee/modals/CompanyCalendarModal'));
 
 function EyeIcon() {
   return (
@@ -247,11 +250,13 @@ export default function EmployeeDashboard() {
     setShowTimeOutReminder(false);
   };
   const [message, setMessage] = useState('');
-  const [time, setTime] = useState('');
-  const [date, setDate] = useState('');
   const [profile, setProfile] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
   const [initLoading, setInitLoading] = useState(true);
+  const [pendingLeavesCount, setPendingLeavesCount] = useState(0);
+  const [pendingDisputesCount, setPendingDisputesCount] = useState(0);
+  const [newPayslipsCount, setNewPayslipsCount] = useState(0);
+  const [openSupportCount, setOpenSupportCount] = useState(0);
 
   // Government ID numbers / employment details -- fetched from a
   // separate, more strictly-secured table. See add_government_ids.sql
@@ -306,11 +311,9 @@ export default function EmployeeDashboard() {
     source_name: string | null;
     generated_at: string;
   } | null>(null);
-  const [weatherLoading, setWeatherLoading] = useState(true);
   const [commuteModalOpen, setCommuteModalOpen] = useState(false);
 
   const fetchWeatherAdvisory = async () => {
-    setWeatherLoading(true);
     try {
       const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date());
       const { data, error } = await supabase
@@ -327,8 +330,6 @@ export default function EmployeeDashboard() {
     } catch (err) {
       console.error('Error fetching weather advisory:', err);
       setWeatherAdvisory(null);
-    } finally {
-      setWeatherLoading(false);
     }
   };
 
@@ -372,11 +373,8 @@ export default function EmployeeDashboard() {
   };
 
   useEffect(() => {
-    const timer = setInterval(() => {
+    const checkTimeOutReminder = () => {
       const now = new Date();
-      setTime(now.toLocaleTimeString('en-GB', { hour12: false }));
-      setDate(now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }));
-
       // Check Philippine time specifically (not the device's local
       // time) so the reminder is correct regardless of how the
       // employee's device clock/timezone is set.
@@ -397,7 +395,10 @@ export default function EmployeeDashboard() {
         }
         setShowTimeOutReminder(true);
       }
-    }, 1000);
+    };
+
+    checkTimeOutReminder();
+    const reminderTimer = window.setInterval(checkTimeOutReminder, 60_000);
 
     const runStartupSweeps = async () => {
       // Catch-up sweeps, run once per login/page load, before pulling
@@ -413,20 +414,13 @@ export default function EmployeeDashboard() {
       if (absenceSweepError) console.error('Error settling overdue absences:', absenceSweepError);
 
       initializeDashboard();
-      fetchLeaveCredits();
     };
     runStartupSweeps();
     fetchAppSettings();
     fetchAnnouncement();
     fetchWeatherAdvisory();
     checkOfficeNetwork();
-    fetchMyDisputes();
-    fetchPayslips();
-    fetchMyLeaves();
-    fetchCompanyHolidays();
-    fetchSupportRequests();
-    fetchEmployeeDocuments();
-    return () => clearInterval(timer);
+    return () => window.clearInterval(reminderTimer);
   }, []);
 
   // Live announcement updates -- listens for INSERT/UPDATE on the
@@ -564,11 +558,19 @@ export default function EmployeeDashboard() {
     // UTC could see the wrong "today" near midnight.
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date());
 
-    const { data: profileData, error: profileError } = await supabase
-      .from('profiles')
-      .select('full_name, employee_id, designation, role, avatar_url')
-      .eq('id', user.id)
-      .single();
+    const year = new Date().getFullYear();
+    const [profileRes, govIdRes, historyRes, leavesCountRes, disputesCountRes, payslipsCountRes, supportCountRes, leaveCreditsRes] = await Promise.all([
+      supabase.from('profiles').select('full_name, employee_id, designation, role, avatar_url').eq('id', user.id).single(),
+      supabase.from('employee_government_ids').select('sss_number, philhealth_number, pagibig_number, tin_number, hired_date, employment_status').eq('user_id', user.id).maybeSingle(),
+      supabase.from('attendance_logs').select('id, log_date, time_in, time_out, status').eq('user_id', user.id).order('log_date', { ascending: false }),
+      supabase.from('leave_requests').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'Pending'),
+      supabase.from('attendance_disputes').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'Pending'),
+      supabase.from('payslips').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('published', true).is('acknowledged_at', null),
+      supabase.from('employee_support_requests').select('id', { count: 'exact', head: true }).eq('user_id', user.id).neq('status', 'Resolved'),
+      supabase.from('leave_credits').select('total_credits, used_credits').eq('user_id', user.id).eq('year', year).maybeSingle(),
+    ]);
+
+    const { data: profileData, error: profileError } = profileRes;
 
     if (profileError) {
       console.error('Error fetching profile:', profileError);
@@ -580,22 +582,14 @@ export default function EmployeeDashboard() {
     // Government IDs live in a separate table with its own RLS -- if
     // no row exists yet (admin hasn't entered these for the employee),
     // this just comes back null and the section shows "Not set".
-    const { data: govIdData, error: govIdError } = await supabase
-      .from('employee_government_ids')
-      .select('sss_number, philhealth_number, pagibig_number, tin_number, hired_date, employment_status')
-      .eq('user_id', user.id)
-      .maybeSingle();
+    const { data: govIdData, error: govIdError } = govIdRes;
 
     if (govIdError) {
       console.error('Error fetching government IDs:', govIdError);
     }
     setGovernmentIds(govIdData ?? null);
 
-    const { data: historyData, error: historyError } = await supabase
-      .from('attendance_logs')
-      .select('id, log_date, time_in, time_out, status')
-      .eq('user_id', user.id)
-      .order('log_date', { ascending: false });
+    const { data: historyData, error: historyError } = historyRes;
 
     if (historyError) {
       console.error('Error fetching history:', historyError);
@@ -605,6 +599,11 @@ export default function EmployeeDashboard() {
     setHistory(historyData || []);
     const foundTodayLog = historyData?.find(log => log.log_date === today);
     setTodayLog(foundTodayLog ?? null);
+    setPendingLeavesCount(leavesCountRes.count ?? 0);
+    setPendingDisputesCount(disputesCountRes.count ?? 0);
+    setNewPayslipsCount(payslipsCountRes.count ?? 0);
+    setOpenSupportCount(supportCountRes.count ?? 0);
+    setLeaveCredits(leaveCreditsRes.data ?? null);
     setInitLoading(false);
   };
 
@@ -817,16 +816,16 @@ export default function EmployeeDashboard() {
 
   const fetchPayslips = async () => {
     setPayslipsLoading(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setPayslipsLoading(false); return; }
+    if (!currentUserId) { setPayslipsLoading(false); return; }
     const { data, error } = await supabase
       .from('payslips')
       .select('id, cutoff_label, cutoff_period, file_name, file_path, uploaded_at, published_at, acknowledged_at')
-      .eq('user_id', user.id)
+      .eq('user_id', currentUserId)
       .eq('published', true)
       .order('uploaded_at', { ascending: false });
     if (error) console.error('Error fetching payslips:', error);
     setPayslips((data || []) as typeof payslips);
+    setNewPayslipsCount((data || []).filter((payslip) => !payslip.acknowledged_at).length);
     setPayslipsLoading(false);
   };
 
@@ -840,6 +839,7 @@ export default function EmployeeDashboard() {
       alert('Unable to acknowledge this payslip: ' + error.message);
     } else {
       setPayslips((current) => current.map((p) => p.id === payslipId ? { ...p, acknowledged_at: acknowledgedAt } : p));
+      setNewPayslipsCount((count) => Math.max(0, count - 1));
     }
     setAcknowledgingPayslipId(null);
   };
@@ -885,15 +885,15 @@ export default function EmployeeDashboard() {
 
   const fetchSupportRequests = async () => {
     setSupportLoading(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setSupportLoading(false); return; }
+    if (!currentUserId) { setSupportLoading(false); return; }
     const { data, error } = await supabase
       .from('employee_support_requests')
       .select('id, category, subject, description, status, hr_notes, created_at, updated_at')
-      .eq('user_id', user.id)
+      .eq('user_id', currentUserId)
       .order('created_at', { ascending: false });
     if (error) console.error('Error fetching support requests:', error);
     setSupportRequests((data || []) as SupportRequest[]);
+    setOpenSupportCount((data || []).filter((request) => request.status !== 'Resolved').length);
     setSupportLoading(false);
   };
 
@@ -994,25 +994,24 @@ export default function EmployeeDashboard() {
   const remainingCredits = leaveCredits ? leaveCredits.total_credits - leaveCredits.used_credits : fallbackLeaveCredits;
 
   const fetchMyLeaves = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!currentUserId) return;
     const { data, error } = await supabase
       .from('leave_requests')
       .select('id, leave_type, start_date, end_date, reason, status, hr_notes, created_at, reviewed_at')
-      .eq('user_id', user.id)
+      .eq('user_id', currentUserId)
       .order('created_at', { ascending: false });
     if (error) { console.error('Error fetching leaves:', error); return; }
     setMyLeaves(data || []);
+    setPendingLeavesCount((data || []).filter((leave) => leave.status === 'Pending').length);
   };
 
   const fetchLeaveCredits = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!currentUserId) return;
     const year = new Date().getFullYear();
     const { data } = await supabase
       .from('leave_credits')
       .select('total_credits, used_credits')
-      .eq('user_id', user.id)
+      .eq('user_id', currentUserId)
       .eq('year', year)
       .maybeSingle();
     setLeaveCredits(data ?? null);
@@ -1121,18 +1120,18 @@ export default function EmployeeDashboard() {
   const [disputeMsg, setDisputeMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const fetchMyDisputes = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!currentUserId) return;
     const { data, error } = await supabase
       .from('attendance_disputes')
       .select('id, attendance_log_id, dispute_date, dispute_type, claimed_time_in, original_time_in, claimed_time_out, original_time_out, reason, status, hr_notes, created_at, reviewed_at')
-      .eq('user_id', user.id)
+      .eq('user_id', currentUserId)
       .order('created_at', { ascending: false });
     if (error) {
       console.error('Error fetching disputes:', error);
       return;
     }
     setMyDisputes(data || []);
+    setPendingDisputesCount((data || []).filter((dispute) => dispute.status === 'Pending').length);
   };
 
   const cancelDispute = async (disputeId: string) => {
@@ -1770,42 +1769,12 @@ export default function EmployeeDashboard() {
   const openNotificationTarget = (notification: EmployeeNotification) => {
     markNotificationRead(notification.id);
     setNotificationsModalOpen(false);
-    if (notification.target === 'leave') setMyLeavesModalOpen(true);
-    if (notification.target === 'dispute') setMyDisputesModalOpen(true);
-    if (notification.target === 'payslip') setPayslipsModalOpen(true);
-    if (notification.target === 'holiday') setCalendarModalOpen(true);
-    if (notification.target === 'support') setSupportModalOpen(true);
+    if (notification.target === 'leave') { setMyLeavesModalOpen(true); fetchMyLeaves(); }
+    if (notification.target === 'dispute') { setMyDisputesModalOpen(true); fetchMyDisputes(); }
+    if (notification.target === 'payslip') { setPayslipsModalOpen(true); fetchPayslips(); }
+    if (notification.target === 'holiday') { setCalendarModalOpen(true); fetchCompanyHolidays(); }
+    if (notification.target === 'support') { setSupportModalOpen(true); fetchSupportRequests(); }
   };
-
-  const pendingLeavesCount = myLeaves.filter((leave) => leave.status === 'Pending').length;
-  const pendingDisputesCount = myDisputes.filter((dispute) => dispute.status === 'Pending').length;
-  const newPayslipsCount = payslips.filter((payslip) => !payslip.acknowledged_at).length;
-  const openSupportCount = supportRequests.filter((request) => request.status !== 'Resolved').length;
-
-  const isTodayLate = todayLog?.status?.toLowerCase() === 'late';
-  const todayWorkStatus = !todayLog
-    ? { label: 'No Time In', color: 'bg-red-100 text-red-700' }
-    : isTodayLate
-      ? { label: todayLog.time_out ? 'Completed · Late' : 'Working · Late', color: 'bg-orange-100 text-orange-700' }
-      : { label: todayLog.time_out ? 'Completed' : 'Working', color: 'bg-green-100 text-green-700' };
-
-  const workClockTone = !todayLog
-    ? {
-        panel: 'from-rose-500 to-red-700',
-        border: 'border-red-200 dark:border-red-900/60',
-        rail: 'from-rose-400 via-red-500 to-red-700',
-      }
-    : isTodayLate
-      ? {
-          panel: 'from-amber-400 to-orange-600',
-          border: 'border-orange-200 dark:border-orange-900/60',
-          rail: 'from-amber-300 via-orange-500 to-red-500',
-        }
-      : {
-          panel: 'from-emerald-500 to-green-700',
-          border: 'border-emerald-200 dark:border-emerald-900/60',
-          rail: 'from-emerald-400 via-green-500 to-teal-600',
-        };
 
   const expectedTimeOutLabel = (() => {
     const period = timeOutReminderHour >= 12 ? 'PM' : 'AM';
@@ -1925,6 +1894,7 @@ export default function EmployeeDashboard() {
     setAttendanceCalendarMonth(selectedYm || currentCutoffKey.split(':')[0]);
     setSelectedAttendanceCalendarDate(null);
     setAttendanceCalendarOpen(true);
+    fetchCompanyHolidays();
   };
 
   const handleLogout = async () => {
@@ -2138,7 +2108,7 @@ export default function EmployeeDashboard() {
             onDisputes={() => { setSelectedMyDisputeDetail(null); setMyDisputesModalOpen(true); fetchMyDisputes(); }}
             onPayslips={() => { setPayslipsModalOpen(true); fetchPayslips(); }}
             onDocuments={() => { setDocumentsModalOpen(true); fetchEmployeeDocuments(); }}
-            onActionCenter={() => scrollToEmployeeSection('employee-action-center')}
+            onActionCenter={() => setActionCenterModalOpen(true)}
             onCommute={() => setCommuteModalOpen(true)}
             onHelpdesk={() => { setSupportModalOpen(true); fetchSupportRequests(); }}
             onProfile={openProfileFromNav}
@@ -2213,31 +2183,12 @@ export default function EmployeeDashboard() {
           </div>
 
           {/* Main Content */}
-          <div className="lg:col-span-3 space-y-3 sm:space-y-4 md:space-y-5">
+          <div className="space-y-4 lg:col-span-3 md:space-y-5">
 
             {/* Clock + Time buttons */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className={`relative flex min-h-40 overflow-hidden rounded-3xl border bg-white shadow-[0_12px_30px_rgba(15,23,42,0.08)] dark:bg-[#292f2b] ${workClockTone.border}`}>
-                <div className={`relative flex w-[34%] min-w-28 flex-col items-center justify-center overflow-hidden bg-gradient-to-br px-3 py-5 text-center text-white transition-colors duration-300 ${workClockTone.panel}`}>
-                  <span className="absolute -left-7 -top-8 h-20 w-20 rounded-full border-[14px] border-white/10" aria-hidden="true" />
-                  <span className="grid h-11 w-11 place-items-center rounded-2xl bg-white/15 shadow-inner ring-1 ring-white/25">
-                    <Clock3 aria-hidden="true" size={21} strokeWidth={2.2} />
-                  </span>
-                  <p className="mt-3 text-[9px] font-black uppercase tracking-[0.18em] text-white/75">Work clock</p>
-                  <span className={`mt-2 rounded-full px-2.5 py-1 text-[8px] font-extrabold uppercase tracking-wide shadow-sm ${todayWorkStatus.color}`}>
-                    {todayWorkStatus.label}
-                  </span>
-                </div>
-                <div className="relative flex min-w-0 flex-1 flex-col justify-center px-4 py-5 text-left sm:px-5">
-                  <span className={`absolute right-0 top-0 h-full w-1 bg-gradient-to-b transition-colors duration-300 ${workClockTone.rail}`} aria-hidden="true" />
-                  <p className="text-[9px] font-extrabold uppercase tracking-[0.18em] text-slate-400">Philippine time</p>
-                  <p className="mt-1 font-mono text-[clamp(2rem,8vw,3rem)] font-black leading-none tabular-nums tracking-[-0.08em] text-slate-950 dark:text-white">{time || '--:--:--'}</p>
-                  <div className="mt-3 border-t border-dashed border-slate-200 pt-2 dark:border-slate-700">
-                    <p className="truncate text-[9px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-300">{date}</p>
-                  </div>
-                </div>
-              </div>
-              <div className="flex flex-col gap-2 justify-center">
+              <EmployeeWorkClock todayLog={todayLog} />
+              <div className="flex flex-col justify-center gap-2 sm:min-h-40">
                 {!todayLog ? (
                   <button onClick={handleTimeIn} disabled={loading || initLoading || checkingNetwork || officeNetworkAllowed === false} className="btn-primary !py-3">
                     {loading ? <span className="flex items-center justify-center gap-2"><Spinner size="sm"/>Processing...</span> : checkingNetwork ? <span className="flex items-center justify-center gap-2"><Spinner size="sm"/>Checking...</span> : officeNetworkAllowed === false ? (officeNetworkIssue === 'unavailable' ? 'Attendance Unavailable' : 'Not on Office Network') : 'Time In'}
@@ -2249,6 +2200,7 @@ export default function EmployeeDashboard() {
                 ) : (
                   <button disabled className="btn-primary !py-3 opacity-50 cursor-not-allowed">Completed for Today</button>
                 )}
+                <div className="flex min-h-6 flex-col justify-center">
                 {todayLog?.time_in && (
                   <p className="text-center text-slate-400 text-xs">
                     In: {new Date(todayLog.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
@@ -2270,83 +2222,21 @@ export default function EmployeeDashboard() {
                     <button onClick={checkOfficeNetwork} className="text-blue-600 text-xs font-bold hover:underline flex-shrink-0">Retry</button>
                   </div>
                 )}
+                </div>
               </div>
             </div>
 
-            {/* Employee Action Center */}
-            <section id="employee-action-center" className="card-style scroll-mt-4 !p-4">
-              <div className="flex items-center justify-between gap-2 mb-3">
-                <div>
-                  <h3 className="mb-0 text-sm">Action Center</h3>
-                  <p className="text-slate-400 text-[10px] mt-0.5">Items that may need your attention</p>
-                </div>
-                <button type="button" onClick={() => setNotificationsModalOpen(true)} className="text-blue-600 text-[11px] font-bold hover:underline">
-                  Notifications{unreadNotificationCount > 0 ? ` (${unreadNotificationCount})` : ''}
-                </button>
-              </div>
-              {(todayLog?.time_in && !todayLog.time_out) || pendingLeavesCount > 0 || pendingDisputesCount > 0 || newPayslipsCount > 0 || openSupportCount > 0 || (!initLoading && profileCompleteness.percent < 100) ? (
-                <div className="divide-y divide-slate-100 rounded-2xl border border-slate-100 bg-slate-50/80 px-3">
-                  {todayLog?.time_in && !todayLog.time_out && (
-                    <button type="button" onClick={handleTimeOutClick} disabled={officeNetworkAllowed === false || timeOutLoading} className="flex min-h-16 w-full items-center gap-3 py-3 text-left disabled:opacity-50">
-                      <span className="grid h-9 w-9 flex-none place-items-center rounded-xl bg-amber-50 text-amber-700"><Clock3 size={17} /></span>
-                      <span className="min-w-0 flex-1"><span className="block text-xs font-bold text-slate-900">Time Out pending</span><span className="mt-0.5 block text-xs text-slate-500">Complete today&apos;s attendance.</span></span>
-                      <span className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-700">Action</span>
-                    </button>
-                  )}
-                  {pendingLeavesCount > 0 && (
-                    <button type="button" onClick={() => setMyLeavesModalOpen(true)} className="flex min-h-16 w-full items-center gap-3 py-3 text-left">
-                      <span className="grid h-9 w-9 flex-none place-items-center rounded-xl bg-green-50 text-green-700"><Plane size={17} /></span>
-                      <span className="min-w-0 flex-1"><span className="block text-xs font-bold text-slate-900">Pending Leave Requests</span><span className="mt-0.5 block text-xs text-slate-500">Review your request status.</span></span>
-                      <span className="rounded-full bg-green-50 px-2 py-1 text-[10px] font-bold text-green-700">{pendingLeavesCount}</span>
-                    </button>
-                  )}
-                  {pendingDisputesCount > 0 && (
-                    <button type="button" onClick={() => setMyDisputesModalOpen(true)} className="flex min-h-16 w-full items-center gap-3 py-3 text-left">
-                      <span className="grid h-9 w-9 flex-none place-items-center rounded-xl bg-red-50 text-red-700"><CircleAlert size={17} /></span>
-                      <span className="min-w-0 flex-1"><span className="block text-xs font-bold text-slate-900">Attendance Disputes</span><span className="mt-0.5 block text-xs text-slate-500">Review open attendance corrections.</span></span>
-                      <span className="rounded-full bg-red-50 px-2 py-1 text-[10px] font-bold text-red-700">{pendingDisputesCount}</span>
-                    </button>
-                  )}
-                  {newPayslipsCount > 0 && (
-                    <button type="button" onClick={() => setPayslipsModalOpen(true)} className="flex min-h-16 w-full items-center gap-3 py-3 text-left">
-                      <span className="grid h-9 w-9 flex-none place-items-center rounded-xl bg-blue-50 text-blue-700"><HandCoins size={17} /></span>
-                      <span className="min-w-0 flex-1"><span className="block text-xs font-bold text-slate-900">Latest Payslip Available</span><span className="mt-0.5 block text-xs text-slate-500">Review and acknowledge receipt.</span></span>
-                      <span className="rounded-full bg-blue-50 px-2 py-1 text-[10px] font-bold text-blue-700">{newPayslipsCount}</span>
-                    </button>
-                  )}
-                  {openSupportCount > 0 && (
-                    <button type="button" onClick={() => setSupportModalOpen(true)} className="flex min-h-16 w-full items-center gap-3 py-3 text-left">
-                      <span className="grid h-9 w-9 flex-none place-items-center rounded-xl bg-purple-50 text-purple-700"><Headphones size={17} /></span>
-                      <span className="min-w-0 flex-1"><span className="block text-xs font-bold text-slate-900">Support Requests</span><span className="mt-0.5 block text-xs text-slate-500">Check the latest helpdesk status.</span></span>
-                      <span className="rounded-full bg-purple-50 px-2 py-1 text-[10px] font-bold text-purple-700">{openSupportCount}</span>
-                    </button>
-                  )}
-                  {!initLoading && profileCompleteness.percent < 100 && (
-                    <button type="button" onClick={openProfileFromNav} className="flex min-h-16 w-full items-center gap-3 py-3 text-left">
-                      <span className="grid h-9 w-9 flex-none place-items-center rounded-xl bg-slate-100 text-slate-600"><UserRound size={17} /></span>
-                      <span className="min-w-0 flex-1"><span className="block text-xs font-bold text-slate-900">Profile Completeness</span><span className="mt-0.5 block text-xs text-slate-500">{profileCompleteness.missing} detail{profileCompleteness.missing === 1 ? '' : 's'} still missing.</span><span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-slate-200"><span className="block h-full rounded-full bg-green-600" style={{ width: `${profileCompleteness.percent}%` }} /></span></span>
-                      <span className="text-xs font-bold text-green-700">{profileCompleteness.percent}%</span>
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <div className="p-4 rounded-xl bg-green-50 border border-green-100 text-center">
-                  <p className="font-bold text-green-700 text-sm">You&apos;re all caught up!</p>
-                  <p className="text-green-600 text-[10px] mt-1">No pending employee actions right now.</p>
-                </div>
-              )}
-            </section>
             {/* Announcements */}
             {/* min-h approximates the resolved card's typical height (icon row
                 + 2-3 lines of text) so swapping from skeleton to real content
                 doesn't shove everything below it down -- this was a measurable
                 contributor to this page's Cumulative Layout Shift score. */}
             {announcementLoading ? (
-              <div className="card-style !p-4 min-h-[104px] flex items-center"><LoadingRow label="Loading announcement..." /></div>
+              <div className="card-style !p-4 min-h-[120px] flex items-center"><LoadingRow label="Loading announcement..." /></div>
             ) : announcementError ? (
-              <div className="card-style !p-4 border border-red-100"><p className="text-red-500 text-sm">{announcementError}</p></div>
+              <div className="card-style flex min-h-[120px] items-center !p-4 border border-red-100"><p className="text-red-500 text-sm">{announcementError}</p></div>
             ) : announcement ? (
-              <div className="card-dark !p-4">
+              <div className="card-dark min-h-[120px] !p-4">
                 <div className="flex items-start gap-3">
                   <div className="flex-shrink-0 w-8 h-8 rounded-xl bg-green-500 flex items-center justify-center text-sm">📣</div>
                   <div className="flex-1 min-w-0">
@@ -2370,117 +2260,14 @@ export default function EmployeeDashboard() {
                 </div>
               </div>
             ) : (
-              <div className="card-style !p-3 border-2 border-dashed border-slate-200 text-center">
+              <div className="card-style flex min-h-[120px] items-center justify-center !p-3 border-2 border-dashed border-slate-200 text-center">
                 <p className="text-slate-400 text-xs">No announcements right now.</p>
               </div>
             )}
 
-            {/* AI Weather & Commute Advisory */}
-            {/* min-h approximates the resolved card's typical height so the
-                skeleton-to-content swap doesn't push page content below it
-                down -- see the announcement block above for the same fix. */}
-            {weatherLoading ? (
-              <div className="card-style !p-4 min-h-[168px] flex items-center">
-                <LoadingRow label="Loading weather advisory..." />
-              </div>
-            ) : weatherAdvisory ? (
-              <section
-                className="card-style !p-4"
-              >
-                <div className="flex items-start gap-3">
-                  <div
-                    className={`w-10 h-10 rounded-2xl flex items-center justify-center text-lg flex-shrink-0 ${
-                      weatherAdvisory.severity === 'critical'
-                        ? 'bg-red-100'
-                        : weatherAdvisory.severity === 'warning'
-                          ? 'bg-orange-100'
-                          : weatherAdvisory.severity === 'watch'
-                            ? 'bg-amber-100'
-                            : 'bg-sky-100'
-                    }`}
-                  >
-                    {weatherAdvisory.precipitation_probability != null && weatherAdvisory.precipitation_probability >= 60 ? '🌧️' : '🌤️'}
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2 mb-1">
-                      <span className="text-[11px] font-extrabold uppercase tracking-widest text-green-700">
-                        Weather & Commute Advisory
-                      </span>
-                      <span
-                        className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-full ${
-                          weatherAdvisory.severity === 'critical'
-                            ? 'bg-red-100 text-red-700'
-                            : weatherAdvisory.severity === 'warning'
-                              ? 'bg-orange-100 text-orange-700'
-                              : weatherAdvisory.severity === 'watch'
-                                ? 'bg-amber-100 text-amber-700'
-                                : 'bg-sky-100 text-sky-700'
-                        }`}
-                      >
-                        {weatherAdvisory.severity}
-                      </span>
-                    </div>
-
-                    <p className="font-bold text-slate-900 text-sm leading-snug">
-                      {weatherAdvisory.headline}
-                    </p>
-                    <p className="text-slate-600 text-xs mt-1 leading-relaxed whitespace-pre-wrap">
-                      {weatherAdvisory.message}
-                    </p>
-
-                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
-                      <span>📍 {weatherAdvisory.location_name}</span>
-                      {weatherAdvisory.temperature_c != null && (
-                        <span>🌡️ {Math.round(weatherAdvisory.temperature_c)}°C</span>
-                      )}
-                      {weatherAdvisory.precipitation_probability != null && (
-                        <span>☔ {Math.round(weatherAdvisory.precipitation_probability)}% rain chance</span>
-                      )}
-                      {weatherAdvisory.commute_window && (
-                        <span>🚗 {weatherAdvisory.commute_window}</span>
-                      )}
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={openCommuteChecker}
-                      className="mt-3 inline-flex min-h-11 items-center gap-1.5 rounded-full bg-green-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-green-700"
-                    >
-                      🚗 Check Weather & Live Traffic
-                    </button>
-
-                    <p className="text-slate-400 text-[9px] mt-2">
-                      Updated {new Date(weatherAdvisory.generated_at).toLocaleString('en-US', {
-                        timeZone: 'Asia/Manila',
-                        month: 'short',
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                      {weatherAdvisory.source_name ? ` · ${weatherAdvisory.source_name}` : ''}
-                    </p>
-                  </div>
-                </div>
-              </section>
-            ) : null}
-
-            {!weatherLoading && !weatherAdvisory && (
-              <button type="button" onClick={openCommuteChecker} className="card-style !p-4 w-full flex items-center justify-between gap-3 text-left hover:bg-slate-50 transition">
-                <span className="flex items-center gap-3 min-w-0">
-                  <span className="w-10 h-10 rounded-2xl bg-sky-50 flex items-center justify-center text-lg">🌦️</span>
-                  <span className="min-w-0">
-                    <span className="block text-xs font-bold text-slate-900">Weather & Live Traffic</span>
-                    <span className="block text-[10px] text-slate-400 mt-0.5">30-minute weather and live traffic for any PH route.</span>
-                  </span>
-                </span>
-                <span className="text-slate-400">→</span>
-              </button>
-            )}
-
             {/* Quick Actions */}
             <EmployeeQuickActions
-              onAttendanceHistory={openAttendanceFromNav}
+              onWeather={openCommuteChecker}
               onLeave={() => setLeaveChoiceModalOpen(true)}
               onDisputes={() => { setSelectedMyDisputeDetail(null); setMyDisputesModalOpen(true); fetchMyDisputes(); }}
               onPayslips={() => { setPayslipsModalOpen(true); fetchPayslips(); }}
@@ -2489,82 +2276,6 @@ export default function EmployeeDashboard() {
               onCompanyCalendar={() => { setCalendarModalOpen(true); fetchCompanyHolidays(); }}
               onHelpdesk={() => { setSupportModalOpen(true); fetchSupportRequests(); }}
             />
-
-            <div className="hidden">
-              <button type="button" onClick={() => setLeaveChoiceModalOpen(true)} className="card-style !p-3 flex items-center gap-2 hover:bg-slate-50 transition text-left">
-                <div className="w-8 h-8 rounded-xl bg-green-50 flex items-center justify-center flex-shrink-0">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-green-600"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                </div>
-                <div className="min-w-0">
-                  <p className="font-semibold text-slate-900 text-xs">Leave</p>
-                  <p className="text-slate-400 text-[10px] truncate">{isRegular ? `${remainingCredits} credits left` : 'Request or view leaves'}</p>
-                </div>
-              </button>
-              <button type="button" onClick={() => { setPayslipsModalOpen(true); fetchPayslips(); }} className="card-style !p-3 flex items-center gap-2 hover:bg-slate-50 transition text-left">
-                <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-600"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                </div>
-                <div className="min-w-0">
-                  <p className="font-semibold text-slate-900 text-xs">My Payslips</p>
-                  <p className="text-slate-400 text-[10px] truncate">{payslips.length > 0 ? `${payslips.length} available` : 'No payslips yet'}</p>
-                </div>
-              </button>
-              <button type="button" onClick={() => { setSelectedMyDisputeDetail(null); setMyDisputesModalOpen(true); fetchMyDisputes(); }} className="card-style !p-3 flex items-center gap-2 hover:bg-slate-50 transition text-left">
-                <div className="w-8 h-8 rounded-xl bg-rose-50 flex items-center justify-center flex-shrink-0">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-rose-600"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                </div>
-                <div className="min-w-0">
-                  <p className="font-semibold text-slate-900 text-xs">My Disputes</p>
-                  <p className="text-slate-400 text-[10px] truncate">{myDisputes.length > 0 ? `${myDisputes.length} dispute${myDisputes.length === 1 ? '' : 's'}` : 'No disputes yet'}</p>
-                </div>
-              </button>
-              <button type="button" onClick={() => { setDirectoryModalOpen(true); setDirectorySearch(''); fetchDirectory(); }} className="card-style !p-3 flex items-center gap-2 hover:bg-slate-50 transition text-left">
-                <div className="w-8 h-8 rounded-xl bg-sky-50 flex items-center justify-center flex-shrink-0">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-sky-600"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                </div>
-                <div className="min-w-0">
-                  <p className="font-semibold text-slate-900 text-xs">Employee Directory</p>
-                  <p className="text-slate-400 text-[10px] truncate">Look up a colleague</p>
-                </div>
-              </button>
-              <button type="button" onClick={() => { setCalendarModalOpen(true); fetchCompanyHolidays(); }} className="card-style !p-3 flex items-center gap-2 hover:bg-slate-50 transition text-left">
-                <div className="w-8 h-8 rounded-xl bg-purple-50 flex items-center justify-center flex-shrink-0">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-purple-600"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                </div>
-                <div className="min-w-0">
-                  <p className="font-semibold text-slate-900 text-xs">Company Calendar</p>
-                  <p className="text-slate-400 text-[10px] truncate">
-                    {!holidaysLoading && upcomingHolidays.length > 0
-                      ? `Next: ${upcomingHolidays[0].name}`
-                      : 'View holidays'}
-                  </p>
-                </div>
-              </button>
-              <button type="button" onClick={() => setNotificationsModalOpen(true)} className="card-style !p-3 flex items-center gap-2 hover:bg-slate-50 transition text-left">
-                <div className="relative w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center flex-shrink-0 text-sm">
-                  🔔
-                  {unreadNotificationCount > 0 && <span className="absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">{unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}</span>}
-                </div>
-                <div className="min-w-0">
-                  <p className="font-semibold text-slate-900 text-xs">Notifications</p>
-                  <p className="text-slate-400 text-[10px] truncate">{unreadNotificationCount > 0 ? `${unreadNotificationCount} unread` : 'You are up to date'}</p>
-                </div>
-              </button>
-              <button type="button" onClick={() => { setSupportModalOpen(true); fetchSupportRequests(); }} className="card-style !p-3 flex items-center gap-2 hover:bg-slate-50 transition text-left">
-                <div className="w-8 h-8 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center flex-shrink-0 text-sm">🎫</div>
-                <div className="min-w-0">
-                  <p className="font-semibold text-slate-900 text-xs">Help Desk / HR</p>
-                  <p className="text-slate-400 text-[10px] truncate">{openSupportCount > 0 ? `${openSupportCount} open request${openSupportCount === 1 ? '' : 's'}` : 'Submit a concern'}</p>
-                </div>
-              </button>
-              <button type="button" onClick={() => { setDocumentsModalOpen(true); fetchEmployeeDocuments(); }} className="card-style !p-3 flex items-center gap-2 hover:bg-slate-50 transition text-left">
-                <div className="w-8 h-8 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center flex-shrink-0 text-sm">📚</div>
-                <div className="min-w-0">
-                  <p className="font-semibold text-slate-900 text-xs">My Documents</p>
-                  <p className="text-slate-400 text-[10px] truncate">{employeeDocuments.length > 0 ? `${employeeDocuments.length} available` : 'Policies and memorandums'}</p>
-                </div>
-              </button>
-            </div>
 
             {/* Attendance History -- collapsed by default; tap the header to expand. */}
             <div id="employee-attendance-history" className="card-style scroll-mt-4 !p-4">
@@ -2721,7 +2432,7 @@ export default function EmployeeDashboard() {
         </div>
       </div>
 
-      <SummaryDetailModal formatMonthLabel={formatMonthLabel} setSummaryDetailType={setSummaryDetailType} statusTagClass={statusTagClass} summaryCutoffKey={summaryCutoffKey} summaryDetailInfo={summaryDetailInfo} summaryDetailType={summaryDetailType} />
+      {summaryDetailType && <SummaryDetailModal formatMonthLabel={formatMonthLabel} setSummaryDetailType={setSummaryDetailType} statusTagClass={statusTagClass} summaryCutoffKey={summaryCutoffKey} summaryDetailInfo={summaryDetailInfo} summaryDetailType={summaryDetailType} />}
 
       <MobileBottomNav
         actionCount={employeeActionCount}
@@ -2759,7 +2470,7 @@ export default function EmployeeDashboard() {
         onGovernmentIds={() => setGovernmentIdsModalOpen(true)}
       />
 
-      <EmployeeGovernmentIdsModal
+      {governmentIdsModalOpen && <EmployeeGovernmentIdsModal
         open={governmentIdsModalOpen}
         onClose={() => setGovernmentIdsModalOpen(false)}
         employeeName={profile?.full_name || 'Employee'}
@@ -2775,9 +2486,9 @@ export default function EmployeeDashboard() {
           <div><p className="label-branded mb-1">Hired Date</p><p className="text-sm font-medium text-slate-700">{governmentIds?.hired_date ? formatHiredDate(governmentIds.hired_date) : 'Not set'}</p></div>
           <div><p className="label-branded mb-1">Employment Status</p>{governmentIds?.employment_status ? <span className={governmentIds.employment_status === 'Regular' ? 'tag-present' : governmentIds.employment_status === 'Probationary' ? 'tag-late' : 'tag-excused'}>{governmentIds.employment_status}</span> : <p className="text-sm font-medium text-slate-700">Not set</p>}</div>
         </>}
-      />
+      />}
 
-      <EmployeeActionCenterModal
+      {actionCenterModalOpen && <EmployeeActionCenterModal
         open={actionCenterModalOpen}
         onClose={() => setActionCenterModalOpen(false)}
         timeOutPending={Boolean(todayLog?.time_in && !todayLog.time_out)}
@@ -2789,12 +2500,12 @@ export default function EmployeeDashboard() {
         profilePercent={profileCompleteness.percent}
         profileIncomplete={!initLoading && profileCompleteness.percent < 100}
         onTimeOut={handleTimeOutClick}
-        onLeaves={() => setMyLeavesModalOpen(true)}
-        onDisputes={() => setMyDisputesModalOpen(true)}
-        onPayslips={() => setPayslipsModalOpen(true)}
-        onSupport={() => setSupportModalOpen(true)}
+        onLeaves={() => { setMyLeavesModalOpen(true); fetchMyLeaves(); }}
+        onDisputes={() => { setMyDisputesModalOpen(true); fetchMyDisputes(); }}
+        onPayslips={() => { setPayslipsModalOpen(true); fetchPayslips(); }}
+        onSupport={() => { setSupportModalOpen(true); fetchSupportRequests(); }}
         onProfile={() => setGovernmentIdsModalOpen(true)}
-      />
+      />}
 
       {/* New Announcement Toast (auto-dismisses after 6s) */}
       {showAnnouncementToast && (
@@ -2819,7 +2530,7 @@ export default function EmployeeDashboard() {
         </div>
       )}
 
-      <AttendanceDisputeFormModal open={disputeModalOpen} onClose={() => setDisputeModalOpen(false)} disputeChoiceEligibility={disputeChoiceEligibility} disputeForm={disputeForm} disputeMsg={disputeMsg} disputeSaving={disputeSaving} disputeStep={disputeStep} disputeTypeLocked={disputeTypeLocked} formatTimeLocal={formatTimeLocal} handleDisputeDateChange={handleDisputeDateChange} proceedToDisputeConfirm={proceedToDisputeConfirm} selectDisputeType={selectDisputeType} setDisputeForm={setDisputeForm} setDisputeStep={setDisputeStep} submitDispute={submitDispute} />
+      {disputeModalOpen && <AttendanceDisputeFormModal open={disputeModalOpen} onClose={() => setDisputeModalOpen(false)} disputeChoiceEligibility={disputeChoiceEligibility} disputeForm={disputeForm} disputeMsg={disputeMsg} disputeSaving={disputeSaving} disputeStep={disputeStep} disputeTypeLocked={disputeTypeLocked} formatTimeLocal={formatTimeLocal} handleDisputeDateChange={handleDisputeDateChange} proceedToDisputeConfirm={proceedToDisputeConfirm} selectDisputeType={selectDisputeType} setDisputeForm={setDisputeForm} setDisputeStep={setDisputeStep} submitDispute={submitDispute} />}
 
       {/* Dispute Result Toast (auto-dismisses after 8s) */}
       {disputeResultToast && (
@@ -2886,28 +2597,28 @@ export default function EmployeeDashboard() {
         </div>
       )}
       {/* Payslips Modal */}
-      <PayslipsModal open={payslipsModalOpen} onClose={() => setPayslipsModalOpen(false)} loading={payslipsLoading} payslips={payslips} downloadingId={downloadingId} acknowledgingId={acknowledgingPayslipId} onDownload={downloadPayslip} onAcknowledge={acknowledgePayslip} />
+      {payslipsModalOpen && <PayslipsModal open={payslipsModalOpen} onClose={() => setPayslipsModalOpen(false)} loading={payslipsLoading} payslips={payslips} downloadingId={downloadingId} acknowledgingId={acknowledgingPayslipId} onDownload={downloadPayslip} onAcknowledge={acknowledgePayslip} />}
 
-      <PlanMyCommuteModal
+      {commuteModalOpen && <PlanMyCommuteModal
         open={commuteModalOpen}
         onClose={() => setCommuteModalOpen(false)}
         darkMode={darkMode}
         initialDestination={weatherAdvisory?.location_name}
-      />
+      />}
 
-      <LeaveChoiceModal open={leaveChoiceModalOpen} onClose={() => setLeaveChoiceModalOpen(false)} fetchMyLeaves={fetchMyLeaves} isRegular={isRegular} myLeavesCount={myLeaves.length} remainingCredits={remainingCredits} setLeaveForm={setLeaveForm} setLeaveModalOpen={setLeaveModalOpen} setLeaveMsg={setLeaveMsg} setMyLeavesModalOpen={setMyLeavesModalOpen} clearSelectedLeave={() => setSelectedMyLeaveDetail(null)} />
+      {leaveChoiceModalOpen && <LeaveChoiceModal open={leaveChoiceModalOpen} onClose={() => setLeaveChoiceModalOpen(false)} fetchMyLeaves={fetchMyLeaves} isRegular={isRegular} myLeavesCount={myLeaves.length} remainingCredits={remainingCredits} setLeaveForm={setLeaveForm} setLeaveModalOpen={setLeaveModalOpen} setLeaveMsg={setLeaveMsg} setMyLeavesModalOpen={setMyLeavesModalOpen} clearSelectedLeave={() => setSelectedMyLeaveDetail(null)} />}
 
-      <LeaveRequestsModal open={myLeavesModalOpen} onClose={() => setMyLeavesModalOpen(false)} onBackToChoice={() => { setMyLeavesModalOpen(false); setLeaveChoiceModalOpen(true); }} cancelLeave={cancelLeave} countLeaveDays={countLeaveDays} myLeaves={myLeaves} selectedMyLeaveDetail={selectedMyLeaveDetail} setSelectedMyLeaveDetail={setSelectedMyLeaveDetail} />
+      {myLeavesModalOpen && <LeaveRequestsModal open={myLeavesModalOpen} onClose={() => setMyLeavesModalOpen(false)} onBackToChoice={() => { setMyLeavesModalOpen(false); setLeaveChoiceModalOpen(true); }} cancelLeave={cancelLeave} countLeaveDays={countLeaveDays} myLeaves={myLeaves} selectedMyLeaveDetail={selectedMyLeaveDetail} setSelectedMyLeaveDetail={setSelectedMyLeaveDetail} />}
 
-      <AttendanceDisputesModal open={myDisputesModalOpen} onClose={() => setMyDisputesModalOpen(false)} cancelDispute={cancelDispute} cancelingDisputeId={cancelingDisputeId} disputeClaimed={disputeClaimed} disputeFieldLabel={disputeFieldLabel} disputeOriginal={disputeOriginal} disputeTypeLabel={disputeTypeLabel} formatDisputeTimePh={formatDisputeTimePh} myDisputes={myDisputes} openDisputeModal={openDisputeModal} selectedMyDisputeDetail={selectedMyDisputeDetail} setSelectedMyDisputeDetail={setSelectedMyDisputeDetail} />
+      {myDisputesModalOpen && <AttendanceDisputesModal open={myDisputesModalOpen} onClose={() => setMyDisputesModalOpen(false)} cancelDispute={cancelDispute} cancelingDisputeId={cancelingDisputeId} disputeClaimed={disputeClaimed} disputeFieldLabel={disputeFieldLabel} disputeOriginal={disputeOriginal} disputeTypeLabel={disputeTypeLabel} formatDisputeTimePh={formatDisputeTimePh} myDisputes={myDisputes} openDisputeModal={openDisputeModal} selectedMyDisputeDetail={selectedMyDisputeDetail} setSelectedMyDisputeDetail={setSelectedMyDisputeDetail} />}
 
       {/* Employee Directory Modal */}
-      <EmployeeDirectoryModal open={directoryModalOpen} onClose={() => setDirectoryModalOpen(false)} loading={directoryLoading} total={directoryEmployees.length} search={directorySearch} onSearchChange={setDirectorySearch} employees={filteredDirectory} initials={directoryInitials} />
+      {directoryModalOpen && <EmployeeDirectoryModal open={directoryModalOpen} onClose={() => setDirectoryModalOpen(false)} loading={directoryLoading} total={directoryEmployees.length} search={directorySearch} onSearchChange={setDirectorySearch} employees={filteredDirectory} initials={directoryInitials} />}
 
       {/* Company Calendar Modal */}
-      <CompanyCalendarModal open={calendarModalOpen} onClose={() => setCalendarModalOpen(false)} loading={holidaysLoading} holidays={companyHolidays} upcoming={upcomingHolidays} past={pastHolidays} formatDate={formatHolidayDate} daysUntil={daysUntilHoliday} />
+      {calendarModalOpen && <CompanyCalendarModal open={calendarModalOpen} onClose={() => setCalendarModalOpen(false)} loading={holidaysLoading} holidays={companyHolidays} upcoming={upcomingHolidays} past={pastHolidays} formatDate={formatHolidayDate} daysUntil={daysUntilHoliday} />}
 
-      <LeaveRequestModal open={leaveModalOpen} onClose={() => setLeaveModalOpen(false)} onBack={() => { setLeaveModalOpen(false); setLeaveChoiceModalOpen(true); }} countLeaveDays={countLeaveDays} countLeaveHolidays={countLeaveHolidays} fallbackLeaveCredits={fallbackLeaveCredits} isRegular={isRegular} leaveCredits={leaveCredits} leaveForm={leaveForm} leaveMsg={leaveMsg} leaveSaving={leaveSaving} remainingCredits={remainingCredits} setLeaveForm={setLeaveForm} submitLeave={submitLeave} todayManila={todayManila} upcomingApprovedLeaves={upcomingApprovedLeaves} />
+      {leaveModalOpen && <LeaveRequestModal open={leaveModalOpen} onClose={() => setLeaveModalOpen(false)} onBack={() => { setLeaveModalOpen(false); setLeaveChoiceModalOpen(true); }} countLeaveDays={countLeaveDays} countLeaveHolidays={countLeaveHolidays} fallbackLeaveCredits={fallbackLeaveCredits} isRegular={isRegular} leaveCredits={leaveCredits} leaveForm={leaveForm} leaveMsg={leaveMsg} leaveSaving={leaveSaving} remainingCredits={remainingCredits} setLeaveForm={setLeaveForm} submitLeave={submitLeave} todayManila={todayManila} upcomingApprovedLeaves={upcomingApprovedLeaves} />}
 
       {/* Leave Result Toast */}
       {leaveResultToast && (
@@ -2926,18 +2637,18 @@ export default function EmployeeDashboard() {
       )}
 
       {/* Notification Inbox Modal */}
-      <NotificationsModal open={notificationsModalOpen} onClose={() => setNotificationsModalOpen(false)} notifications={employeeNotifications} unreadCount={unreadNotificationCount} readIds={readNotificationIds} onMarkAllRead={markAllNotificationsRead} onOpenNotification={openNotificationTarget} />
+      {notificationsModalOpen && <NotificationsModal open={notificationsModalOpen} onClose={() => setNotificationsModalOpen(false)} notifications={employeeNotifications} unreadCount={unreadNotificationCount} readIds={readNotificationIds} onMarkAllRead={markAllNotificationsRead} onOpenNotification={openNotificationTarget} />}
 
       {/* Attendance Calendar Modal */}
-      <AttendanceCalendarModal open={attendanceCalendarOpen} onClose={() => setAttendanceCalendarOpen(false)} month={attendanceCalendarMonth} onMonthChange={(value) => { setAttendanceCalendarMonth(value); setSelectedAttendanceCalendarDate(null); }} availableMonths={availableMonths} formatMonth={formatMonthOnly} days={attendanceCalendarDays} selectedDate={selectedAttendanceCalendarDate} onSelectDate={setSelectedAttendanceCalendarDate} selectedDay={selectedAttendanceCalendarDay} />
+      {attendanceCalendarOpen && <AttendanceCalendarModal open={attendanceCalendarOpen} onClose={() => setAttendanceCalendarOpen(false)} month={attendanceCalendarMonth} onMonthChange={(value) => { setAttendanceCalendarMonth(value); setSelectedAttendanceCalendarDate(null); }} availableMonths={availableMonths} formatMonth={formatMonthOnly} days={attendanceCalendarDays} selectedDate={selectedAttendanceCalendarDate} onSelectDate={setSelectedAttendanceCalendarDate} selectedDay={selectedAttendanceCalendarDay} />}
 
       {/* Help Desk / HR Request Modal */}
-      <HelpDeskModal open={supportModalOpen} onClose={() => setSupportModalOpen(false)} saving={supportSaving} loading={supportLoading} message={supportMessage} form={supportForm} setForm={setSupportForm} requests={supportRequests} onSubmit={submitSupportRequest} />
+      {supportModalOpen && <HelpDeskModal open={supportModalOpen} onClose={() => setSupportModalOpen(false)} saving={supportSaving} loading={supportLoading} message={supportMessage} form={supportForm} setForm={setSupportForm} requests={supportRequests} onSubmit={submitSupportRequest} />}
 
       {/* Employee Documents Modal */}
-      <EmployeeDocumentsModal open={documentsModalOpen} onClose={() => setDocumentsModalOpen(false)} loading={documentsLoading} documents={employeeDocuments} downloadingId={downloadingDocumentId} onDownload={downloadEmployeeDocument} />
+      {documentsModalOpen && <EmployeeDocumentsModal open={documentsModalOpen} onClose={() => setDocumentsModalOpen(false)} loading={documentsLoading} documents={employeeDocuments} downloadingId={downloadingDocumentId} onDownload={downloadEmployeeDocument} />}
 
-      <EarlyTimeOutModal open={showEarlyTimeOutWarning} onClose={() => setShowEarlyTimeOutWarning(false)} expectedTimeOutLabel={expectedTimeOutLabel} handleTimeOut={handleTimeOut} timeOutLoading={timeOutLoading} />
+      {showEarlyTimeOutWarning && <EarlyTimeOutModal open={showEarlyTimeOutWarning} onClose={() => setShowEarlyTimeOutWarning(false)} expectedTimeOutLabel={expectedTimeOutLabel} handleTimeOut={handleTimeOut} timeOutLoading={timeOutLoading} />}
 
 
 
