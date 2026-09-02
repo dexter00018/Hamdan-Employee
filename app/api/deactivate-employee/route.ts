@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { createSupabaseAdminClient } from '@/lib/server/supabase-admin';
+import { canChangeAccountActivation } from '@/lib/account-rules';
 
 // Service-role client -- same pattern as /api/create-employee. Needed
 // because banning/unbanning a login (auth.users.banned_until) requires
@@ -79,7 +80,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Employee not found.' }, { status: 404 });
     }
 
-    if (targetProfile.role === 'super_admin') {
+    if (!canChangeAccountActivation(callerProfile.role, targetProfile.role)) {
       return NextResponse.json({ error: 'Super Admin accounts cannot be deactivated from here.' }, { status: 403 });
     }
 

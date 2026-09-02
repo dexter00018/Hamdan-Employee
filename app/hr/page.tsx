@@ -12,6 +12,9 @@ import { LoadingRow } from '@/components/Spinner';
 import { useVerificationDialog } from '@/components/shared/useVerificationDialog';
 import { APP_SETTING_DEFINITIONS, DEFAULT_APP_SETTINGS, normalizeAppSettings, type AppSettingsValues } from '@/lib/app-settings';
 import { resolveSeasonalTheme, SEASONAL_THEME_PRESENTATION } from '@/lib/seasonal-theme';
+import { countChargeableLeaveDays } from '@/lib/leave-rules';
+import { computeAttendanceStatus } from '@/lib/attendance-rules';
+import { errorMessage, type AttendanceDispute, type LeaveRequest } from '@/lib/types/hr';
 
 const AttendanceInsightsModal = dynamic(() => import('@/components/hr/modals/AttendanceInsightsModal'));
 const DailyOverviewModal = dynamic(() => import('@/components/hr/modals/DailyOverviewModal'));
@@ -556,21 +559,22 @@ export default function HRDashboard() {
   const payslipFileRef = useRef<HTMLInputElement>(null);
 
   // Attendance Disputes
-  const [disputes, setDisputes] = useState<any[]>([]);
+  const [disputes, setDisputes] = useState<AttendanceDispute[]>([]);
   const [disputesLoading, setDisputesLoading] = useState(true);
   const [disputeActionLoadingId, setDisputeActionLoadingId] = useState<string | null>(null);
   const [disputeMsg, setDisputeMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [disputesHistoryModalOpen, setDisputesHistoryModalOpen] = useState(false);
 
   // Leave Requests
-  const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
   const [leaveRequestsLoading, setLeaveRequestsLoading] = useState(true);
   const [leaveActionLoadingId, setLeaveActionLoadingId] = useState<string | null>(null);
   const [leaveMsg, setLeaveMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [leaveHrNotes, setLeaveHrNotes] = useState<{ [id: string]: string }>({});
   const [leaveHistoryModalOpen, setLeaveHistoryModalOpen] = useState(false);
-  const [selectedDisputeDetail, setSelectedDisputeDetail] = useState<any>(null);
-  const [selectedLeaveDetail, setSelectedLeaveDetail] = useState<any>(null);
+  const [selectedDisputeDetail, setSelectedDisputeDetail] = useState<AttendanceDispute | null>(null);
+  const [selectedLeaveDetail, setSelectedLeaveDetail] = useState<LeaveRequest | null>(null);
+  const [incomingRequestAlert, setIncomingRequestAlert] = useState<{ type: 'dispute' | 'leave'; title: string; detail: string } | null>(null);
   const [employeesListOpen, setEmployeesListOpen] = useState(false);
   const [attendanceHistoryOpen, setAttendanceHistoryOpen] = useState(false);
   const [holidaysOpen, setHolidaysOpen] = useState(false);
@@ -1026,7 +1030,7 @@ export default function HRDashboard() {
       setDisputesLoading(false);
       return;
     }
-    setDisputes(data || []);
+    setDisputes((data || []) as unknown as AttendanceDispute[]);
     setDisputesLoading(false);
   };
 
@@ -1040,17 +1044,16 @@ export default function HRDashboard() {
       hour: '2-digit',
       minute: '2-digit',
       hour12: false,
-    }).formatToParts(new Date(isoString)).reduce((acc: any, p) => {
+    }).formatToParts(new Date(isoString)).reduce<Record<string, string>>((acc, p) => {
       acc[p.type] = p.value;
       return acc;
     }, {});
     const hour = parseInt(parts.hour, 10);
     const minute = parseInt(parts.minute, 10);
-    const isLate = hour > lateCutoffHour || (hour === lateCutoffHour && minute > lateCutoffMinute);
-    return isLate ? 'Late' : 'Present';
+    return computeAttendanceStatus(hour, minute, lateCutoffHour, lateCutoffMinute);
   };
 
-  const approveDispute = async (dispute: any) => {
+  const approveDispute = async (dispute: AttendanceDispute) => {
     setDisputeActionLoadingId(dispute.id);
     setDisputeMsg(null);
     try {
@@ -1065,6 +1068,7 @@ export default function HRDashboard() {
         if (!dispute.attendance_log_id) {
           throw new Error('This dispute has no linked attendance record to update.');
         }
+        if (!dispute.claimed_time_out) throw new Error('This dispute has no claimed time-out.');
         const { error } = await supabase
           .from('attendance_logs')
           .update({ time_out: dispute.claimed_time_out })
@@ -1072,6 +1076,7 @@ export default function HRDashboard() {
         if (error) throw error;
       } else if (dispute.attendance_log_id) {
         // Existing (wrongly-tagged) log -- correct its time_in/status.
+        if (!dispute.claimed_time_in) throw new Error('This dispute has no claimed time-in.');
         const newStatus = computeStatusForTime(dispute.claimed_time_in);
         const { error } = await supabase
           .from('attendance_logs')
@@ -1085,6 +1090,7 @@ export default function HRDashboard() {
         // (see settle_overdue_absences) -- this overwrites that placeholder
         // with the real, HR-confirmed time_in/status instead of colliding
         // with the unique (user_id, log_date) constraint.
+        if (!dispute.claimed_time_in) throw new Error('This dispute has no claimed time-in.');
         const newStatus = computeStatusForTime(dispute.claimed_time_in);
         const { data: disputeRow } = await supabase
           .from('attendance_disputes')
@@ -1109,15 +1115,15 @@ export default function HRDashboard() {
 
       setDisputeMsg({ type: 'success', text: 'Dispute approved and attendance record updated.' });
       await Promise.all([fetchDisputes(), refreshAllData()]);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error approving dispute:', err);
-      setDisputeMsg({ type: 'error', text: err?.message ?? 'Failed to approve dispute.' });
+      setDisputeMsg({ type: 'error', text: errorMessage(err, 'Failed to approve dispute.') });
     } finally {
       setDisputeActionLoadingId(null);
     }
   };
 
-  const rejectDispute = async (dispute: any) => {
+  const rejectDispute = async (dispute: AttendanceDispute) => {
     setDisputeActionLoadingId(dispute.id);
     setDisputeMsg(null);
     try {
@@ -1130,9 +1136,9 @@ export default function HRDashboard() {
 
       setDisputeMsg({ type: 'success', text: 'Dispute rejected.' });
       await fetchDisputes();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error rejecting dispute:', err);
-      setDisputeMsg({ type: 'error', text: err?.message ?? 'Failed to reject dispute.' });
+      setDisputeMsg({ type: 'error', text: errorMessage(err, 'Failed to reject dispute.') });
     } finally {
       setDisputeActionLoadingId(null);
     }
@@ -1149,25 +1155,15 @@ export default function HRDashboard() {
       .eq('employee.is_active', true)
       .order('created_at', { ascending: false });
     if (error) { console.error('Error fetching leave requests:', error); }
-    setLeaveRequests(data || []);
+    setLeaveRequests((data || []) as unknown as LeaveRequest[]);
     setLeaveRequestsLoading(false);
   };
 
   const countLeaveDays = (start: string, end: string) => {
-    let count = 0;
-    const d = new Date(start);
-    const endDate = new Date(end);
-    const holidayDates = new Set(holidays.map((holiday) => holiday.holiday_date));
-    while (d <= endDate) {
-      const day = d.getDay();
-      const dateKey = d.toISOString().slice(0, 10);
-      if (day !== 0 && day !== 6 && !holidayDates.has(dateKey)) count++;
-      d.setDate(d.getDate() + 1);
-    }
-    return count;
+    return countChargeableLeaveDays(start, end, holidays.map((holiday) => holiday.holiday_date));
   };
 
-  const approveLeave = async (leave: any) => {
+  const approveLeave = async (leave: LeaveRequest) => {
     setLeaveActionLoadingId(leave.id);
     setLeaveMsg(null);
     try {
@@ -1194,15 +1190,15 @@ export default function HRDashboard() {
 
       setLeaveMsg({ type: 'success', text: 'Leave request approved.' });
       await fetchLeaveRequests();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error approving leave:', err);
-      setLeaveMsg({ type: 'error', text: err?.message ?? 'Failed to approve leave.' });
+      setLeaveMsg({ type: 'error', text: errorMessage(err, 'Failed to approve leave.') });
     } finally {
       setLeaveActionLoadingId(null);
     }
   };
 
-  const rejectLeave = async (leave: any) => {
+  const rejectLeave = async (leave: LeaveRequest) => {
     setLeaveActionLoadingId(leave.id);
     setLeaveMsg(null);
     try {
@@ -1215,9 +1211,9 @@ export default function HRDashboard() {
       if (error) throw error;
       setLeaveMsg({ type: 'success', text: 'Leave request rejected.' });
       await fetchLeaveRequests();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error rejecting leave:', err);
-      setLeaveMsg({ type: 'error', text: err?.message ?? 'Failed to reject leave.' });
+      setLeaveMsg({ type: 'error', text: errorMessage(err, 'Failed to reject leave.') });
     } finally {
       setLeaveActionLoadingId(null);
     }
@@ -1766,14 +1762,14 @@ export default function HRDashboard() {
   // Human-friendly label + formatted before/after times for a dispute,
   // regardless of whether it's a TimeIn or TimeOut dispute -- used in
   // both the pending list and the history detail view.
-  const disputeTypeLabel = (d: any) => {
+  const disputeTypeLabel = (d: AttendanceDispute) => {
     const dType = d.dispute_type || 'TimeIn';
     if (dType === 'TimeOut') return 'Missed time-out';
     return d.attendance_log_id ? 'Late tag dispute' : 'Missed time-in';
   };
-  const disputeOriginal = (d: any) => ((d.dispute_type || 'TimeIn') === 'TimeOut' ? d.original_time_out : d.original_time_in);
-  const disputeClaimed = (d: any) => ((d.dispute_type || 'TimeIn') === 'TimeOut' ? d.claimed_time_out : d.claimed_time_in);
-  const disputeFieldLabel = (d: any) => ((d.dispute_type || 'TimeIn') === 'TimeOut' ? 'Time-Out' : 'Time-In');
+  const disputeOriginal = (d: AttendanceDispute) => ((d.dispute_type || 'TimeIn') === 'TimeOut' ? d.original_time_out : d.original_time_in);
+  const disputeClaimed = (d: AttendanceDispute) => ((d.dispute_type || 'TimeIn') === 'TimeOut' ? d.claimed_time_out : d.claimed_time_in);
+  const disputeFieldLabel = (d: AttendanceDispute) => ((d.dispute_type || 'TimeIn') === 'TimeOut' ? 'Time-Out' : 'Time-In');
   const formatPh = (iso: string) =>
     new Date(iso).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
@@ -1902,6 +1898,30 @@ export default function HRDashboard() {
     requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   };
 
+  useEffect(() => {
+    let dismissTimer: number | null = null;
+    const showIncomingAlert = (alert: { type: 'dispute' | 'leave'; title: string; detail: string }) => {
+      setIncomingRequestAlert(alert);
+      if (dismissTimer) window.clearTimeout(dismissTimer);
+      dismissTimer = window.setTimeout(() => setIncomingRequestAlert(null), 10_000);
+    };
+    const channel = supabase
+      .channel('hr-incoming-requests')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'attendance_disputes' }, () => {
+        void fetchDisputes();
+        showIncomingAlert({ type: 'dispute', title: 'New attendance dispute', detail: 'An employee submitted an attendance correction for HR review.' });
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'leave_requests' }, () => {
+        void fetchLeaveRequests();
+        showIncomingAlert({ type: 'leave', title: 'New leave request', detail: 'An employee submitted a leave request for HR approval.' });
+      })
+      .subscribe();
+    return () => {
+      if (dismissTimer) window.clearTimeout(dismissTimer);
+      void supabase.removeChannel(channel);
+    };
+  }, []);
+
   const applyTheme = (useDark: boolean) => {
     document.documentElement.classList.toggle('dark', useDark);
     document.documentElement.style.colorScheme = useDark ? 'dark' : 'light';
@@ -1950,6 +1970,8 @@ export default function HRDashboard() {
         </header>
 
         {seasonalTheme.active && seasonalTheme.bannerEnabled && dismissedSeasonalBanner !== seasonalTheme.variant ? <section className={`relative overflow-hidden rounded-2xl border border-amber-300/50 bg-gradient-to-r px-4 py-3 text-white shadow-lg ${seasonalPresentation.bannerTone}`} aria-label="Seasonal greeting"><span className="absolute -right-3 -top-5 text-6xl text-white/10" aria-hidden="true">{seasonalPresentation.symbol}</span><div className="flex items-center gap-3"><span className="grid h-9 w-9 flex-none place-items-center rounded-xl bg-white/15 text-lg ring-1 ring-white/20" aria-hidden="true">{seasonalPresentation.symbol}</span><div className="min-w-0 flex-1"><p className="text-[9px] font-black uppercase tracking-[0.18em] text-amber-200">{seasonalPresentation.label}</p><p className="truncate text-sm font-bold text-white">{seasonalPresentation.greeting}</p></div><button type="button" onClick={() => setDismissedSeasonalBanner(seasonalTheme.variant)} className="grid h-9 w-9 flex-none place-items-center rounded-full bg-white/10 text-lg text-white/80 transition hover:bg-white/20" aria-label="Dismiss seasonal greeting">×</button></div></section> : null}
+
+        {incomingRequestAlert ? <div role="status" aria-live="polite" className="fixed inset-x-3 top-3 z-[80] mx-auto flex max-w-md items-center gap-3 rounded-2xl border border-green-300 bg-white p-3 shadow-2xl dark:border-green-800 dark:!bg-[#17231b] sm:left-auto sm:right-5 sm:top-5 sm:mx-0"><span className={`grid h-11 w-11 flex-none place-items-center rounded-2xl text-white shadow ${incomingRequestAlert.type === 'dispute' ? 'bg-gradient-to-br from-orange-500 to-red-700' : 'bg-gradient-to-br from-blue-500 to-indigo-700'}`}>{incomingRequestAlert.type === 'dispute' ? <BadgeAlert size={22} strokeWidth={2.8}/> : <CalendarCheck2 size={22} strokeWidth={2.8}/>}</span><button type="button" onClick={() => { if (incomingRequestAlert.type === 'dispute') { setSelectedDisputeDetail(null); setDisputesHistoryModalOpen(true); } else { setSelectedLeaveDetail(null); setLeaveHistoryModalOpen(true); } setIncomingRequestAlert(null); }} className="min-w-0 flex-1 text-left"><span className="block text-xs font-extrabold text-slate-950 dark:!text-white">{incomingRequestAlert.title}</span><span className="mt-0.5 block text-[10px] leading-relaxed text-slate-600 dark:!text-slate-300">{incomingRequestAlert.detail}</span><span className="mt-1 block text-[10px] font-bold text-green-700 dark:!text-green-300">Tap to review</span></button><button type="button" onClick={() => setIncomingRequestAlert(null)} className="grid h-9 w-9 flex-none place-items-center rounded-full bg-slate-100 text-lg text-slate-600 dark:!bg-[#29362d] dark:!text-white" aria-label="Dismiss notification">×</button></div> : null}
 
         {errorMsg && <div className="p-3 rounded-xl text-xs font-bold bg-red-50 text-red-700">{errorMsg}</div>}
 
@@ -2107,8 +2129,8 @@ export default function HRDashboard() {
                           <div className="min-w-0">
                             <p className="font-bold text-slate-900 text-xs">{d.employee?.full_name ?? 'Unknown'}</p>
                             <p className="text-slate-500 text-xs mt-0.5">{disputeTypeLabel(d)} · <span className="font-medium">{d.dispute_date}</span></p>
-                            {disputeOriginal(d) && <p className="text-slate-400 text-xs">Was: <span className="font-bold text-slate-600">{formatPh(disputeOriginal(d))}</span></p>}
-                            {disputeClaimed(d) && <p className="text-slate-400 text-xs">Claimed: <span className="font-bold text-slate-600">{formatPh(disputeClaimed(d))}</span></p>}
+                            {disputeOriginal(d) && <p className="text-slate-400 text-xs">Was: <span className="font-bold text-slate-600">{formatPh(disputeOriginal(d)!)}</span></p>}
+                            {disputeClaimed(d) && <p className="text-slate-400 text-xs">Claimed: <span className="font-bold text-slate-600">{formatPh(disputeClaimed(d)!)}</span></p>}
                             {d.reason && <p className="text-slate-400 text-[10px] italic mt-0.5">&ldquo;{d.reason}&rdquo;</p>}
                           </div>
                           <div className="flex gap-1.5 flex-shrink-0">

@@ -3,8 +3,8 @@
 import type { Dispatch, SetStateAction } from 'react';
 import { CalendarClock, CheckCircle2, ChevronLeft } from 'lucide-react';
 import ModalShell from '@/components/shared/ModalShell';
+import type { LeaveRequest } from '@/lib/types/hr';
 
-type LeaveRequest = { id: string; status: string; leave_type: string; start_date: string; end_date: string; reason?: string | null; hr_notes?: string | null; reviewed_at?: string | null; created_at: string; employee?: { full_name?: string | null } | null; reviewer?: { full_name?: string | null } | null };
 type Props = { open: boolean; onClose: () => void; approveLeave: (item: LeaveRequest) => void; rejectLeave: (item: LeaveRequest) => void; actionLoadingId: string | null; message: { type: 'success' | 'error'; text: string } | null; loading: boolean; countLeaveDays: (start: string, end: string) => number; leaveRequests: LeaveRequest[]; leaveHrNotes: Record<string, string>; setLeaveHrNotes: Dispatch<SetStateAction<Record<string, string>>>; selectedLeaveDetail: LeaveRequest | null; setSelectedLeaveDetail: Dispatch<SetStateAction<LeaveRequest | null>> };
 
 export default function LeaveHistoryModal(p: Props) {

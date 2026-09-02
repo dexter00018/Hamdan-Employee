@@ -3,8 +3,8 @@
 import type { Dispatch, SetStateAction } from 'react';
 import { AlertTriangle, CheckCircle2, ChevronLeft } from 'lucide-react';
 import ModalShell from '@/components/shared/ModalShell';
+import type { AttendanceDispute as Dispute } from '@/lib/types/hr';
 
-type Dispute = { id: string; status: string; dispute_date: string; dispute_type?: string | null; original_time_in?: string | null; original_time_out?: string | null; claimed_time_in?: string | null; claimed_time_out?: string | null; reason?: string | null; hr_notes?: string | null; reviewed_at?: string | null; created_at: string; employee?: { full_name?: string | null } | null; reviewer?: { full_name?: string | null } | null };
 type Props = { open: boolean; onClose: () => void; approveDispute: (item: Dispute) => void; rejectDispute: (item: Dispute) => void; actionLoadingId: string | null; message: { type: 'success' | 'error'; text: string } | null; loading: boolean; disputeClaimed: (item: Dispute) => string | null | undefined; disputeFieldLabel: (item: Dispute) => string; disputeOriginal: (item: Dispute) => string | null | undefined; disputeTypeLabel: (item: Dispute) => string; disputes: Dispute[]; formatPh: (iso: string) => string; selectedDisputeDetail: Dispute | null; setSelectedDisputeDetail: Dispatch<SetStateAction<Dispute | null>> };
 
 export default function DisputeHistoryModal(p: Props) {

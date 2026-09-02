@@ -64,8 +64,8 @@ export default function LoginPage() {
       }
 
       router.refresh();
-    } catch (err: any) {
-      setError(err?.message || 'Incorrect email or password.');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Incorrect email or password.');
     } finally {
       setLoading(false);
     }

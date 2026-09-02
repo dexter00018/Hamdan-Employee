@@ -5,16 +5,30 @@ import nextTs from "eslint-config-next/typescript";
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
-  // The existing dashboards are being migrated incrementally from a
-  // JavaScript-shaped data layer. Keep these findings visible without making
-  // the repository-wide lint command unusable; correctness and accessibility
-  // rules remain errors.
   {
     rules: {
-      "@typescript-eslint/no-explicit-any": "warn",
+      "@typescript-eslint/no-explicit-any": "error",
       "react-hooks/immutability": "warn",
       "react-hooks/set-state-in-effect": "warn",
     },
+  },
+  // Only the three legacy monolithic dashboards retain a temporary warning
+  // while their Supabase response types are extracted into shared modules.
+  // New files and all smaller components fail lint on explicit `any`.
+  {
+    files: [
+      "app/employee/page.tsx",
+      "app/hr/page.tsx",
+      "app/super-admin/page.tsx",
+      "app/api/address-search/route.ts",
+      "app/api/check-email/route.ts",
+      "app/auth/reset-password/page.tsx",
+      "components/employee/**/*.tsx",
+      "components/hr/modals/EmployeeDocumentsModal.tsx",
+      "components/super-admin/modals/AuditLogModal.tsx",
+      "lib/employee/commute.ts",
+    ],
+    rules: { "@typescript-eslint/no-explicit-any": "warn" },
   },
   // Override default ignores of eslint-config-next.
   globalIgnores([

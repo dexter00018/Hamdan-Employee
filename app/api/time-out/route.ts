@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { createSupabaseAdminClient } from '@/lib/server/supabase-admin';
+import { isMaintenanceMode, readServerAppSettings } from '@/lib/server/app-settings';
 
 function getClientIp(request: Request): string | null {
   const forwardedFor = request.headers.get('x-forwarded-for');
@@ -79,13 +80,15 @@ export async function POST(request: Request) {
       );
     }
 
-    const { data: recordingSetting } = await supabaseServer
-      .from('app_settings')
-      .select('value')
-      .eq('key', 'attendance_recording_enabled')
-      .maybeSingle();
+    const settingsMap = await readServerAppSettings(supabaseServer, ['attendance_recording_enabled', 'maintenance_mode']);
+    if (isMaintenanceMode(settingsMap)) {
+      return NextResponse.json(
+        { code: 'MAINTENANCE_MODE', error: 'The employee portal is temporarily unavailable for scheduled maintenance.' },
+        { status: 503 }
+      );
+    }
 
-    if (recordingSetting?.value === false) {
+    if (settingsMap.attendance_recording_enabled === false) {
       return NextResponse.json(
         { code: 'ATTENDANCE_RECORDING_DISABLED', error: 'Attendance recording is temporarily unavailable.' },
         { status: 503 }

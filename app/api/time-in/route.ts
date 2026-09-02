@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { createSupabaseAdminClient } from '@/lib/server/supabase-admin';
+import { isMaintenanceMode, readServerAppSettings } from '@/lib/server/app-settings';
+import { computeAttendanceStatus } from '@/lib/attendance-rules';
 
 // Fallback values used only if app_settings is somehow unreachable or
 // missing rows -- keeps time-in from hard-failing over a settings read
@@ -92,12 +94,13 @@ export async function POST(request: Request) {
     // (Super Admin -> App Settings). Falls back to the hardcoded
     // defaults above only if the rows are missing/unreachable, so a
     // settings-table hiccup never blocks someone from timing in. ---
-    const { data: settingsRows } = await supabaseServer
-      .from('app_settings')
-      .select('key, value')
-      .in('key', ['late_cutoff_hour', 'late_cutoff_minute', 'attendance_recording_enabled']);
-
-    const settingsMap = Object.fromEntries((settingsRows || []).map((r) => [r.key, r.value]));
+    const settingsMap = await readServerAppSettings(supabaseServer, ['late_cutoff_hour', 'late_cutoff_minute', 'attendance_recording_enabled', 'maintenance_mode']);
+    if (isMaintenanceMode(settingsMap)) {
+      return NextResponse.json(
+        { code: 'MAINTENANCE_MODE', error: 'The employee portal is temporarily unavailable for scheduled maintenance.' },
+        { status: 503 }
+      );
+    }
     if (settingsMap.attendance_recording_enabled === false) {
       return NextResponse.json(
         { code: 'ATTENDANCE_RECORDING_DISABLED', error: 'Attendance recording is temporarily unavailable.' },
@@ -130,10 +133,7 @@ export async function POST(request: Request) {
     const logDate = `${manilaParts.year}-${manilaParts.month}-${manilaParts.day}`;
     const hour = parseInt(manilaParts.hour, 10);
     const minute = parseInt(manilaParts.minute, 10);
-    const status =
-      hour > lateCutoffHour || (hour === lateCutoffHour && minute > lateCutoffMinute)
-        ? 'Late'
-        : 'Present';
+    const status = computeAttendanceStatus(hour, minute, lateCutoffHour, lateCutoffMinute);
 
     // --- Step 4: Prevent double time-in for today. ---
     const supabaseAdmin = createSupabaseAdminClient();
