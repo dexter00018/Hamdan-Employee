@@ -121,7 +121,7 @@ export default function AttendanceDisputeFormModal({ open, onClose, disputeChoic
                   max={new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())}
                 />
                 {!disputeTypeLocked.current && disputeForm.type === 'TimeOut' && disputeForm.date && !disputeForm.attendanceLogId && (
-                  <p className="text-orange-600 text-[11px] font-medium mb-3 ml-1">⚠️ No time-in recorded on that date yet — you can't dispute a time-out without one.</p>
+                  <p className="text-orange-600 text-[11px] font-medium mb-3 ml-1">⚠️ No time-in recorded on that date yet — you can&apos;t dispute a time-out without one.</p>
                 )}
                 <div className="mb-3" />
 

@@ -130,7 +130,7 @@ export default function HRDashboard() {
     setLeaveCreditsLoading(true);
     const year = new Date().getFullYear();
     const [profRes, govRes, creditsRes] = await Promise.all([
-      supabase.from('profiles').select('id, full_name, employee_id').eq('role', 'employee').order('full_name'),
+      supabase.from('profiles').select('id, full_name, employee_id').eq('role', 'employee').eq('is_active', true).order('full_name'),
       supabase.from('employee_government_ids').select('user_id, employment_status'),
       supabase.from('leave_credits').select('user_id, total_credits, used_credits').eq('year', year),
     ]);
@@ -433,8 +433,9 @@ export default function HRDashboard() {
     const range = getRawExportRange();
     const { data, error } = await supabase
       .from('attendance_logs')
-      .select('id, user_id, log_date, time_in, time_out, status, profiles!inner(full_name, employee_id, role)')
+      .select('id, user_id, log_date, time_in, time_out, status, profiles!inner(full_name, employee_id, role, is_active)')
       .eq('profiles.role', 'employee')
+      .eq('profiles.is_active', true)
       .gte('log_date', range.start)
       .lte('log_date', range.end)
       .order('log_date', { ascending: true })
@@ -619,6 +620,7 @@ export default function HRDashboard() {
       const { data: employees, error: employeesError } = await supabase
         .from('profiles')
         .select('id, full_name, employee_id')
+        .eq('is_active', true)
         .in('id', employeeIds);
 
       if (employeesError) {
@@ -633,7 +635,7 @@ export default function HRDashboard() {
       }
     }
 
-    const rows = requests.map((request: any) => ({
+    const rows = requests.filter((request: any) => employeeById[request.user_id]).map((request: any) => ({
       ...request,
       employee: employeeById[request.user_id] || null,
     }));
@@ -783,14 +785,16 @@ export default function HRDashboard() {
     const [att, prof] = await Promise.all([
       supabase
         .from('attendance_logs')
-        .select('*, profiles!inner(full_name)')
+        .select('*, profiles!inner(full_name, is_active)')
         .eq('profiles.role', 'employee')
+        .eq('profiles.is_active', true)
         .order('log_date', { ascending: false })
         .order('time_in', { ascending: false, nullsFirst: false }),
       supabase
         .from('profiles')
         .select('id, full_name, employee_id, designation, avatar_url, employee_email')
         .eq('role', 'employee')
+        .eq('is_active', true)
         .order('full_name'),
     ]);
 
@@ -1002,9 +1006,10 @@ export default function HRDashboard() {
       .from('attendance_disputes')
       .select(`
         id, attendance_log_id, dispute_date, dispute_type, claimed_time_in, original_time_in, claimed_time_out, original_time_out, reason, status, hr_notes, created_at, reviewed_at,
-        employee:profiles!attendance_disputes_user_id_fkey(full_name),
+        employee:profiles!attendance_disputes_user_id_fkey!inner(full_name, is_active),
         reviewer:profiles!attendance_disputes_reviewed_by_fkey(full_name)
       `)
+      .eq('employee.is_active', true)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -1130,8 +1135,9 @@ export default function HRDashboard() {
     const { data, error } = await supabase
       .from('leave_requests')
       .select(`id, leave_type, start_date, end_date, reason, status, hr_notes, created_at, reviewed_at,
-        employee:profiles!leave_requests_user_id_fkey(full_name, id),
+        employee:profiles!leave_requests_user_id_fkey!inner(full_name, id, is_active),
         reviewer:profiles!leave_requests_reviewed_by_fkey(full_name)`)
+      .eq('employee.is_active', true)
       .order('created_at', { ascending: false });
     if (error) { console.error('Error fetching leave requests:', error); }
     setLeaveRequests(data || []);

@@ -823,7 +823,7 @@ export default function PlanMyCommuteModal({
                       <button type="button" onClick={() => clearCommuteAddress('origin')} className="commute-location-clear w-11 h-11 rounded-xl bg-white border border-blue-200 text-blue-700 hover:bg-blue-100 transition" aria-label="Change starting point">×</button>
                     </div>
                   ) : (
-                  <div className="relative" role="combobox" aria-expanded={showOriginSuggestions} aria-haspopup="listbox" aria-owns="commute-origin-listbox">
+                  <div className="relative" role="combobox" aria-expanded={showOriginSuggestions} aria-haspopup="listbox" aria-controls="commute-origin-listbox">
                     <input
                       value={commuteOrigin}
                       onChange={(e) => {
@@ -953,7 +953,7 @@ export default function PlanMyCommuteModal({
                       <button type="button" onClick={() => clearCommuteAddress('destination')} className="commute-location-clear w-11 h-11 rounded-xl bg-white border border-blue-200 text-blue-700 hover:bg-blue-100 transition" aria-label="Change destination">×</button>
                     </div>
                   ) : (
-                  <div className="relative" role="combobox" aria-expanded={showDestinationSuggestions} aria-haspopup="listbox" aria-owns="commute-destination-listbox">
+                  <div className="relative" role="combobox" aria-expanded={showDestinationSuggestions} aria-haspopup="listbox" aria-controls="commute-destination-listbox">
                   <input
                     value={commuteDestination}
                     onChange={(e) => {

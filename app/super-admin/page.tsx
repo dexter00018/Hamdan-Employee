@@ -10,6 +10,7 @@ import SuperAdminMobileBottomNav from '@/components/super-admin/SuperAdminMobile
 import SuperAdminMobileToolsSheet from '@/components/super-admin/SuperAdminMobileToolsSheet';
 import SuperAdminDesktopSidebar from '@/components/super-admin/SuperAdminDesktopSidebar';
 import { APP_SETTING_DEFINITIONS, DEFAULT_APP_SETTINGS, normalizeAppSettings, type AppSettingsValues } from '@/lib/app-settings';
+import VerificationDialog from '@/components/shared/VerificationDialog';
 
 const AccountFormModal = dynamic(() => import('@/components/super-admin/modals/AccountFormModal'));
 const ResetPasswordModal = dynamic(() => import('@/components/super-admin/modals/ResetPasswordModal'));
@@ -133,6 +134,8 @@ export default function SuperAdminDashboard() {
   const [lastArchiveAt, setLastArchiveAt] = useState<string | null>(null);
   const [healthStatusLoading, setHealthStatusLoading] = useState(false);
   const [currentAdminEmail, setCurrentAdminEmail] = useState<string | null>(null);
+  const directoryPageSize = Number(appSettings.directory_page_size || PAGE_SIZE);
+  const attendancePageSize = Number(appSettings.attendance_page_size || PAGE_SIZE);
 
   const applyTheme = useCallback((nextDark: boolean) => {
     document.documentElement.classList.toggle('dark', nextDark);
@@ -313,8 +316,6 @@ export default function SuperAdminDashboard() {
       }
       const changedDefinitions = APP_SETTING_DEFINITIONS.filter((setting) => savedAppSettings?.[setting.key] !== appSettings[setting.key]);
       if (!changedDefinitions.length) return true;
-      const reviewSummary = changedDefinitions.map((setting) => `${setting.label}: ${String(savedAppSettings?.[setting.key] ?? 'unset')} → ${String(appSettings[setting.key])}`);
-      if (!confirm(`Save ${changedDefinitions.length} global setting change${changedDefinitions.length === 1 ? '' : 's'}?\n\n${reviewSummary.slice(0, 8).join('\n')}${reviewSummary.length > 8 ? `\n+${reviewSummary.length - 8} more` : ''}`)) return false;
       const { data: { user } } = await supabase.auth.getUser();
       const rows = APP_SETTING_DEFINITIONS.map((setting) => ({ key: setting.key, value: appSettings[setting.key] }));
       const timestamp = new Date().toISOString();
@@ -328,7 +329,7 @@ export default function SuperAdminDashboard() {
         .filter((key) => savedAppSettings?.[key] !== appSettings[key])
         .map((key) => `${labels[key]} ${savedAppSettings?.[key] ?? 'unset'} → ${appSettings[key]}`);
       setSavedAppSettings({ ...appSettings });
-      setAppSettingsMsg({ type: 'success', text: 'Settings saved. ACTIVE controls take effect through their current consumers; FUTURE CONTROL values are stored only.' });
+      setAppSettingsMsg({ type: 'success', text: 'Settings saved. ACTIVE controls apply immediately; controls still marked FUTURE remain stored until their backend workflow is available.' });
       const seasonalChanges = changes.filter((change) => change.toLowerCase().includes('seasonal') || change.startsWith('Theme ') || change.startsWith('Apply To') || change.startsWith('Start Date') || change.startsWith('End Date') || change.startsWith('Snow Effect') || change.startsWith('Holiday Banner'));
       await logAuditEvent(
         seasonalChanges.length ? 'seasonal_theme_updated' : 'app_settings_updated',
@@ -483,16 +484,16 @@ export default function SuperAdminDashboard() {
     setAttendancePage(1);
   };
 
-  const attendanceTotalPages = Math.max(1, Math.ceil(filteredAttendanceLogs.length / PAGE_SIZE));
+  const attendanceTotalPages = Math.max(1, Math.ceil(filteredAttendanceLogs.length / attendancePageSize));
   const paginatedAttendanceLogs = filteredAttendanceLogs.slice(
-    (attendancePage - 1) * PAGE_SIZE,
-    attendancePage * PAGE_SIZE
+    (attendancePage - 1) * attendancePageSize,
+    attendancePage * attendancePageSize
   );
 
-  const employeesTotalPages = Math.max(1, Math.ceil(employees.length / PAGE_SIZE));
+  const employeesTotalPages = Math.max(1, Math.ceil(employees.length / directoryPageSize));
   const paginatedEmployees = employees.slice(
-    (employeesPage - 1) * PAGE_SIZE,
-    employeesPage * PAGE_SIZE
+    (employeesPage - 1) * directoryPageSize,
+    employeesPage * directoryPageSize
   );
 
   const startEditLog = (log: any) => {
@@ -918,16 +919,18 @@ export default function SuperAdminDashboard() {
   }, [email, editingId]);
 
   const [deactivating, setDeactivating] = useState(false);
+  const [accountVerification, setAccountVerification] = useState<{ deactivate: boolean; employeeId: string; name: string } | null>(null);
 
   const toggleAccountActive = async (deactivate: boolean) => {
     if (!editingId) return;
 
     const editingEmployee = employees.find((e) => e.id === editingId);
-    const confirmMsg = deactivate
-      ? `Deactivate ${editingEmployee?.full_name ?? 'this account'}? They will no longer be able to log in, but their attendance, leave, and payslip history stays intact.`
-      : `Reactivate ${editingEmployee?.full_name ?? 'this account'}? They will be able to log in again.`;
+    setAccountVerification({ deactivate, employeeId: editingId, name: editingEmployee?.full_name ?? 'this account' });
+  };
 
-    if (!confirm(confirmMsg)) return;
+  const confirmToggleAccountActive = async () => {
+    if (!accountVerification) return;
+    const { deactivate, employeeId: targetId, name } = accountVerification;
 
     setDeactivating(true);
     setMessage(null);
@@ -935,7 +938,7 @@ export default function SuperAdminDashboard() {
       const res = await fetch('/api/deactivate-employee', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: editingId, deactivate }),
+        body: JSON.stringify({ userId: targetId, deactivate }),
       });
       const result = await res.json();
       if (!res.ok) throw new Error(result.error || 'Failed to update account status.');
@@ -944,9 +947,10 @@ export default function SuperAdminDashboard() {
       await logAuditEvent(
         deactivate ? 'account_deactivated' : 'account_reactivated',
         'profile',
-        editingId,
-        `${deactivate ? 'Deactivated' : 'Reactivated'} account for ${editingEmployee?.full_name ?? 'unknown'}`
+        targetId,
+        `${deactivate ? 'Deactivated' : 'Reactivated'} account for ${name}`
       );
+      setAccountVerification(null);
       resetForm();
       await fetchEmployees();
     } catch (err: any) {
@@ -1153,9 +1157,9 @@ export default function SuperAdminDashboard() {
 
       {resetPasswordModalOpen && <ResetPasswordModal open={resetPasswordModalOpen} onClose={() => setResetPasswordModalOpen(false)} handleResetPassword={handleResetPassword} resetEmail={resetEmail} resetLoading={resetLoading} resetPasswordMsg={resetPasswordMsg} setResetEmail={setResetEmail} setResetPasswordMsg={setResetPasswordMsg} />}
 
-      {userAccountsModalOpen && <UserAccountsModal open={userAccountsModalOpen} onClose={() => setUserAccountsModalOpen(false)} pageSize={PAGE_SIZE} employees={employees} employeesLoading={employeesLoading} employeesPage={employeesPage} employeesTotalPages={employeesTotalPages} initials={initials} paginatedEmployees={paginatedEmployees} roleTagClass={roleTagClass} setEmployeesPage={setEmployeesPage} startEdit={startEdit} totalAccounts={totalAccounts} />}
+      {userAccountsModalOpen && <UserAccountsModal open={userAccountsModalOpen} onClose={() => setUserAccountsModalOpen(false)} pageSize={directoryPageSize} employees={employees} employeesLoading={employeesLoading} employeesPage={employeesPage} employeesTotalPages={employeesTotalPages} initials={initials} paginatedEmployees={paginatedEmployees} roleTagClass={roleTagClass} setEmployeesPage={setEmployeesPage} startEdit={startEdit} totalAccounts={totalAccounts} />}
 
-      {attendanceRecordsModalOpen && <AttendanceRecordsModal open={attendanceRecordsModalOpen} onClose={() => setAttendanceRecordsModalOpen(false)} pageSize={PAGE_SIZE} attendanceDateFilter={attendanceDateFilter} attendanceLoading={attendanceLoading} attendancePage={attendancePage} attendanceSearch={attendanceSearch} attendanceTotalPages={attendanceTotalPages} filteredAttendanceLogs={filteredAttendanceLogs} handleAttendanceDateChange={handleAttendanceDateChange} handleAttendanceSearchChange={handleAttendanceSearchChange} paginatedAttendanceLogs={paginatedAttendanceLogs} setAttendancePage={setAttendancePage} startEditLog={startEditLog} statusTagClass={statusTagClass} todayManila={todayManila} />}
+      {attendanceRecordsModalOpen && <AttendanceRecordsModal open={attendanceRecordsModalOpen} onClose={() => setAttendanceRecordsModalOpen(false)} pageSize={attendancePageSize} attendanceDateFilter={attendanceDateFilter} attendanceLoading={attendanceLoading} attendancePage={attendancePage} attendanceSearch={attendanceSearch} attendanceTotalPages={attendanceTotalPages} filteredAttendanceLogs={filteredAttendanceLogs} handleAttendanceDateChange={handleAttendanceDateChange} handleAttendanceSearchChange={handleAttendanceSearchChange} paginatedAttendanceLogs={paginatedAttendanceLogs} setAttendancePage={setAttendancePage} startEditLog={startEditLog} statusTagClass={statusTagClass} todayManila={todayManila} />}
 
       {appSettingsModalOpen && <AppSettingsModal open={appSettingsModalOpen} onClose={() => setAppSettingsModalOpen(false)} appSettings={appSettings} savedAppSettings={savedAppSettings} appSettingsLoading={appSettingsLoading} appSettingsMsg={appSettingsMsg} appSettingsSaving={appSettingsSaving} saveAppSettings={saveAppSettings} setAppSettings={setAppSettings} />}
 
@@ -1176,6 +1180,8 @@ export default function SuperAdminDashboard() {
       <BackupPasswordModal open={backupPasswordModalOpen} onClose={() => setBackupPasswordModalOpen(false)} backupPasswordError={backupPasswordError} backupPasswordInput={backupPasswordInput} backupPasswordVerifying={backupPasswordVerifying} confirmBackupWithPassword={confirmBackupWithPassword} setBackupPasswordError={setBackupPasswordError} setBackupPasswordInput={setBackupPasswordInput} />
 
       {editingLog && <EditAttendanceModal editingLog={editingLog} logSaving={logSaving} saveEditLog={saveEditLog} setEditingLog={setEditingLog} />}
+
+      <VerificationDialog open={Boolean(accountVerification)} title={accountVerification?.deactivate ? 'Deactivate account?' : 'Reactivate account?'} description={accountVerification?.deactivate ? 'The employee will immediately lose login access, while historical records remain intact.' : 'The employee will regain access to the application.'} confirmLabel={accountVerification?.deactivate ? 'Deactivate account' : 'Reactivate account'} tone={accountVerification?.deactivate ? 'danger' : 'primary'} details={accountVerification ? [accountVerification.name, accountVerification.deactivate ? 'Attendance, leave, and payslip history will not be deleted.' : 'Existing account data and permissions will be restored.'] : []} busy={deactivating} onCancel={() => { if (!deactivating) setAccountVerification(null); }} onConfirm={confirmToggleAccountActive} />
 
 
     </main>

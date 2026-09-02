@@ -34,7 +34,7 @@ export const APP_SETTING_CATEGORIES: Record<AppSettingCategory, string> = {
 const numberSetting = (definition: Omit<AppSettingDefinition, 'type'>): AppSettingDefinition => ({ ...definition, type: 'number' });
 const booleanSetting = (definition: Omit<AppSettingDefinition, 'type'>): AppSettingDefinition => ({ ...definition, type: 'boolean' });
 
-export const APP_SETTING_DEFINITIONS: AppSettingDefinition[] = [
+const APP_SETTING_DEFINITIONS_SOURCE: AppSettingDefinition[] = [
   numberSetting({ key: 'late_cutoff_hour', category: 'attendance', label: 'Late Cutoff Hour', description: 'Time-ins after this Philippine hour are marked Late. Applies to new Time Ins immediately.', defaultValue: 9, min: 0, max: 23, unit: 'hour', status: 'active' }),
   numberSetting({ key: 'late_cutoff_minute', category: 'attendance', label: 'Late Cutoff Minute', description: 'Minute component of the active Late cutoff. Applies to new Time Ins immediately.', defaultValue: 15, min: 0, max: 59, unit: 'minute', status: 'active' }),
   numberSetting({ key: 'time_out_reminder_hour', category: 'attendance', label: 'Time-Out Reminder', description: 'Starts the Employee time-out reminder at this Philippine hour.', defaultValue: 19, min: 0, max: 23, unit: 'hour', status: 'active' }),
@@ -84,6 +84,30 @@ export const APP_SETTING_DEFINITIONS: AppSettingDefinition[] = [
   booleanSetting({ key: 'require_reauth_for_backup', category: 'security', label: 'Backup Reauthentication', description: 'Existing password confirmation remains mandatory; this saved control cannot disable it.', defaultValue: true, status: 'future', dangerous: true }),
   booleanSetting({ key: 'require_reauth_for_archive', category: 'security', label: 'Archive Reauthentication', description: 'Existing password confirmation remains mandatory; this saved control cannot disable it.', defaultValue: true, status: 'future', dangerous: true }),
 ];
+
+const newlyActivatedSettings = new Set([
+  'attendance_dispute_window_days', 'leave_request_min_notice_days', 'max_consecutive_leave_days',
+  'leave_cancellation_allowed', 'leave_cancel_before_start_hours', 'helpdesk_enabled',
+  'document_download_enabled', 'notification_retention_days', 'notification_sound_enabled',
+  'timeout_reminder_enabled', 'payslip_reminders_enabled', 'payslip_ack_reminder_days',
+  'feature_helpdesk_enabled', 'feature_documents_enabled', 'feature_leave_enabled',
+  'feature_disputes_enabled', 'maintenance_message', 'maintenance_mode',
+  'session_idle_timeout_minutes', 'directory_page_size', 'attendance_page_size',
+]);
+
+// Promote only settings that have a real consumer. This deliberately avoids
+// presenting a saved value as operational before its enforcement exists.
+export const APP_SETTING_DEFINITIONS: AppSettingDefinition[] = APP_SETTING_DEFINITIONS_SOURCE.map((setting) => ({
+  ...setting,
+  status: setting.status === 'active' || newlyActivatedSettings.has(setting.key) ? 'active' : 'future',
+  description: newlyActivatedSettings.has(setting.key) ? setting.description
+    .replace(/^Reserved /, '')
+    .replace(/^Saved for a future /, '')
+    .replace(/^Saved /, '')
+    .replace(/ for future /g, ' for ')
+    .replace(/future /g, '')
+    .replace(/Future /g, '') : setting.description,
+}));
 
 export const DEFAULT_APP_SETTINGS: AppSettingsValues = Object.fromEntries(APP_SETTING_DEFINITIONS.map((setting) => [setting.key, setting.defaultValue]));
 export const ACTIVE_APP_SETTINGS_COUNT = APP_SETTING_DEFINITIONS.filter((setting) => setting.status === 'active').length;

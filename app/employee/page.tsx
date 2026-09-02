@@ -12,7 +12,7 @@ import Image from 'next/image';
 import dynamic from 'next/dynamic';
 import Spinner, { LoadingRow } from '@/components/Spinner';
 import { Bell, CalendarX2, CheckCircle2, Clock3, UserRound } from 'lucide-react';
-import { DEFAULT_APP_SETTINGS, normalizeAppSettings, type AppSettingsValues } from '@/lib/app-settings';
+import { APP_SETTING_DEFINITIONS, DEFAULT_APP_SETTINGS, normalizeAppSettings, type AppSettingsValues } from '@/lib/app-settings';
 import { resolveSeasonalTheme, SEASONAL_THEME_PRESENTATION } from '@/lib/seasonal-theme';
 
 const SummaryDetailModal = dynamic(() => import('@/components/employee/modals/SummaryDetailModal'));
@@ -103,7 +103,7 @@ export default function EmployeeDashboard() {
     const { data, error } = await supabase
       .from('app_settings')
       .select('key, value')
-      .in('key', ['late_cutoff_hour', 'late_cutoff_minute', 'default_leave_credits', 'time_out_reminder_hour', 'attendance_recording_enabled', 'seasonal_theme_enabled', 'seasonal_theme_variant', 'seasonal_theme_scope', 'seasonal_theme_start_date', 'seasonal_theme_end_date', 'seasonal_theme_intensity', 'seasonal_snow_enabled', 'seasonal_banner_enabled']);
+      .in('key', APP_SETTING_DEFINITIONS.map((setting) => setting.key));
     if (error) {
       console.error('Error fetching app settings:', error);
       return;
@@ -152,6 +152,7 @@ export default function EmployeeDashboard() {
   const timeOutReminderHourRef = useRef(timeOutReminderHour);
   const reminderDismissedRef = useRef(false);
   const soundPlayedRef = useRef(false);
+  const appSettingsRef = useRef<AppSettingsValues>(seasonalSettings);
 
   // Browsers (esp. Chrome) block audio from a freshly-created
   // AudioContext unless it was created/resumed directly inside a user
@@ -193,11 +194,16 @@ export default function EmployeeDashboard() {
     timeOutReminderHourRef.current = timeOutReminderHour;
   }, [timeOutReminderHour]);
 
+  useEffect(() => {
+    appSettingsRef.current = seasonalSettings;
+  }, [seasonalSettings]);
+
   // Two-tone chime generated with the Web Audio API -- no audio file
   // needed. Browsers generally allow this once the person has already
   // interacted with the page at all (e.g. logging in, clicking
   // anything), which will already be true by 7PM in normal use.
   const playNotificationSound = () => {
+    if (appSettingsRef.current.notification_sound_enabled === false) return;
     try {
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       if (!audioContextRef.current) {
@@ -393,6 +399,7 @@ export default function EmployeeDashboard() {
       );
 
       if (
+        appSettingsRef.current.timeout_reminder_enabled !== false &&
         manilaHour >= timeOutReminderHourRef.current &&
         todayLogRef.current?.time_in &&
         !todayLogRef.current?.time_out &&
@@ -421,6 +428,23 @@ export default function EmployeeDashboard() {
     return () => window.clearInterval(reminderTimer);
   }, []);
 
+  useEffect(() => {
+    const idleMinutes = Number(seasonalSettings.session_idle_timeout_minutes || 60);
+    if (!Number.isFinite(idleMinutes) || idleMinutes <= 0) return;
+    const expireSession = async () => { await supabase.auth.signOut(); window.location.replace('/'); };
+    let timer = window.setTimeout(() => void expireSession(), idleMinutes * 60_000);
+    const resetIdleTimer = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => void expireSession(), idleMinutes * 60_000);
+    };
+    const events = ['pointerdown', 'keydown', 'scroll', 'touchstart'] as const;
+    events.forEach((event) => window.addEventListener(event, resetIdleTimer, { passive: true }));
+    return () => {
+      window.clearTimeout(timer);
+      events.forEach((event) => window.removeEventListener(event, resetIdleTimer));
+    };
+  }, [seasonalSettings.session_idle_timeout_minutes]);
+
   // Apply Super Admin seasonal changes to an open Employee dashboard without
   // requiring a sign-out or manual refresh. If Realtime is unavailable, the
   // normal page-load fetch above remains the safe fallback.
@@ -429,7 +453,7 @@ export default function EmployeeDashboard() {
       .channel('employee-app-settings')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, (payload) => {
         const key = String((payload.new as { key?: string } | null)?.key || '');
-        if (key.startsWith('seasonal_')) void fetchAppSettings();
+        if (key) void fetchAppSettings();
       })
       .subscribe();
     return () => { void supabase.removeChannel(channel); };
@@ -764,6 +788,7 @@ export default function EmployeeDashboard() {
       // Employees only -- HR admins and the super-admin account don't
       // belong in a colleague directory.
       .eq('role', 'employee')
+      .eq('is_active', true)
       .order('full_name', { ascending: true });
 
     if (error) {
@@ -912,6 +937,10 @@ export default function EmployeeDashboard() {
   };
 
   const submitSupportRequest = async () => {
+    if (seasonalSettings.helpdesk_enabled === false || seasonalSettings.feature_helpdesk_enabled === false) {
+      setSupportMessage({ type: 'error', text: 'Helpdesk is temporarily disabled by the administrator.' });
+      return;
+    }
     if (!supportForm.subject.trim() || !supportForm.description.trim()) {
       setSupportMessage({ type: 'error', text: 'Please enter a subject and description.' });
       return;
@@ -967,6 +996,10 @@ export default function EmployeeDashboard() {
   };
 
   const downloadEmployeeDocument = async (document: EmployeeDocument) => {
+    if (seasonalSettings.document_download_enabled === false || seasonalSettings.feature_documents_enabled === false) {
+      alert('Document downloads are currently disabled by the administrator.');
+      return;
+    }
     setDownloadingDocumentId(document.id);
     const { data, error } = await supabase.storage
       .from('employee-documents')
@@ -1040,6 +1073,23 @@ export default function EmployeeDashboard() {
       setLeaveMsg({ type: 'error', text: 'End date cannot be before start date.' });
       return;
     }
+    if (seasonalSettings.feature_leave_enabled === false) {
+      setLeaveMsg({ type: 'error', text: 'Leave requests are temporarily disabled by the administrator.' });
+      return;
+    }
+    const currentManilaDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date());
+    const noticeDays = Math.floor((new Date(`${leaveForm.start_date}T00:00:00+08:00`).getTime() - new Date(`${currentManilaDate}T00:00:00+08:00`).getTime()) / 86_400_000);
+    const minimumNotice = Number(seasonalSettings.leave_request_min_notice_days || 0);
+    if (noticeDays < minimumNotice) {
+      setLeaveMsg({ type: 'error', text: `Leave requests require at least ${minimumNotice} day${minimumNotice === 1 ? '' : 's'} notice.` });
+      return;
+    }
+    const requestedDays = countLeaveDays(leaveForm.start_date, leaveForm.end_date);
+    const maximumDays = Number(seasonalSettings.max_consecutive_leave_days || 30);
+    if (requestedDays > maximumDays) {
+      setLeaveMsg({ type: 'error', text: `A leave request cannot exceed ${maximumDays} working day${maximumDays === 1 ? '' : 's'}.` });
+      return;
+    }
     setLeaveSaving(true);
     setLeaveMsg(null);
     try {
@@ -1065,6 +1115,16 @@ export default function EmployeeDashboard() {
   };
 
   const cancelLeave = async (leaveId: string) => {
+    if (seasonalSettings.leave_cancellation_allowed === false) {
+      alert('Leave cancellation is currently disabled by the administrator.');
+      return;
+    }
+    const targetLeave = myLeaves.find((leave) => leave.id === leaveId);
+    const leadHours = Number(seasonalSettings.leave_cancel_before_start_hours || 0);
+    if (targetLeave?.start_date && new Date(`${targetLeave.start_date}T00:00:00+08:00`).getTime() - Date.now() < leadHours * 3_600_000) {
+      alert(`Leave requests can only be cancelled at least ${leadHours} hour${leadHours === 1 ? '' : 's'} before they start.`);
+      return;
+    }
     if (!confirm('Cancel this leave request?')) return;
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { alert('You are not logged in.'); return; }
@@ -1301,6 +1361,15 @@ export default function EmployeeDashboard() {
   // Validates the form and, if everything checks out, moves to the
   // highlighted review/confirm screen instead of submitting right away.
   const proceedToDisputeConfirm = () => {
+    if (seasonalSettings.feature_disputes_enabled === false) {
+      setDisputeMsg({ type: 'error', text: 'Attendance disputes are temporarily disabled by the administrator.' });
+      return;
+    }
+    const disputeWindowDays = Number(seasonalSettings.attendance_dispute_window_days || 7);
+    if (disputeForm.date && Date.now() - new Date(`${disputeForm.date}T23:59:59+08:00`).getTime() > disputeWindowDays * 86_400_000) {
+      setDisputeMsg({ type: 'error', text: `Attendance disputes must be filed within ${disputeWindowDays} day${disputeWindowDays === 1 ? '' : 's'} of the record.` });
+      return;
+    }
     if (!disputeForm.date || !disputeForm.timeLocal) {
       setDisputeMsg({ type: 'error', text: disputeForm.type === 'TimeOut' ? 'Please fill in the date and the time you actually left.' : 'Please fill in the date and the time you actually arrived.' });
       return;
@@ -1690,6 +1759,12 @@ export default function EmployeeDashboard() {
   const [governmentIdsModalOpen, setGovernmentIdsModalOpen] = useState(false);
   const [actionCenterModalOpen, setActionCenterModalOpen] = useState(false);
   const [readNotificationIds, setReadNotificationIds] = useState<string[]>([]);
+  const [notificationNow, setNotificationNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNotificationNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (!currentUserId) return;
@@ -1722,7 +1797,7 @@ export default function EmployeeDashboard() {
         target: 'dispute',
       }));
     payslips
-      .filter((payslip) => !payslip.acknowledged_at)
+      .filter((payslip) => seasonalSettings.payslip_reminders_enabled !== false && !payslip.acknowledged_at && notificationNow - new Date(payslip.published_at || payslip.uploaded_at).getTime() >= Number(seasonalSettings.payslip_ack_reminder_days || 3) * 86_400_000)
       .forEach((payslip) => items.push({
         id: `payslip:${payslip.id}`,
         title: 'New payslip available',
@@ -1757,12 +1832,13 @@ export default function EmployeeDashboard() {
         target: 'holiday',
       });
     }
-    return items.sort((a, b) => {
+    const retentionCutoff = notificationNow - Number(seasonalSettings.notification_retention_days || 30) * 86_400_000;
+    return items.filter((item) => (Date.parse(item.date) || 0) >= retentionCutoff).sort((a, b) => {
       const aTime = Date.parse(a.date) || 0;
       const bTime = Date.parse(b.date) || 0;
       return bTime - aTime;
     });
-  }, [myLeaves, myDisputes, payslips, supportRequests, announcement, announcementUpdatedAt, upcomingHolidays]);
+  }, [myLeaves, myDisputes, payslips, supportRequests, announcement, announcementUpdatedAt, upcomingHolidays, seasonalSettings, notificationNow]);
 
   const unreadNotificationCount = employeeNotifications.filter((item) => !readNotificationIds.includes(item.id)).length;
 
@@ -1922,6 +1998,10 @@ export default function EmployeeDashboard() {
     if (!todayLog) handleTimeIn();
     else if (!todayLog.time_out) handleTimeOutClick();
   };
+
+  if (seasonalSettings.maintenance_mode === true) {
+    return <main className="grid min-h-screen place-items-center bg-slate-100 p-5 dark:bg-slate-950"><section className="w-full max-w-md rounded-[28px] border border-amber-200 bg-white p-7 text-center shadow-2xl dark:border-amber-900 dark:bg-slate-900"><span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-amber-100 text-2xl dark:bg-amber-950">🛠️</span><p className="mt-5 text-[10px] font-black uppercase tracking-[0.18em] text-amber-700 dark:text-amber-300">Scheduled maintenance</p><h1 className="mt-2 text-2xl font-black text-slate-950 dark:text-white">Employee portal is temporarily unavailable</h1><p className="mt-3 text-sm leading-relaxed text-slate-600 dark:text-slate-300">{String(seasonalSettings.maintenance_message || 'Scheduled maintenance is in progress. Please try again shortly.')}</p><button type="button" onClick={handleLogout} className="mt-6 min-h-11 rounded-xl border border-slate-300 px-5 text-xs font-bold text-slate-700 dark:border-slate-600 dark:text-white">Sign out</button></section></main>;
+  }
 
   return (
     <main id="employee-dashboard-top" className={`employee-dashboard relative min-h-screen overflow-x-hidden p-3 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:p-4 sm:pb-[calc(6rem+env(safe-area-inset-bottom))] md:p-6 md:pb-[calc(6rem+env(safe-area-inset-bottom))] lg:p-8 ${seasonalTheme.active ? `seasonal-theme seasonal-${seasonalTheme.variant} seasonal-${seasonalTheme.intensity}` : ''}`}>
