@@ -38,10 +38,6 @@ create policy "Super Admin can update app settings"
 -- profiles
 -- ----------------------------------------------------------------------------
 
-create policy "Users can insert their own profile"
-  on public.profiles for insert to authenticated
-  with check (id = auth.uid());
-
 create policy "Authenticated can read profiles"
   on public.profiles for select to authenticated
   using (true);
@@ -61,13 +57,6 @@ create policy "Admins can update profiles, only super_admin can change role"
       and role = (select p2.role from public.profiles p2 where p2.id = profiles.id)
     )
   );
-
--- Self-edit path: role must stay identical to its current value (a user
--- can never grant themselves a new role, even via their own profile edit).
-create policy "Users can update own profile"
-  on public.profiles for update to authenticated
-  using (id = auth.uid())
-  with check (role = (select p.role from public.profiles p where p.id = profiles.id));
 
 -- ----------------------------------------------------------------------------
 -- attendance_logs
@@ -91,19 +80,10 @@ create policy "Admins can insert attendance_logs"
   on public.attendance_logs for insert to authenticated
   with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = any (array['admin','super_admin'])));
 
-create policy "Users can insert own logs"
-  on public.attendance_logs for insert to authenticated
-  with check (auth.uid() = user_id);
-
 create policy "Admins can update attendance_logs"
   on public.attendance_logs for update to authenticated
   using (exists (select 1 from public.profiles p where p.id = auth.uid() and lower(coalesce(p.role,'')) = any (array['admin','super_admin','hr'])))
   with check (exists (select 1 from public.profiles p where p.id = auth.uid() and lower(coalesce(p.role,'')) = any (array['admin','super_admin','hr'])));
-
-create policy "Users can update own logs"
-  on public.attendance_logs for update to authenticated
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
 
 -- ----------------------------------------------------------------------------
 -- announcements

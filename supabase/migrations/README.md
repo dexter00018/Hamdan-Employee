@@ -24,6 +24,8 @@ CLI, or upgrading to the Pro plan for automatic daily backups.
 | `03_functions_and_triggers.sql` | All business logic: leave credit deduction, auto-absence marking, data archival, plus the triggers that wire them up |
 | `04_rls_policies.sql` | Row Level Security — who can read/write what |
 | `05_storage.sql` | Storage buckets (avatars, payslips, announcements) and their access policies |
+| `06_api_rate_limit.sql` | Server-only, per-user API rate limiting support |
+| timestamped migrations | Incremental production hardening; apply after the base snapshot |
 
 ## When to update this backup
 
@@ -57,14 +59,20 @@ state and refresh these files.
    (authenticated users still need it, the app calls it after real
    actions).
 
+4. ~~Employees could directly INSERT/UPDATE their own `attendance_logs`
+   through the Data API, bypassing the server clock and office-network
+   checks. Profile self-write policies also allowed protected fields to be
+   supplied directly.~~ Removed by the timestamped attendance RLS hardening
+   migration, with regression assertions in `supabase/tests/`.
+
 **Still open — worth cleaning up eventually (not urgent):**
 
-4. **Several older policies/functions check `role = 'hr'`**, but no
+5. **Several older policies/functions check `role = 'hr'`**, but no
    profile in this app ever actually has that exact role string — real
    roles are `employee`, `admin`, and `super_admin`. These fail closed
    (nobody matches them), so it's dead weight, not a security hole.
 
-5. **`settle_overdue_absences()` and `settle_overdue_leave_days()`** are
+6. **`settle_overdue_absences()` and `settle_overdue_leave_days()`** are
    callable by any authenticated user (by design — the employee dashboard
    calls them as an opportunistic "sweep" on page load, see
    `LeaveRequestModal.tsx`). They're idempotent and don't leak data, but
@@ -72,7 +80,7 @@ state and refresh these files.
    pass for *all* employees a little early. Low risk, flagged for
    awareness.
 
-6. **Leaked password protection is disabled** in Supabase Auth (checks
+7. **Leaked password protection is disabled** in Supabase Auth (checks
    new passwords against HaveIBeenPwned). This is a dashboard toggle, not
    a SQL fix — Authentication → Policies → Password Security.
 

@@ -2,6 +2,7 @@
 
 import EmptyState from '@/components/shared/EmptyState';
 import ModalShell from '@/components/shared/ModalShell';
+import Image from 'next/image';
 
 type Props = { open: boolean; onClose: () => void; loading: boolean; total: number; search: string; onSearchChange: (value: string) => void; employees: any[]; initials: (name: string | null) => string };
 
@@ -15,7 +16,7 @@ export default function EmployeeDirectoryModal({ open, onClose, loading, total, 
         {!loading && employees.map((employee) => (
           <article key={employee.id} className="flex min-h-16 items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800">
             <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-blue-100 text-xs font-bold text-blue-700 dark:bg-blue-950 dark:text-blue-200">
-              {employee.avatar_url ? <img src={employee.avatar_url} alt={employee.full_name ?? 'Employee'} className="h-full w-full object-cover" /> : initials(employee.full_name)}
+              {employee.avatar_url ? <Image src={employee.avatar_url} alt={employee.full_name ?? 'Employee'} width={44} height={44} className="h-full w-full object-cover" /> : initials(employee.full_name)}
             </div>
             <div className="min-w-0 flex-1"><p className="truncate text-sm font-extrabold text-slate-950 dark:text-white">{employee.full_name || 'Unknown'}</p><p className="truncate text-xs text-blue-600 dark:text-blue-300">{employee.designation || '—'}</p>{employee.employee_email && <a href={`mailto:${employee.employee_email}`} className="mt-0.5 block truncate text-[10px] text-slate-500 hover:text-blue-600 hover:underline dark:text-slate-300">{employee.employee_email}</a>}</div>
           </article>

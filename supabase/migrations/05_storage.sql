@@ -54,21 +54,17 @@ create policy "Admins can delete announcement images"
 
 -- ----------------------------------------------------------------------------
 -- avatars (public bucket)
--- NOTE: these check role = 'hr', which no profile ever has -- see the
--- "KNOWN ISSUES" note at the bottom of 04_rls_policies.sql. Left as-is
--- here for an accurate snapshot; consider changing 'hr' to
--- any(array['admin','super_admin']) if avatar upload is actually needed.
 -- ----------------------------------------------------------------------------
 
-create policy "HR can upload avatars"
+create policy "Admins can upload avatars"
   on storage.objects for insert to authenticated
-  with check (bucket_id = 'avatars' and lower((select profiles.role from public.profiles where profiles.id = auth.uid())) = 'hr');
+  with check (bucket_id = 'avatars' and exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = any (array['admin','super_admin'])));
 
-create policy "HR can update avatars"
+create policy "Admins can update avatars"
   on storage.objects for update to authenticated
-  using (bucket_id = 'avatars' and lower((select profiles.role from public.profiles where profiles.id = auth.uid())) = 'hr')
-  with check (bucket_id = 'avatars' and lower((select profiles.role from public.profiles where profiles.id = auth.uid())) = 'hr');
+  using (bucket_id = 'avatars' and exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = any (array['admin','super_admin'])))
+  with check (bucket_id = 'avatars' and exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = any (array['admin','super_admin'])));
 
-create policy "HR can view avatars objects"
+create policy "Authenticated can view avatars"
   on storage.objects for select to authenticated
-  using (bucket_id = 'avatars' and lower((select profiles.role from public.profiles where profiles.id = auth.uid())) = 'hr');
+  using (bucket_id = 'avatars');

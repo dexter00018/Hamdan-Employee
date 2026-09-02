@@ -3,12 +3,15 @@ import HRDesktopSidebar from '@/components/hr/HRDesktopSidebar';
 import HRMobileBottomNav from '@/components/hr/HRMobileBottomNav';
 import HRMobileToolsSheet from '@/components/hr/HRMobileToolsSheet';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { AlertTriangle, Bell, CalendarClock, CalendarRange, CheckCircle2, ChevronRight, Clock3, FileDown, FileText, Headphones, Megaphone, Moon, RefreshCw, Search, Sun, UserRound, UsersRound } from 'lucide-react';
+import { AlertTriangle, BadgeAlert, Bell, CalendarCheck2, CalendarClock, CalendarDays, CalendarRange, CheckCircle2, ChevronRight, Clock3, Coins, ContactRound, FileChartColumn, FolderDown, Headphones, LifeBuoy, Megaphone, Moon, RefreshCw, Search, Sun, UserRound } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { LoadingRow } from '@/components/Spinner';
+import { useVerificationDialog } from '@/components/shared/useVerificationDialog';
+import { APP_SETTING_DEFINITIONS, DEFAULT_APP_SETTINGS, normalizeAppSettings, type AppSettingsValues } from '@/lib/app-settings';
+import { resolveSeasonalTheme, SEASONAL_THEME_PRESENTATION } from '@/lib/seasonal-theme';
 
 const AttendanceInsightsModal = dynamic(() => import('@/components/hr/modals/AttendanceInsightsModal'));
 const DailyOverviewModal = dynamic(() => import('@/components/hr/modals/DailyOverviewModal'));
@@ -54,6 +57,7 @@ const FALLBACK_LATE_CUTOFF_MINUTE = 15;
 
 export default function HRDashboard() {
   const router = useRouter();
+  const { verify, verificationDialog } = useVerificationDialog();
   const [attendance, setAttendance] = useState<AttendanceLog[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loadingData, setLoadingData] = useState(true);
@@ -92,12 +96,16 @@ export default function HRDashboard() {
   const [lateCutoffHour, setLateCutoffHour] = useState(FALLBACK_LATE_CUTOFF_HOUR);
   const [lateCutoffMinute, setLateCutoffMinute] = useState(FALLBACK_LATE_CUTOFF_MINUTE);
   const [fallbackLeaveCredits, setFallbackLeaveCredits] = useState(10);
+  const [appSettings, setAppSettings] = useState<AppSettingsValues>({ ...DEFAULT_APP_SETTINGS });
+  const [dismissedSeasonalBanner, setDismissedSeasonalBanner] = useState<string | null>(null);
+  const seasonalTheme = useMemo(() => resolveSeasonalTheme(appSettings, 'hr'), [appSettings]);
+  const seasonalPresentation = SEASONAL_THEME_PRESENTATION[seasonalTheme.variant];
 
-  const fetchAppSettings = async () => {
+  const fetchAppSettings = useCallback(async () => {
     const { data, error } = await supabase
       .from('app_settings')
       .select('key, value')
-      .in('key', ['late_cutoff_hour', 'late_cutoff_minute', 'default_leave_credits']);
+      .in('key', APP_SETTING_DEFINITIONS.map((setting) => setting.key));
     if (error) {
       console.error('Error fetching app settings:', error);
       return;
@@ -106,7 +114,8 @@ export default function HRDashboard() {
     if (typeof map.late_cutoff_hour === 'number') setLateCutoffHour(map.late_cutoff_hour);
     if (typeof map.late_cutoff_minute === 'number') setLateCutoffMinute(map.late_cutoff_minute);
     if (typeof map.default_leave_credits === 'number') setFallbackLeaveCredits(map.default_leave_credits);
-  };
+    setAppSettings(normalizeAppSettings(data));
+  }, []);
 
   // --- Leave Credits Overview (read-only monitoring, no manual edit) ---
   // Pulls profiles + employee_government_ids + leave_credits separately
@@ -696,7 +705,7 @@ export default function HRDashboard() {
   };
 
   const deleteHrDocument = async (document: any) => {
-    if (!confirm(`Delete ${document.title}?`)) return;
+    if (!await verify({ title: 'Delete employee document?', description: 'This removes the published file and its database record.', confirmLabel: 'Delete document', tone: 'danger', details: [document.title, 'Employees will no longer be able to download this file.'] })) return;
     const { error: storageError } = await supabase.storage.from('employee-documents').remove([document.file_path]);
     if (storageError) { alert('Failed to delete file: ' + storageError.message); return; }
     const { error } = await supabase.from('employee_documents').delete().eq('id', document.id);
@@ -991,7 +1000,7 @@ export default function HRDashboard() {
   };
 
   const deleteHoliday = async (id: string) => {
-    if (!confirm('Remove this holiday? Employees may be marked Absent for this date again if it passes without a time-in.')) return;
+    if (!await verify({ title: 'Remove this holiday?', description: 'Attendance calculations may change after this date is removed.', confirmLabel: 'Remove holiday', tone: 'danger', details: ['Employees may be marked Absent if the date passes without a Time In.'] })) return;
     const { error } = await supabase.from('holidays').delete().eq('id', id);
     if (error) {
       setHolidayMsg({ type: 'error', text: error.message });
@@ -1666,7 +1675,7 @@ export default function HRDashboard() {
   };
 
   const deletePayslip = async (payslipId: string, filePath: string, employeeId: string) => {
-    if (!confirm('Delete this payslip? This cannot be undone.')) return;
+    if (!await verify({ title: 'Delete this payslip?', description: 'This permanently removes the payslip file and record.', confirmLabel: 'Delete payslip', tone: 'danger', details: ['This action cannot be undone.'] })) return;
     try {
       await supabase.storage.from('payslips').remove([filePath]);
       const { error } = await supabase.from('payslips').delete().eq('id', payslipId);
@@ -1909,6 +1918,14 @@ export default function HRDashboard() {
     queueMicrotask(() => setDarkMode(document.documentElement.classList.contains('dark')));
   }, []);
 
+  useEffect(() => {
+    const channel = supabase
+      .channel('hr-app-settings')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, () => { void fetchAppSettings(); })
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [fetchAppSettings]);
+
   const pendingHrActionCount = pendingDisputesCount + pendingLeaveCount + openHrSupportCount;
   const openReports = () => { setExportModalOpen(true); setExportMsg(null); if (!exportCutoff) setExportCutoff(availableCutoffs[0] || ''); };
   const openDocuments = () => { setHrDocumentsModalOpen(true); fetchHrDocuments(); };
@@ -1918,9 +1935,10 @@ export default function HRDashboard() {
   const openAttendanceLog = () => { setAttendanceHistoryOpen(true); scrollToDashboardSection('attendance-history'); };
 
   return (
-    <main id="hr-dashboard-top" className="min-h-screen bg-slate-50 p-3 pb-24 text-slate-950 transition-colors dark:bg-[#111512] dark:text-slate-100 sm:p-4 sm:pb-24 md:p-6 lg:py-6 lg:pl-[260px] lg:pr-6">
-      <HRDesktopSidebar darkMode={darkMode} requestCount={pendingHrActionCount} onDashboard={() => scrollToDashboardSection('hr-dashboard-top')} onAttendance={openAttendanceLog} onEmployees={() => setEmployeesListOpen(true)} onLeave={() => scrollToDashboardSection('leave-requests')} onDisputes={() => scrollToDashboardSection('attendance-disputes')} onPayslips={() => setEmployeesListOpen(true)} onDocuments={openDocuments} onAnnouncements={() => setAnnouncementOpen(true)} onHolidays={openHolidays} onReports={openReports} onHelpdesk={openHelpdesk} onToggleTheme={toggleTheme} onLogout={handleLogout} />
-      <div className="max-w-7xl mx-auto space-y-3 sm:space-y-4 md:space-y-5">
+    <main id="hr-dashboard-top" className={`hr-dashboard relative min-h-screen overflow-x-hidden bg-slate-50 p-3 pb-24 text-slate-950 transition-colors dark:bg-[#111512] dark:text-slate-100 sm:p-4 sm:pb-24 md:p-6 lg:py-6 lg:pl-[260px] lg:pr-6 ${seasonalTheme.active ? `seasonal-theme seasonal-${seasonalTheme.variant} seasonal-${seasonalTheme.intensity}` : ''}`}>
+      {seasonalTheme.active && seasonalTheme.snowEnabled ? <div className="seasonal-particles" aria-hidden="true">{Array.from({ length: seasonalTheme.intensity === 'festive' ? 22 : 14 }, (_, index) => <span key={index} style={{ left: `${(index * 37) % 100}%`, fontSize: `${10 + (index % 4) * 3}px`, ['--snow-speed' as string]: `${9 + (index % 6) * 2}s`, ['--snow-delay' as string]: `${-(index % 8) * 1.7}s`, ['--snow-drift' as string]: `${(index % 2 ? 1 : -1) * (18 + index)}px` }}>{seasonalPresentation.particle}</span>)}</div> : null}
+      <HRDesktopSidebar darkMode={darkMode} requestCount={pendingHrActionCount} onDashboard={() => scrollToDashboardSection('hr-dashboard-top')} onAttendance={openAttendanceLog} onEmployees={() => setEmployeesListOpen(true)} onLeave={() => { setSelectedLeaveDetail(null); setLeaveHistoryModalOpen(true); }} onDisputes={() => { setSelectedDisputeDetail(null); setDisputesHistoryModalOpen(true); }} onPayslips={() => setEmployeesListOpen(true)} onDocuments={openDocuments} onAnnouncements={() => setAnnouncementOpen(true)} onHolidays={openHolidays} onReports={openReports} onHelpdesk={openHelpdesk} onToggleTheme={toggleTheme} onLogout={handleLogout} />
+      <div className="seasonal-content relative z-[3] max-w-7xl mx-auto space-y-3 sm:space-y-4 md:space-y-5">
         {/* Header */}
         <header className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_4px_18px_rgba(15,23,42,0.05)] dark:border-slate-700 dark:bg-[#292f2b] sm:p-4">
           <div className="min-w-0"><p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-green-700 dark:text-green-300">Hamdan Engineering</p><h1 className="mt-0.5 truncate text-xl font-bold leading-tight text-slate-950 dark:text-white sm:text-2xl">HR Dashboard</h1><p className="mt-1 hidden text-xs text-slate-600 dark:text-slate-300 sm:block">People, attendance, and employee operations.</p></div>
@@ -1930,6 +1948,8 @@ export default function HRDashboard() {
             <button type="button" onClick={() => setMobileToolsOpen(true)} className="grid h-11 w-11 place-items-center rounded-full border border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:!text-white lg:hidden" aria-label="Open HR tools"><UserRound size={18}/></button>
           </div>
         </header>
+
+        {seasonalTheme.active && seasonalTheme.bannerEnabled && dismissedSeasonalBanner !== seasonalTheme.variant ? <section className={`relative overflow-hidden rounded-2xl border border-amber-300/50 bg-gradient-to-r px-4 py-3 text-white shadow-lg ${seasonalPresentation.bannerTone}`} aria-label="Seasonal greeting"><span className="absolute -right-3 -top-5 text-6xl text-white/10" aria-hidden="true">{seasonalPresentation.symbol}</span><div className="flex items-center gap-3"><span className="grid h-9 w-9 flex-none place-items-center rounded-xl bg-white/15 text-lg ring-1 ring-white/20" aria-hidden="true">{seasonalPresentation.symbol}</span><div className="min-w-0 flex-1"><p className="text-[9px] font-black uppercase tracking-[0.18em] text-amber-200">{seasonalPresentation.label}</p><p className="truncate text-sm font-bold text-white">{seasonalPresentation.greeting}</p></div><button type="button" onClick={() => setDismissedSeasonalBanner(seasonalTheme.variant)} className="grid h-9 w-9 flex-none place-items-center rounded-full bg-white/10 text-lg text-white/80 transition hover:bg-white/20" aria-label="Dismiss seasonal greeting">×</button></div></section> : null}
 
         {errorMsg && <div className="p-3 rounded-xl text-xs font-bold bg-red-50 text-red-700">{errorMsg}</div>}
 
@@ -1989,17 +2009,19 @@ export default function HRDashboard() {
         </div></section>
 
         {/* HR modules keep their existing handlers while sharing one visual language. */}
-        <section aria-labelledby="hr-quick-actions-title"><div className="mb-3"><h2 id="hr-quick-actions-title" className="text-base font-semibold sm:text-lg">HR Quick Actions</h2><p className="mt-0.5 text-xs text-slate-500">Frequently used people operations tools</p></div><div className="grid grid-cols-4 gap-2 sm:gap-3">
+        <section aria-labelledby="hr-quick-actions-title"><div className="mb-3"><h2 id="hr-quick-actions-title" className="text-base font-semibold sm:text-lg">HR Quick Actions</h2><p className="mt-0.5 text-xs text-slate-500 dark:text-slate-300">Frequently used people operations tools</p></div><div className="grid grid-cols-3 gap-2 sm:grid-cols-4 sm:gap-3 lg:grid-cols-5">
           {[
-            { title: 'Leave Credits', description: leaveCreditsLoading ? 'Checking...' : lowLeaveCreditsCount ? `${lowLeaveCreditsCount} low` : 'Healthy', icon: CalendarClock, action: openLeaveCreditsModal, warning: lowLeaveCreditsCount > 0 },
-            { title: 'Export Reports', description: 'CSV & PDF', icon: FileDown, action: openReports },
-            { title: 'Announcements', description: announcementModuleLabel, icon: Megaphone, action: () => setAnnouncementOpen(true) },
-            { title: 'Holidays', description: holidaysLoading ? 'Checking...' : `${upcomingHolidaysCount} upcoming`, icon: CalendarRange, action: openHolidays },
-            { title: 'Employees', description: `${profiles.length} total`, icon: UsersRound, action: () => setEmployeesListOpen(true) },
-            { title: 'Leave Calendar', description: 'Leaves & holidays', icon: CalendarRange, action: openLeaveCalendar },
-            { title: 'Help Desk', description: openHrSupportCount ? `${openHrSupportCount} open` : 'All clear', icon: Headphones, action: openHelpdesk, warning: openHrSupportCount > 0 },
-            { title: 'Documents', description: `${activeHrDocumentsCount} published`, icon: FileText, action: openDocuments },
-          ].map(({ title, description, icon: Icon, action, warning }) => <button key={title} type="button" onClick={action} className="group relative flex min-h-24 min-w-0 flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border border-slate-200 bg-white px-1.5 py-3 text-center shadow-[0_5px_16px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:border-green-200 dark:border-slate-700 dark:bg-[#292f2b]"><span className={`relative grid h-10 w-10 place-items-center rounded-2xl bg-gradient-to-br text-white shadow-md ${warning ? 'from-amber-400 to-orange-500' : 'from-emerald-500 to-green-700'}`}><span className="absolute inset-[3px] rounded-[13px] border border-white/25"/><Icon size={18}/></span><span className="line-clamp-2 text-[10px] font-bold leading-tight text-slate-800 dark:text-slate-100 sm:text-xs">{title}</span><span className={`hidden max-w-full truncate text-[10px] sm:block ${warning ? 'font-bold text-orange-600' : 'text-slate-400'}`}>{description}</span></button>)}
+            { title: 'Leave Requests', description: pendingLeaveCount ? `${pendingLeaveCount} pending` : 'All clear', icon: CalendarCheck2, tone: 'from-blue-500 to-indigo-700', action: () => { setSelectedLeaveDetail(null); setLeaveHistoryModalOpen(true); }, warning: pendingLeaveCount > 0, count: pendingLeaveCount },
+            { title: 'Attendance Disputes', description: pendingDisputesCount ? `${pendingDisputesCount} pending` : 'All clear', icon: BadgeAlert, tone: 'from-orange-500 to-red-700', action: () => { setSelectedDisputeDetail(null); setDisputesHistoryModalOpen(true); }, warning: pendingDisputesCount > 0, count: pendingDisputesCount },
+            { title: 'Leave Credits', description: leaveCreditsLoading ? 'Checking...' : lowLeaveCreditsCount ? `${lowLeaveCreditsCount} low` : 'Healthy', icon: Coins, tone: 'from-amber-400 to-yellow-700', action: openLeaveCreditsModal, warning: lowLeaveCreditsCount > 0 },
+            { title: 'Export Reports', description: 'CSV & PDF', icon: FileChartColumn, tone: 'from-cyan-500 to-blue-700', action: openReports },
+            { title: 'Announcements', description: announcementModuleLabel, icon: Megaphone, tone: 'from-fuchsia-500 to-purple-700', action: () => setAnnouncementOpen(true) },
+            { title: 'Holidays', description: holidaysLoading ? 'Checking...' : `${upcomingHolidaysCount} upcoming`, icon: CalendarDays, tone: 'from-rose-500 to-pink-700', action: openHolidays },
+            { title: 'Employees', description: `${profiles.length} total`, icon: ContactRound, tone: 'from-emerald-500 to-teal-700', action: () => setEmployeesListOpen(true) },
+            { title: 'Leave Calendar', description: 'Leaves & holidays', icon: CalendarRange, tone: 'from-violet-500 to-indigo-700', action: openLeaveCalendar },
+            { title: 'Help Desk', description: openHrSupportCount ? `${openHrSupportCount} open` : 'All clear', icon: LifeBuoy, tone: 'from-sky-500 to-cyan-700', action: openHelpdesk, warning: openHrSupportCount > 0 },
+            { title: 'Documents', description: `${activeHrDocumentsCount} published`, icon: FolderDown, tone: 'from-slate-500 to-slate-800', action: openDocuments },
+          ].map(({ title, description, icon: Icon, tone, action, warning, count }) => <button key={title} type="button" onClick={action} className="group relative flex min-h-28 min-w-0 flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border border-slate-200 bg-white px-1.5 py-3 text-center shadow-[0_5px_16px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:border-green-300 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 dark:border-slate-700 dark:bg-[#292f2b] dark:hover:border-green-700"><span className={`relative grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br text-white shadow-lg ring-1 ring-black/10 ${warning ? 'from-amber-500 to-orange-700' : tone}`}><span className="absolute inset-[3px] rounded-[13px] border border-white/35"/><Icon size={24} strokeWidth={3}/>{typeof count === 'number' && count > 0 && <span className="absolute -right-2 -top-2 grid h-6 min-w-6 place-items-center rounded-full border-2 border-white bg-rose-600 px-1 text-[10px] font-black text-white shadow dark:border-[#292f2b]">{count > 99 ? '99+' : count}</span>}</span><span className="line-clamp-2 text-[10px] font-extrabold leading-tight text-slate-900 dark:text-white sm:text-xs">{title}</span><span className={`hidden max-w-full truncate text-[10px] sm:block ${warning ? 'font-bold text-orange-700 dark:text-orange-300' : 'text-slate-500 dark:text-slate-300'}`}>{description}</span></button>)}
         </div></section>
 
         {/* Priority action center */}
@@ -2014,19 +2036,19 @@ export default function HRDashboard() {
             </span>
           </div>
           {pendingHrActionCount === 0 ? (
-            <div className="flex items-center justify-center gap-2 py-5 rounded-2xl border-2 border-dashed border-emerald-100 bg-emerald-50/50 text-emerald-700">
+            <div className="flex items-center justify-center gap-2 py-5 rounded-2xl border-2 border-dashed border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
               <CheckCircle2 size={17}/><span className="text-xs font-bold">All caught up — no pending HR actions.</span>
             </div>
           ) : (
             <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700">
               {[
-                { label: 'Pending Disputes', description: 'Review attendance corrections', count: pendingDisputesCount, icon: Clock3, action: () => scrollToDashboardSection('attendance-disputes') },
-                { label: 'Pending Leave Requests', description: 'Approve or reject submitted leave', count: pendingLeaveCount, icon: CalendarClock, action: () => scrollToDashboardSection('leave-requests') },
+                { label: 'Pending Disputes', description: 'Review attendance corrections', count: pendingDisputesCount, icon: Clock3, action: () => { setSelectedDisputeDetail(null); setDisputesHistoryModalOpen(true); } },
+                { label: 'Pending Leave Requests', description: 'Approve or reject submitted leave', count: pendingLeaveCount, icon: CalendarClock, action: () => { setSelectedLeaveDetail(null); setLeaveHistoryModalOpen(true); } },
                 { label: 'Open Help Desk Requests', description: 'Respond to employee concerns', count: openHrSupportCount, icon: Headphones, action: openHelpdesk },
               ].map((item) => (
                 <button key={item.label} type="button" onClick={item.action} className="flex min-h-16 w-full items-center gap-3 border-b border-slate-200 bg-white px-3 py-3 text-left transition last:border-b-0 hover:bg-slate-50 dark:border-slate-700 dark:bg-[#292f2b] dark:hover:bg-slate-800">
                   <span className="grid h-10 w-10 flex-none place-items-center rounded-xl bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300"><item.icon size={18}/></span>
-                  <span className="min-w-0 flex-1"><span className="block text-xs font-bold text-slate-900 dark:text-white">{item.label}</span><span className="mt-0.5 block text-[10px] text-slate-500">{item.description}</span></span>
+                  <span className="min-w-0 flex-1"><span className="block text-xs font-bold text-slate-900 dark:text-white">{item.label}</span><span className="mt-0.5 block text-[10px] text-slate-500 dark:text-slate-300">{item.description}</span></span>
                   <span className="grid h-7 min-w-7 place-items-center rounded-full bg-slate-100 px-2 text-xs font-black text-slate-700 dark:bg-slate-800 dark:text-slate-200">{item.count}</span><ChevronRight size={17} className="text-slate-400"/>
                 </button>
               ))}
@@ -2058,8 +2080,8 @@ export default function HRDashboard() {
 
         <HolidaysModal open={holidaysOpen} onClose={() => setHolidaysOpen(false)} addHoliday={addHoliday} deleteHoliday={deleteHoliday} holidayMsg={holidayMsg} holidaySaving={holidaySaving} holidays={holidays} holidaysLoading={holidaysLoading} newHolidayDate={newHolidayDate} newHolidayName={newHolidayName} setNewHolidayDate={setNewHolidayDate} setNewHolidayName={setNewHolidayName} />
 
-        {/* Disputes + Leave — side by side on desktop */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 md:gap-5">
+        {/* Requests are managed from Quick Actions; retained here only as a non-rendered fallback. */}
+        <div className="hidden" aria-hidden="true">
 
         {/* Attendance Disputes */}
         <section id="attendance-disputes" className="card-style !p-4 scroll-mt-4">
@@ -2293,9 +2315,9 @@ export default function HRDashboard() {
 
       <PayslipManagementModal open={modalMode === 'payslips'} onClose={closeModal} onBack={() => setModalMode('choice')} deletePayslip={deletePayslip} employeePayslips={employeePayslips} employeePayslipsLoading={employeePayslipsLoading} generateCutoffOptions={generateCutoffOptions} payslipCutoff={payslipCutoff} payslipFile={payslipFile} payslipFileRef={payslipFileRef} payslipMsg={payslipMsg} payslipUploading={payslipUploading} publishMsg={publishMsg} publishPayslip={publishPayslip} publishingId={publishingId} selectedProfile={selectedProfile} setPayslipCutoff={setPayslipCutoff} setPayslipFile={setPayslipFile} uploadPayslip={uploadPayslip} />
 
-      <DisputeHistoryModal open={disputesHistoryModalOpen} onClose={() => setDisputesHistoryModalOpen(false)} disputeClaimed={disputeClaimed} disputeFieldLabel={disputeFieldLabel} disputeOriginal={disputeOriginal} disputeTypeLabel={disputeTypeLabel} disputes={disputes} formatPh={formatPh} selectedDisputeDetail={selectedDisputeDetail} setSelectedDisputeDetail={setSelectedDisputeDetail} />
+      <DisputeHistoryModal open={disputesHistoryModalOpen} onClose={() => setDisputesHistoryModalOpen(false)} approveDispute={approveDispute} rejectDispute={rejectDispute} actionLoadingId={disputeActionLoadingId} message={disputeMsg} loading={disputesLoading} disputeClaimed={disputeClaimed} disputeFieldLabel={disputeFieldLabel} disputeOriginal={disputeOriginal} disputeTypeLabel={disputeTypeLabel} disputes={disputes} formatPh={formatPh} selectedDisputeDetail={selectedDisputeDetail} setSelectedDisputeDetail={setSelectedDisputeDetail} />
 
-      <LeaveHistoryModal open={leaveHistoryModalOpen} onClose={() => setLeaveHistoryModalOpen(false)} countLeaveDays={countLeaveDays} leaveRequests={leaveRequests} selectedLeaveDetail={selectedLeaveDetail} setSelectedLeaveDetail={setSelectedLeaveDetail} />
+      <LeaveHistoryModal open={leaveHistoryModalOpen} onClose={() => setLeaveHistoryModalOpen(false)} approveLeave={approveLeave} rejectLeave={rejectLeave} actionLoadingId={leaveActionLoadingId} message={leaveMsg} loading={leaveRequestsLoading} countLeaveDays={countLeaveDays} leaveRequests={leaveRequests} leaveHrNotes={leaveHrNotes} setLeaveHrNotes={setLeaveHrNotes} selectedLeaveDetail={selectedLeaveDetail} setSelectedLeaveDetail={setSelectedLeaveDetail} />
 
       {/* HELP DESK REQUESTS MANAGEMENT MODAL */}
       <HelpDeskRequestsModal open={hrSupportModalOpen} onClose={() => setHrSupportModalOpen(false)} loading={hrSupportLoading} requests={hrSupportRequests} drafts={hrSupportDrafts} setDrafts={setHrSupportDrafts} savingId={hrSupportSavingId} onSave={saveHrSupportRequest} />
@@ -2307,6 +2329,7 @@ export default function HRDashboard() {
 
       <ExportReportsModal open={exportModalOpen} onClose={() => setExportModalOpen(false)} availableCutoffs={availableCutoffs} exportCutoff={exportCutoff} exportEmployeeMasterListCSV={exportEmployeeMasterListCSV} exportEmployeeMasterListPDF={exportEmployeeMasterListPDF} exportMsg={exportMsg} exportPayrollSummaryCSV={exportPayrollSummaryCSV} exportPayrollSummaryPDF={exportPayrollSummaryPDF} exportRawAttendanceCSV={exportRawAttendanceCSV} exportRawAttendancePDF={exportRawAttendancePDF} exportingType={exportingType} formatCutoffLabel={formatCutoffLabel} rawExportMonth={rawExportMonth} rawExportPeriod={rawExportPeriod} rawExportPreviewCount={rawExportPreviewCount} setExportCutoff={setExportCutoff} setExportMsg={setExportMsg} setRawExportMonth={setRawExportMonth} setRawExportPeriod={setRawExportPeriod} />
 
+      {verificationDialog}
 
     </main>
   );

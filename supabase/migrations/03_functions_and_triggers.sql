@@ -8,15 +8,14 @@
 -- ----------------------------------------------------------------------------
 
 -- Auto-creates a profiles row whenever a new auth.users row appears.
--- KNOWN RISK: this defaults role to 'employee' for ANY new signup with no
--- gatekeeping. If you ever enable public/OAuth signups, make sure "Allow
--- new users to sign up" is OFF in Supabase Auth settings, or add an
--- allow-list check here first -- otherwise anyone who signs up gets
--- automatic employee-level access.
+-- New identities always start at the least-privileged application role.
+-- Admin-created roles are assigned only by the authenticated server route
+-- after it validates the caller; raw_user_meta_data is never authorization.
 CREATE OR REPLACE FUNCTION public.handle_new_user()
  RETURNS trigger
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public'
 AS $function$
 BEGIN
   INSERT INTO public.profiles (id, employee_id, full_name, role)
@@ -24,7 +23,7 @@ BEGIN
     NEW.id,
     'HSM-' || SUBSTR(md5(random()::text), 1, 6),
     COALESCE(NEW.raw_user_meta_data->>'full_name', 'Bagong Empleyado'),
-    COALESCE(NEW.raw_user_meta_data->>'role', 'employee')
+    'employee'
   );
   RETURN NEW;
 END;
@@ -36,7 +35,7 @@ $function$;
 -- direct execute access from anon/authenticated -- the trigger itself
 -- still runs fine since it executes as the table owner regardless of
 -- these grants.
-revoke execute on function public.handle_new_user() from anon, authenticated;
+revoke execute on function public.handle_new_user() from public, anon, authenticated;
 
 CREATE OR REPLACE FUNCTION public.email_exists(check_email text)
  RETURNS boolean
@@ -48,6 +47,8 @@ AS $function$
     SELECT 1 FROM auth.users WHERE email = check_email
   );
 $function$;
+
+revoke execute on function public.email_exists(text) from public, anon, authenticated;
 
 -- KNOWN ISSUE: checks role = 'hr', but no profile ever has that exact role
 -- string (actual roles used app-wide are 'employee' / 'admin' /
@@ -224,6 +225,13 @@ declare
   r record;
   v_today date := (current_timestamp at time zone 'Asia/Manila')::date;
 begin
+  if not exists (
+    select 1 from public.profiles
+    where id = auth.uid() and role = any (array['admin','super_admin'])
+  ) then
+    raise exception 'Not authorized';
+  end if;
+
   for r in
     select user_id, leave_date
     from public.leave_request_days
@@ -267,6 +275,13 @@ AS $function$
 declare
   v_today date := (current_timestamp at time zone 'Asia/Manila')::date;
 begin
+  if not exists (
+    select 1 from public.profiles
+    where id = auth.uid() and role = any (array['admin','super_admin'])
+  ) then
+    raise exception 'Not authorized';
+  end if;
+
   insert into public.attendance_logs (user_id, log_date, status, time_in, time_out)
   select p.id, d::date, 'Absent', null, null
   from public.profiles p
@@ -277,6 +292,7 @@ begin
     interval '1 day'
   ) as d
   where lower(coalesce(p.role, '')) = 'employee'
+    and coalesce(p.is_active, true) = true
     and extract(dow from d) not in (0, 6)
     and not exists (
       select 1 from public.attendance_logs al

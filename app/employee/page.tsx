@@ -14,6 +14,7 @@ import Spinner, { LoadingRow } from '@/components/Spinner';
 import { Bell, CalendarX2, CheckCircle2, Clock3, UserRound } from 'lucide-react';
 import { APP_SETTING_DEFINITIONS, DEFAULT_APP_SETTINGS, normalizeAppSettings, type AppSettingsValues } from '@/lib/app-settings';
 import { resolveSeasonalTheme, SEASONAL_THEME_PRESENTATION } from '@/lib/seasonal-theme';
+import { useVerificationDialog } from '@/components/shared/useVerificationDialog';
 
 const SummaryDetailModal = dynamic(() => import('@/components/employee/modals/SummaryDetailModal'));
 const AttendanceDisputeFormModal = dynamic(() => import('@/components/employee/modals/AttendanceDisputeFormModal'));
@@ -80,6 +81,7 @@ const FALLBACK_LEAVE_CREDITS = 10;
 const FALLBACK_TIME_OUT_REMINDER_HOUR = 19;
 
 export default function EmployeeDashboard() {
+  const { verify, verificationDialog } = useVerificationDialog();
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [timeOutLoading, setTimeOutLoading] = useState(false);
@@ -1125,7 +1127,7 @@ export default function EmployeeDashboard() {
       alert(`Leave requests can only be cancelled at least ${leadHours} hour${leadHours === 1 ? '' : 's'} before they start.`);
       return;
     }
-    if (!confirm('Cancel this leave request?')) return;
+    if (!await verify({ title: 'Cancel leave request?', description: 'The pending request will be removed from HR review.', confirmLabel: 'Cancel request', tone: 'warning', details: ['You can submit a new request later if needed.'] })) return;
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { alert('You are not logged in.'); return; }
     const { error } = await supabase
@@ -1209,7 +1211,7 @@ export default function EmployeeDashboard() {
   };
 
   const cancelDispute = async (disputeId: string) => {
-    if (!confirm('Cancel this pending attendance dispute?')) return;
+    if (!await verify({ title: 'Cancel attendance dispute?', description: 'The pending dispute will be removed from HR review.', confirmLabel: 'Cancel dispute', tone: 'warning', details: ['Your original attendance record will remain unchanged.'] })) return;
     setCancelingDisputeId(disputeId);
     try {
       const { error } = await supabase.rpc('cancel_my_attendance_dispute', { p_dispute_id: disputeId });
@@ -2786,7 +2788,7 @@ export default function EmployeeDashboard() {
 
       {showEarlyTimeOutWarning && <EarlyTimeOutModal open={showEarlyTimeOutWarning} onClose={() => setShowEarlyTimeOutWarning(false)} expectedTimeOutLabel={expectedTimeOutLabel} handleTimeOut={handleTimeOut} timeOutLoading={timeOutLoading} />}
 
-
+      {verificationDialog}
 
     </main>
   );
