@@ -533,10 +533,10 @@ export const getCommuteWeatherHighlight = (weather: CommuteCheckResult['weather'
     return {
       label: 'Very likely rain',
       icon: '⛈️',
-      card: 'bg-red-50 border-red-200',
-      badge: 'bg-red-600 text-white',
-      text: 'text-red-950',
-      accent: 'bg-red-500',
+      card: 'bg-sky-50 border-sky-300',
+      badge: 'bg-sky-700 text-white',
+      text: 'text-sky-950',
+      accent: 'bg-sky-600',
     };
   }
 
@@ -544,10 +544,10 @@ export const getCommuteWeatherHighlight = (weather: CommuteCheckResult['weather'
     return {
       label: 'Rain likely',
       icon: '🌧️',
-      card: 'bg-orange-50 border-orange-200',
-      badge: 'bg-orange-500 text-white',
-      text: 'text-orange-950',
-      accent: 'bg-orange-500',
+      card: 'bg-cyan-50 border-cyan-300',
+      badge: 'bg-cyan-700 text-white',
+      text: 'text-cyan-950',
+      accent: 'bg-cyan-600',
     };
   }
 

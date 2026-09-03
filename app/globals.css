@@ -777,6 +777,24 @@
 }
 #employee-dashboard-top.seasonal-theme:not(.seasonal-christmas) .label-branded,
 #hr-dashboard-top.seasonal-theme:not(.seasonal-christmas) .label-branded { color: var(--theme-primary) !important; letter-spacing: .13em; }
+
+/* Commute information keeps its own calm weather palette inside every seasonal theme. */
+#employee-dashboard-top .commute-theme-scope .label-branded {
+  color: #0369a1 !important;
+}
+.dark #employee-dashboard-top .commute-theme-scope .label-branded {
+  color: #67e8f9 !important;
+}
+.commute-theme-scope.dark .commute-modal-header {
+  background: rgba(15, 23, 42, .94) !important;
+  border-color: rgba(71, 85, 105, .65) !important;
+}
+.commute-theme-scope .commute-details[open] .commute-details-chevron {
+  transform: rotate(180deg);
+}
+.commute-theme-scope .commute-details-chevron {
+  transition: transform .2s ease;
+}
 #employee-dashboard-top.seasonal-theme:not(.seasonal-christmas) aside:has(nav[aria-label$="desktop navigation"]),
 #hr-dashboard-top.seasonal-theme:not(.seasonal-christmas) aside:has(nav[aria-label$="desktop navigation"]) {
   border-color: var(--theme-border) !important;

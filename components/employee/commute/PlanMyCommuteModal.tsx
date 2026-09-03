@@ -1,23 +1,16 @@
 'use client';
 
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import Spinner from '@/components/Spinner';
+import CommuteResultExperience from '@/components/employee/commute/CommuteResultExperience';
 import {
-  buildPartialCommuteMessage,
   formatCommuteClock,
-  formatCommuteDistance,
-  formatCommuteMinutes,
   formatCommuteUpdatedAt,
   formatRainAmount,
-  formatWeatherBucketTime,
   getAddressPrimaryLabel,
   getAddressSecondaryLabel,
-  getAdviceAvailability,
-  getCommuteWeatherHighlight,
   getManilaDateTimeInputs,
   getManilaForecastMaxDate,
-  getRouteCheckpointVisual,
-  getTrafficLevelStyle,
   mapCommuteUIState,
   shortCommutePlace,
   unwrapCommutePayload,
@@ -34,74 +27,6 @@ type PlanMyCommuteModalProps = {
   darkMode: boolean;
   initialDestination?: string | null;
 };
-
-type CommuteSurfaceProps = {
-  className?: string;
-};
-
-type MetricCardProps = CommuteSurfaceProps & {
-  icon: string;
-  label: string;
-  value: ReactNode;
-  helper?: ReactNode;
-  valueClassName?: string;
-};
-
-function MetricCard({ icon, label, value, helper, valueClassName = '', className = '' }: MetricCardProps) {
-  return (
-    <div className={`min-h-[88px] border-b border-slate-200 p-3 sm:min-h-0 sm:border-b-0 sm:border-r sm:px-5 sm:py-2 sm:last:border-r-0 ${className}`}>
-      <div className="flex items-center gap-2">
-        <span className="flex h-8 w-8 items-center justify-center text-xl text-blue-600" aria-hidden="true">
-          {icon}
-        </span>
-        <p className="text-[9px] font-extrabold uppercase tracking-[0.14em] text-slate-500">{label}</p>
-      </div>
-      <p className={`mt-1.5 text-xl font-black leading-none text-slate-950 sm:text-2xl ${valueClassName}`}>{value}</p>
-      {helper && <p className="mt-1 text-[8px] leading-relaxed text-slate-400">{helper}</p>}
-    </div>
-  );
-}
-
-type CheckpointItemProps = CommuteSurfaceProps & {
-  selected: boolean;
-  label: string;
-  onClick: () => void;
-  children: ReactNode;
-};
-
-function CheckpointItem({ selected, label, onClick, children, className = '' }: CheckpointItemProps) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-expanded={selected}
-      aria-label={label}
-      className={`group relative flex-1 min-w-0 rounded-2xl border p-3 text-left lg:text-center transition-all duration-200 hover:bg-blue-50/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${selected ? 'border-blue-500 bg-blue-50/50 shadow-sm' : ''} ${className}`}
-    >
-      {children}
-    </button>
-  );
-}
-
-type AdvisoryBannerProps = CommuteSurfaceProps & {
-  icon: string;
-  title: string;
-  children: ReactNode;
-};
-
-function AdvisoryBanner({ icon, title, children, className = '' }: AdvisoryBannerProps) {
-  return (
-    <div className={`commute-advisory-surface rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 to-white p-3.5 ${className}`}>
-      <div className="flex items-start gap-3">
-        <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-white text-lg shadow-sm" aria-hidden="true">{icon}</span>
-        <div className="min-w-0">
-          <p className="text-[8px] font-extrabold uppercase tracking-wider text-blue-700">{title}</p>
-          <div className="mt-1 text-[10px] font-semibold leading-relaxed text-slate-700">{children}</div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export default function PlanMyCommuteModal({
   open,
@@ -120,10 +45,8 @@ export default function PlanMyCommuteModal({
   const [commuteUIState, setCommuteUIState] = useState<CommuteUIState>('idle');
   const [commuteFailedAnnouncementAssertive, setCommuteFailedAnnouncementAssertive] = useState(false);
   const [commuteHasAttempted, setCommuteHasAttempted] = useState(false);
-  const [showCommuteIncidents, setShowCommuteIncidents] = useState(false);
   const [commuteError, setCommuteError] = useState<string | null>(null);
   const [commuteResult, setCommuteResult] = useState<CommuteCheckResult | null>(null);
-  const [selectedCommuteCheckpointIndex, setSelectedCommuteCheckpointIndex] = useState<number | null>(null);
   const [isCommuteFormCollapsed, setIsCommuteFormCollapsed] = useState(false);
   const [commuteLanguage, setCommuteLanguage] = useState<'en' | 'tl'>('en');
   const [commuteAdviceOptions, setCommuteAdviceOptions] = useState<CommuteAdviceOption[]>([]);
@@ -574,7 +497,6 @@ export default function PlanMyCommuteModal({
   };
 
   const checkCommuteRoute = async () => {
-    setShowCommuteIncidents(false);
     if (!commuteOrigin.trim() || !commuteDestination.trim()) {
       setIsCommuteFormCollapsed(false);
       setCommuteError('Enter both From and To locations.');
@@ -671,11 +593,6 @@ export default function PlanMyCommuteModal({
 
       setCommuteResult(payload);
       setIsCommuteFormCollapsed(true);
-      setSelectedCommuteCheckpointIndex(
-        payload.route_weather_summary?.wettest_checkpoint?.index ??
-          payload.route_weather_checkpoints?.[0]?.index ??
-          null
-      );
       setCommuteUIState(mapped.state);
       setCommuteError(null);
     } catch (err: any) {
@@ -706,7 +623,6 @@ export default function PlanMyCommuteModal({
     );
     setCommuteError(null);
     setCommuteResult(null);
-    setSelectedCommuteCheckpointIndex(null);
     setCommuteUIState('idle');
     setCommuteHasAttempted(false);
   };
@@ -726,8 +642,8 @@ export default function PlanMyCommuteModal({
           className={`${darkMode ? 'dark' : ''} commute-theme-scope fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/45 backdrop-blur-sm p-0 sm:p-4`}
           data-theme={darkMode ? 'dark' : 'light'}
         >
-          <div className={`commute-canvas-surface w-full max-w-[1500px] max-h-[100dvh] overflow-y-auto p-4 shadow-2xl sm:max-h-[94vh] sm:rounded-[28px] sm:p-6 ${darkMode ? 'bg-slate-950' : 'bg-[#fcfbf8]'}`}>
-            <div className="flex items-start justify-between gap-4 mb-4">
+          <div className={`commute-canvas-surface w-[calc(100%-1rem)] max-w-[620px] max-h-[92dvh] overflow-y-auto rounded-[24px] p-4 shadow-2xl sm:p-6 ${darkMode ? 'bg-slate-950' : 'bg-[#fcfbf8]'}`}>
+            <div className="commute-modal-header sticky top-0 z-50 -mx-4 -mt-4 mb-4 flex items-start justify-between gap-4 border-b border-slate-200/80 bg-[#fcfbf8]/95 px-4 pb-3 pt-4 backdrop-blur-xl sm:-mx-6 sm:-mt-6 sm:px-6 sm:pb-4 sm:pt-6">
               <div className="flex items-start gap-3 min-w-0">
                 <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center flex-shrink-0 text-xl  ">
                   🌦️
@@ -935,7 +851,7 @@ export default function PlanMyCommuteModal({
                       commuteResult?.weather?.rain_alert?.active ||
                       Number(commuteResult?.weather?.rain_probability ?? 0) >= 50
                         ? Number(commuteResult?.route_weather_summary?.highest_rain_probability ?? commuteResult?.weather?.rain_probability ?? 0) >= 70
-                          ? 'border-orange-300 bg-orange-50/70 ring-2 ring-orange-200/70'
+                          ? 'border-sky-300 bg-sky-50/70 ring-2 ring-sky-200/70'
                           : 'border-amber-200 bg-amber-50 ring-2 ring-amber-200/70'
                         : 'border-blue-200 bg-blue-50/70'
                     }`}>
@@ -984,9 +900,9 @@ export default function PlanMyCommuteModal({
                       commuteResult?.weather?.rain_alert?.active ||
                       Number(commuteResult?.weather?.rain_probability ?? 0) >= 50
                         ? Number(commuteResult?.route_weather_summary?.highest_rain_probability ?? commuteResult?.weather?.rain_probability ?? 0) >= 85
-                          ? '!border-red-400 ring-2 ring-red-200/70'
+                          ? '!border-sky-500 ring-2 ring-sky-200/70'
                           : Number(commuteResult?.route_weather_summary?.highest_rain_probability ?? commuteResult?.weather?.rain_probability ?? 0) >= 70
-                            ? '!border-orange-400 ring-2 ring-orange-200/70'
+                            ? '!border-cyan-500 ring-2 ring-cyan-200/70'
                             : '!border-amber-400 ring-2 ring-amber-200/70'
                         : ''
                     }`}
@@ -1061,9 +977,9 @@ export default function PlanMyCommuteModal({
                     return (
                       <div className={`mt-2 rounded-xl border px-3 py-2 ${
                         rainChance >= 85
-                          ? 'bg-red-50 border-red-200'
+                          ? 'bg-sky-50 border-sky-300'
                           : rainChance >= 70
-                            ? 'bg-orange-50 border-orange-200'
+                            ? 'bg-cyan-50 border-cyan-300'
                             : 'bg-amber-50 border-amber-200'
                       }`}>
                         <p className="text-[10px] font-extrabold text-slate-900">
@@ -1362,861 +1278,19 @@ export default function PlanMyCommuteModal({
               </div>
             )}
 
-            {commuteResult && (
-              <div
-                aria-busy={commuteLoading}
-                className="space-y-4 rounded-3xl border border-slate-200 bg-white p-3.5 sm:p-5  "
-              >
-                <div
-                  aria-live={commuteFailedAnnouncementAssertive ? 'assertive' : 'polite'}
-                  className={`hidden sm:flex sm:flex-row sm:items-center sm:justify-between gap-2 border-b px-1 pb-4 ${
-                    commuteUIState === 'partial'
-                      ? 'border-orange-200'
-                      : commuteUIState === 'failed'
-                        ? 'border-slate-200'
-                        : commuteUIState === 'updating'
-                          ? 'border-blue-200'
-                          : 'border-slate-200 '
-                  }`}
-                >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-black ${
-                          commuteUIState === 'partial'
-                            ? 'bg-orange-100 text-orange-700'
-                            : commuteUIState === 'failed'
-                              ? 'bg-slate-200 text-slate-600'
-                              : commuteUIState === 'updating'
-                                ? 'bg-blue-100 text-blue-700 animate-pulse'
-                                : 'bg-blue-100 text-blue-700  '
-                        }`}
-                        aria-hidden="true"
-                      >
-                        {commuteUIState === 'partial'
-                          ? '!'
-                          : commuteUIState === 'failed'
-                            ? '↺'
-                            : commuteUIState === 'updating'
-                              ? '…'
-                              : '●'}
-                      </span>
-                      <p className={`text-[10px] font-extrabold uppercase tracking-wide ${
-                        commuteUIState === 'partial'
-                          ? 'text-orange-900'
-                          : commuteUIState === 'failed'
-                            ? 'text-slate-700'
-                            : commuteUIState === 'updating'
-                              ? 'text-blue-900'
-                              : 'text-blue-700 '
-                      }`}>
-                        {commuteUIState === 'updating'
-                          ? 'UPDATING · Previous result shown'
-                          : commuteUIState === 'partial'
-                            ? `PARTIAL DATA · Updated ${formatCommuteUpdatedAt(commuteResult.freshness?.overall_updated_at || commuteResult.generated_at)}`
-                            : commuteUIState === 'failed'
-                              ? `LAST SUCCESSFUL RESULT · Updated ${formatCommuteUpdatedAt(commuteResult.freshness?.overall_updated_at || commuteResult.generated_at)}`
-                              : `LIVE · Updated ${formatCommuteUpdatedAt(commuteResult.freshness?.overall_updated_at || commuteResult.generated_at)}`}
-                      </p>
-                    </div>
-                    <p className="text-xl sm:text-3xl font-black text-slate-950 mt-2 leading-tight ">
-                      {selectedOriginAddress ? getAddressPrimaryLabel(selectedOriginAddress) : shortCommutePlace(commuteResult.origin?.name, 'Origin')} → {selectedDestinationAddress ? getAddressPrimaryLabel(selectedDestinationAddress) : shortCommutePlace(commuteResult.destination?.name, 'Destination')}
-                    </p>
-                    <p className="text-[9px] text-slate-500 mt-1">
-                      Depart {formatCommuteClock(commuteResult.route?.departure_time || commuteResult.route_weather_checkpoints?.[0]?.arrival_time)}
-                      {(commuteAdviceOptions.includes('traffic_delays') || commuteAdviceOptions.includes('best_departure'))
-                        ? commuteResult.partial?.traffic_available === true && commuteResult.route?.arrival_time
-                          ? ` · ETA ${formatCommuteClock(commuteResult.route.arrival_time)}`
-                          : ' · Traffic ETA unavailable'
-                        : ' · Forecast matched to route passing times'}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={checkCommuteRoute}
-                    disabled={commuteLoading}
-                    className="min-h-11 px-4 rounded-xl bg-blue-600 border border-blue-600 text-white text-[9px] font-extrabold hover:bg-blue-700 transition disabled:opacity-50"
-                  >
-                    {commuteLoading ? 'Refreshing…' : '↻ Refresh'}
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-2 gap-x-3 gap-y-2 border-b border-slate-200 pb-3 sm:flex sm:flex-wrap sm:items-center sm:justify-center sm:gap-0 " aria-label="Requested advice availability">
-                  {([
-                    ['route_weather', '☁️', 'Route weather'],
-                    ['rain_risk', '🌧️', 'Rain risk'],
-                    ['traffic_delays', '🚗', 'Traffic delays'],
-                    ['best_departure', '◷', 'Best departure'],
-                  ] as Array<[CommuteAdviceOption, string, string]>).map(([option, icon, label]) => {
-                    const availability = getAdviceAvailability(
-                      option,
-                      commuteAdviceOptions,
-                      commuteResult
-                    );
-                    const statusLabel =
-                      availability === 'available'
-                        ? 'Available'
-                        : availability === 'unavailable'
-                          ? 'Unavailable'
-                          : 'Not requested';
-                    return (
-                      <div
-                        key={option}
-                        className={`min-h-10 px-2.5 py-2 flex items-center gap-2 sm:border-r sm:border-slate-200 sm:px-5 sm:last:border-r-0  ${
-                          availability === 'available'
-                            ? 'text-blue-700 '
-                            : 'text-slate-500 '
-                        }`}
-                      >
-                        <span className="text-xs" aria-hidden="true">
-                          {availability === 'available'
-                            ? '✓'
-                            : availability === 'unavailable'
-                              ? '!'
-                              : icon}
-                        </span>
-                        <span className="min-w-0">
-                          <span className="block text-[9px] font-extrabold truncate">{label}</span>
-                          <span className="block text-[8px] font-semibold mt-0.5">{statusLabel}</span>
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {(commuteAdviceOptions.includes('traffic_delays') || commuteAdviceOptions.includes('best_departure')) && (commuteResult.partial?.traffic_available === true && commuteResult.route ? (
-                <div className="grid grid-cols-2 overflow-hidden rounded-2xl border border-slate-200 sm:grid-cols-4 ">
-                  <MetricCard icon="🕒" label="ETA" value={formatCommuteMinutes(commuteResult.route?.eta_minutes)} />
-                  <MetricCard icon="📍" label="Distance" value={formatCommuteDistance(commuteResult.route?.distance_km)} />
-                  <MetricCard
-                    icon="🚗"
-                    label="Traffic delay"
-                    value={`+${formatCommuteMinutes(commuteResult.route?.delay_minutes)}`}
-                    helper="Compared with normal traffic"
-                    valueClassName="text-orange-600 "
-                  />
-                  <MetricCard
-                    icon="📶"
-                    label="Traffic level"
-                    value={commuteResult.route?.traffic_level ?? 'Unknown'}
-                    valueClassName={
-                      commuteResult.route?.traffic_level === 'Light'
-                        ? 'text-blue-600 '
-                        : commuteResult.route?.traffic_level === 'Moderate'
-                          ? 'text-orange-600 '
-                          : 'text-red-600 '
-                    }
-                  />
-                </div>
-                ) : (
-                  <div className="rounded-2xl border border-orange-200 bg-orange-50 p-3.5 flex items-start gap-3">
-                    <span className="w-8 h-8 rounded-xl bg-orange-100 text-orange-700 flex items-center justify-center flex-shrink-0" aria-hidden="true">🚗</span>
-                    <div>
-                      <p className="text-xs font-extrabold text-orange-900">Live traffic unavailable</p>
-                      <p className="text-[10px] text-orange-700 mt-1">Destination weather is available, but ETA and traffic delay could not be refreshed.</p>
-                    </div>
-                  </div>
-                ))}
-
-                {(commuteAdviceOptions.includes('route_weather') || commuteAdviceOptions.includes('rain_risk')) && commuteResult.route_weather_summary?.available && commuteResult.route_weather_checkpoints && commuteResult.route_weather_checkpoints.length > 0 && (
-                  <section className="overflow-hidden rounded-2xl bg-[#fcfbf8] ">
-                    <div className="px-3.5 py-3 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 ">
-                      <div>
-                        <p className="text-xs font-extrabold text-slate-900 ">Weather along your route</p>
-                        <p className="text-[9px] text-slate-400 mt-0.5 ">
-                          Forecast matched to your estimated passing time
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[8px] font-extrabold text-blue-700  ">
-                          🗺️ {commuteResult.route_weather_checkpoints.length} checkpoints
-                        </span>
-                        <span className="text-[8px] font-bold text-slate-400">Tap a card</span>
-                      </div>
-                    </div>
-
-                    <div className="p-3 sm:p-3.5">
-                      {(() => {
-                        const routeCheckpoints = commuteResult.route_weather_checkpoints || [];
-                        const selectedCheckpoint =
-                          routeCheckpoints.find((checkpoint) => checkpoint.index === selectedCommuteCheckpointIndex) ||
-                          routeCheckpoints[0];
-                        const selectedVisual = selectedCheckpoint
-                          ? getRouteCheckpointVisual(selectedCheckpoint)
-                          : null;
-
-                        return (
-                          <>
-                            <div className="flex flex-col lg:flex-row lg:items-stretch gap-0 lg:gap-2">
-                              {routeCheckpoints.map((checkpoint, index) => {
-                                const visual = getRouteCheckpointVisual(checkpoint);
-                                const rainChance = Number(checkpoint.rain_probability ?? 0);
-                                const isSelected = checkpoint.index === selectedCheckpoint?.index;
-                                const isHighRisk = rainChance >= 70;
-                                const isRainRisk = rainChance >= 50;
-                                const cardTone = !checkpoint.available
-                                  ? 'border-slate-200 bg-slate-50/60  '
-                                  : isHighRisk
-                                    ? 'border-orange-300 bg-orange-50/40  '
-                                    : isRainRisk
-                                      ? 'border-amber-200 bg-amber-50/30  '
-                                      : 'border-slate-200 bg-transparent ';
-
-                                return (
-                                  <div key={`${checkpoint.index}-${checkpoint.lat}-${checkpoint.lon}`} className="contents">
-                                    <CheckpointItem
-                                      selected={isSelected}
-                                      onClick={() => setSelectedCommuteCheckpointIndex(checkpoint.index)}
-                                      label={`View forecast details for ${checkpoint.location_name}`}
-                                      className={cardTone}
-                                    >
-                                      <div className="flex items-start justify-between gap-3 lg:flex-col lg:items-center">
-                                        <span className={`flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-full border text-3xl shadow-sm lg:h-20 lg:w-20 lg:text-4xl ${
-                                          isHighRisk
-                                            ? 'border-orange-200 bg-white  '
-                                            : 'border-blue-100 bg-white  '
-                                        }`} aria-hidden="true">
-                                          {visual.icon}
-                                        </span>
-                                        <div className="min-w-0 flex-1 lg:w-full">
-                                          <div className="flex items-center justify-between gap-2 lg:justify-center">
-                                            <p className={`text-[11px] font-extrabold truncate ${isHighRisk ? 'text-orange-900 ' : 'text-slate-900 '}`} title={checkpoint.location_name}>
-                                              {shortCommutePlace(checkpoint.location_name, `Checkpoint ${index + 1}`)}
-                                            </p>
-                                            <span className={`rounded-full px-2 py-1 text-[9px] font-black ${
-                                              isHighRisk
-                                                ? 'bg-orange-100 text-orange-700  '
-                                                : isRainRisk
-                                                  ? 'bg-amber-100 text-amber-700  '
-                                                : 'bg-blue-100 text-blue-700  '
-                                            }`}>
-                                              {checkpoint.available && checkpoint.rain_probability != null
-                                                ? `${Math.round(checkpoint.rain_probability)}%`
-                                                : 'N/A'}
-                                            </span>
-                                          </div>
-                                          <p className="mt-1 text-[9px] font-semibold text-slate-500 ">
-                                            🕒 {formatCommuteClock(checkpoint.arrival_time)}
-                                          </p>
-                                          <p className="mt-1.5 text-[9px] font-bold text-slate-700 ">
-                                            {visual.label}
-                                          </p>
-                                          {checkpoint.available && checkpoint.precipitation_mm != null && (
-                                            <p className="mt-1 text-[9px] font-extrabold text-sky-700 ">
-                                              💧 {formatRainAmount(checkpoint.precipitation_mm)} possible
-                                            </p>
-                                          )}
-                                        </div>
-                                      </div>
-                                      <span className="mt-2 hidden text-[8px] font-bold text-blue-700  lg:block">
-                                        {isSelected ? 'Details shown below' : 'Click for details'}
-                                      </span>
-                                    </CheckpointItem>
-
-                                    {index < routeCheckpoints.length - 1 && (
-                                      <>
-                                        <div className="flex lg:hidden h-4 pl-5 items-stretch" aria-hidden="true">
-                                          <span className={`w-0.5 h-full ${isHighRisk || isRainRisk ? 'bg-orange-400' : 'bg-blue-500'}`} />
-                                        </div>
-                                        <div className="hidden lg:flex w-4 items-center justify-center" aria-hidden="true">
-                                          <span className={`h-0.5 w-full ${isHighRisk || isRainRisk ? 'bg-orange-400' : 'bg-blue-500'}`} />
-                                        </div>
-                                      </>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </div>
-
-                            {selectedCheckpoint && selectedVisual && (
-                              <div className="mt-3 rounded-2xl border border-blue-200 bg-white p-3.5 shadow-sm  " aria-live="polite">
-                                <div className="flex items-start gap-3">
-                                  <span className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-white text-3xl shadow-sm " aria-hidden="true">
-                                    {selectedVisual.icon}
-                                  </span>
-                                  <div className="min-w-0 flex-1">
-                                    <div className="flex flex-wrap items-center justify-between gap-2">
-                                      <div>
-                                        <p className="text-xs font-extrabold text-slate-900 ">
-                                          {shortCommutePlace(selectedCheckpoint.location_name, 'Route checkpoint')}
-                                        </p>
-                                        <p className="mt-0.5 text-[9px] text-slate-500 ">
-                                          Estimated passing time · {formatCommuteClock(selectedCheckpoint.arrival_time)}
-                                        </p>
-                                      </div>
-                                      <span className="rounded-full bg-white px-2.5 py-1 text-[8px] font-extrabold text-slate-600 shadow-sm  ">
-                                        {selectedVisual.label}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </div>
-
-                                <div className="mt-3 flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between  ">
-                                  <div className="flex min-w-0 items-start gap-2.5">
-                                    <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-blue-50 text-base " aria-hidden="true">
-                                      📍
-                                    </span>
-                                    <div className="min-w-0">
-                                      <p className="text-[8px] font-extrabold uppercase tracking-wider text-slate-400">
-                                        Checkpoint address
-                                      </p>
-                                      <p className="mt-1 text-[10px] font-bold leading-relaxed text-slate-700 ">
-                                        {selectedCheckpoint.resolved_address || selectedCheckpoint.location_name || 'Approximate route checkpoint'}
-                                      </p>
-                                      {!selectedCheckpoint.resolved_address && (
-                                        <p className="mt-0.5 text-[8px] text-slate-400">
-                                          Approximate route area; a street-level address was not returned.
-                                        </p>
-                                      )}
-                                    </div>
-                                  </div>
-                                  {Number.isFinite(Number(selectedCheckpoint.lat)) && Number.isFinite(Number(selectedCheckpoint.lon)) && (
-                                    <a
-                                      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${selectedCheckpoint.lat},${selectedCheckpoint.lon}`)}`}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="inline-flex min-h-11 flex-shrink-0 items-center justify-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 text-[9px] font-extrabold text-blue-700 transition hover:bg-blue-100   "
-                                    >
-                                      🗺️ Open in Maps
-                                    </a>
-                                  )}
-                                </div>
-
-                                {selectedCheckpoint.available ? (
-                                  <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
-                                    <div className="rounded-xl bg-white p-2.5 ">
-                                      <p className="text-[8px] font-bold uppercase tracking-wide text-slate-400">☔ Rain chance</p>
-                                      <p className="mt-1 text-sm font-black text-sky-700 ">
-                                        {selectedCheckpoint.rain_probability != null ? `${Math.round(selectedCheckpoint.rain_probability)}%` : 'N/A'}
-                                      </p>
-                                    </div>
-                                    <div className="rounded-xl bg-white p-2.5 ">
-                                      <p className="text-[8px] font-bold uppercase tracking-wide text-slate-400">💧 Expected rain</p>
-                                      <p className="mt-1 text-sm font-black text-slate-900 ">
-                                        {selectedCheckpoint.precipitation_mm != null ? formatRainAmount(selectedCheckpoint.precipitation_mm) : 'N/A'}
-                                      </p>
-                                    </div>
-                                    <div className="rounded-xl bg-white p-2.5 ">
-                                      <p className="text-[8px] font-bold uppercase tracking-wide text-slate-400">🌡️ Temperature</p>
-                                      <p className="mt-1 text-sm font-black text-slate-900 ">
-                                        {selectedCheckpoint.temperature_c != null ? `${Math.round(selectedCheckpoint.temperature_c)}°C` : 'N/A'}
-                                      </p>
-                                      {selectedCheckpoint.apparent_temperature_c != null && (
-                                        <p className="text-[8px] text-slate-400">Feels {Math.round(selectedCheckpoint.apparent_temperature_c)}°C</p>
-                                      )}
-                                    </div>
-                                    <div className="rounded-xl bg-white p-2.5 ">
-                                      <p className="text-[8px] font-bold uppercase tracking-wide text-slate-400">💨 Wind</p>
-                                      <p className="mt-1 text-sm font-black text-slate-900 ">
-                                        {selectedCheckpoint.wind_speed_kmh != null ? `${Math.round(selectedCheckpoint.wind_speed_kmh)} km/h` : 'N/A'}
-                                      </p>
-                                      {selectedCheckpoint.wind_gust_kmh != null && (
-                                        <p className="text-[8px] text-slate-400">Gusts {Math.round(selectedCheckpoint.wind_gust_kmh)} km/h</p>
-                                      )}
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div className="mt-3 rounded-xl bg-white p-3 text-[10px] font-semibold text-slate-600  ">
-                                    Forecast detail is unavailable for this passing time. Try refreshing the route.
-                                  </div>
-                                )}
-
-                                <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[8px] font-semibold text-slate-400">
-                                  <span className="rounded-full bg-sky-50 px-2 py-1 text-sky-700  ">Open-Meteo</span>
-                                  <span>{String(selectedCheckpoint.forecast_method || 'hourly forecast').replace(/_/g, ' ')}</span>
-                                  <span className="sm:ml-auto">Tap another checkpoint to compare.</span>
-                                </div>
-                              </div>
-                            )}
-                          </>
-                        );
-                      })()}
-
-                      {commuteResult.route_weather_summary?.recommendation && (
-                        <AdvisoryBanner icon="☂️" title="Trip recommendation" className="mt-3">
-                          {commuteResult.route_weather_summary.recommendation}
-                        </AdvisoryBanner>
-                      )}
-
-                      <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[8px] text-slate-400">
-                        <span>TomTom route</span>
-                        <span>·</span>
-                        <span>Open-Meteo forecast</span>
-                        <span>·</span>
-                        <span>Asia/Manila</span>
-                        <span className="sm:ml-auto">Forecast may change.</span>
-                      </div>
-                    </div>
-                  </section>
-                )}
-
-                {commuteUIState === 'partial' && (
-                  <div role="status" aria-live="polite" className="rounded-2xl border border-orange-200 bg-orange-50 p-3.5">
-                    <div className="flex items-center gap-2">
-                      <span className="w-7 h-7 rounded-xl bg-orange-100 text-orange-700 flex items-center justify-center font-black" aria-hidden="true">!</span>
-                      <p className="text-xs font-extrabold uppercase tracking-wide text-orange-900">PARTIAL DATA</p>
-                    </div>
-                    <p className="text-[10px] text-orange-700 mt-1">
-                      {buildPartialCommuteMessage(
-                        commuteResult.partial,
-                        commuteAdviceOptions
-                      )}
-                    </p>
-                    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[8px] font-bold text-orange-700/80">
-                      <span>Traffic updated {formatCommuteUpdatedAt(commuteResult.freshness?.traffic_updated_at)}</span>
-                      <span>Weather updated {formatCommuteUpdatedAt(commuteResult.freshness?.weather_updated_at)}</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={checkCommuteRoute}
-                      disabled={commuteLoading}
-                      className="mt-3 w-full min-h-10 rounded-xl bg-orange-600 text-white text-[10px] font-extrabold hover:bg-orange-700 transition disabled:opacity-50"
-                    >
-                      {commuteLoading ? 'Retrying…' : 'Retry missing live data'}
-                    </button>
-                  </div>
-                )}
-
-                {commuteResult.ai_advisory && (() => {
-                  const advisory = commuteResult.ai_advisory;
-                  const isTl = advisory.language === 'tl';
-                  const readableOrigin = selectedOriginAddress
-                    ? getAddressPrimaryLabel(selectedOriginAddress)
-                    : shortCommutePlace(commuteResult.origin?.name, 'Origin');
-                  const readableDestination = selectedDestinationAddress
-                    ? getAddressPrimaryLabel(selectedDestinationAddress)
-                    : shortCommutePlace(commuteResult.destination?.name, 'Destination');
-                  const readableRoute = `${readableOrigin} → ${readableDestination}`;
-                  const cleanAdvisoryText = (value: string | null | undefined) => {
-                    let text = String(value || '');
-                    const replacements: Array<[string | undefined, string]> = [
-                      [commuteResult.origin?.name, readableOrigin],
-                      [commuteResult.destination?.name, readableDestination],
-                    ];
-                    replacements.forEach(([source, replacement]) => {
-                      if (source) text = text.split(source).join(replacement);
-                    });
-                    return text.replace(/-?\d{1,2}\.\d{4,},\s*-?\d{1,3}\.\d{4,}/g, readableOrigin);
-                  };
-
-                  const status = advisory.status || 'good_to_go';
-                  const statusMeta =
-                    status === 'consider_alternate_route'
-                      ? {
-                          icon: '🔴',
-                          label: isTl ? 'ISIPIN ANG IBANG RUTA' : 'CONSIDER ALTERNATE ROUTE',
-                          card: 'bg-red-50 border-red-200',
-                          badge: 'bg-red-600 text-white',
-                          title: 'text-red-950',
-                        }
-                      : status === 'expect_delays'
-                        ? {
-                            icon: '🟠',
-                            label: isTl ? 'ASAHAN ANG PAGKAANTALA' : 'EXPECT DELAYS',
-                            card: 'bg-orange-50 border-orange-200',
-                            badge: 'bg-orange-500 text-white',
-                            title: 'text-orange-950',
-                          }
-                        : status === 'leave_early'
-                          ? {
-                              icon: '🟡',
-                              label: isTl ? 'UMALIS NANG MAS MAAGA' : 'LEAVE EARLY',
-                              card: 'bg-amber-50 border-amber-200',
-                              badge: 'bg-amber-500 text-white',
-                              title: 'text-amber-950',
-                            }
-                          : {
-                              icon: '🟢',
-                              label: isTl ? 'MAAYOS ANG BIYAHE' : 'GOOD TO GO',
-                              card: 'bg-blue-50 border-blue-200',
-                              badge: 'bg-blue-600 text-white',
-                              title: 'text-blue-950',
-                            };
-
-                  return (
-                    <div className={`p-4 rounded-2xl border ${statusMeta.card}`}>
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-[9px] uppercase tracking-[0.18em] font-extrabold text-slate-500">
-                            {isTl ? 'AI Desisyon sa Biyahe' : 'AI Commute Decision'}
-                          </p>
-
-                          <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[9px] font-extrabold ${statusMeta.badge}`}>
-                              <span>{statusMeta.icon}</span>
-                              {advisory.status_label || statusMeta.label}
-                            </span>
-
-                            <span className="rounded-full bg-white/80 border border-black/5 px-2 py-1 text-[9px] font-extrabold text-slate-600">
-                              {isTl ? 'FILIPINO' : 'ENGLISH'}
-                            </span>
-                          </div>
-
-                          <p className={`text-sm font-extrabold mt-2 ${statusMeta.title}`}>
-                            {readableRoute}
-                          </p>
-                        </div>
-
-                        {Number(advisory.recommended_extra_minutes ?? 0) > 0 && (
-                          <div className="flex-shrink-0 rounded-2xl bg-white/80 border border-black/5 px-3 py-2 text-center shadow-sm">
-                            <p className="text-[8px] uppercase tracking-wider font-extrabold text-slate-400">
-                              {isTl ? 'Inirerekomendang allowance' : 'Recommended Buffer'}
-                            </p>
-                            <p className="text-lg font-black text-slate-900 leading-none mt-1">
-                              +{Math.round(Number(advisory.recommended_extra_minutes))}
-                              <span className="text-[9px] ml-0.5">min</span>
-                            </p>
-                            <p className="text-[7px] text-slate-400 mt-1 max-w-[110px] leading-tight">Includes weather and incidents, not traffic alone.</p>
-                          </div>
-                        )}
-                      </div>
-
-                      {advisory.summary && (
-                        <p className="text-xs text-slate-700 leading-relaxed mt-3">
-                          {cleanAdvisoryText(advisory.summary)}
-                        </p>
-                      )}
-
-                      {Array.isArray(advisory.key_reasons) && advisory.key_reasons.length > 0 && (
-                        <div className="mt-3 rounded-xl bg-white/70 border border-black/5 p-3">
-                          <p className="text-[9px] uppercase tracking-wider font-extrabold text-slate-500">
-                            {isTl ? 'Bakit ito ang rekomendasyon' : 'Why this recommendation'}
-                          </p>
-                          <div className="mt-2 space-y-1.5">
-                            {advisory.key_reasons.slice(0, 3).map((reason, index) => (
-                              <div key={`${reason}-${index}`} className="flex items-start gap-2 text-[10px] text-slate-700 leading-relaxed">
-                                <span className="mt-[5px] h-1.5 w-1.5 rounded-full bg-slate-400 flex-shrink-0" />
-                                <span>{cleanAdvisoryText(reason)}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="grid sm:grid-cols-2 gap-2 mt-3">
-                        {advisory.traffic_summary && (
-                          <div className="rounded-xl bg-white/70 border border-black/5 p-3">
-                            <p className="text-[9px] uppercase tracking-wider font-extrabold text-slate-500">
-                              {isTl ? 'Trapiko' : 'Traffic'}
-                            </p>
-                            <p className="text-[10px] text-slate-700 mt-1 leading-relaxed">
-                              {cleanAdvisoryText(advisory.traffic_summary)}
-                            </p>
-                          </div>
-                        )}
-
-                        {advisory.weather_summary && (
-                          <div className="rounded-xl bg-white/70 border border-black/5 p-3">
-                            <p className="text-[9px] uppercase tracking-wider font-extrabold text-slate-500">
-                              {isTl ? 'Panahon' : 'Weather'}
-                            </p>
-                            <p className="text-[10px] text-slate-700 mt-1 leading-relaxed">
-                              {cleanAdvisoryText(advisory.weather_summary)}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-
-                      {advisory.recommendation && (
-                        <div className="mt-3 rounded-xl bg-slate-950  text-white  border border-transparent  p-3.5">
-                          <p className="text-[9px] uppercase tracking-wider font-extrabold text-white/60">
-                            {isTl ? 'Gawin ngayon' : 'What to do'}
-                          </p>
-                          <p className="text-xs font-semibold mt-1 leading-relaxed">
-                            {cleanAdvisoryText(advisory.recommendation)}
-                          </p>
-                        </div>
-                      )}
-
-                      <p className="text-[9px] text-slate-400 mt-3 leading-relaxed">
-                        {isTl
-                          ? 'Ang AI advice ay base lamang sa route, traffic incident, at weather data na ipinakita sa itaas. Ang incident delay ay hindi awtomatikong idinadagdag sa kabuuang ETA.'
-                          : 'AI advice is based only on the route, traffic incident, and weather data shown above. Individual incident delays are not automatically added to the total ETA.'}
-                      </p>
-                    </div>
-                  );
-                })()}
-
-                {(commuteAdviceOptions.includes('route_weather') || commuteAdviceOptions.includes('rain_risk')) && commuteResult.weather && (!commuteResult.route_weather_checkpoints || commuteResult.route_weather_checkpoints.length === 0) && (() => {
-                  const weatherHighlight = getCommuteWeatherHighlight(commuteResult.weather);
-                  const rainChance = Number(commuteResult.weather.rain_probability ?? 0);
-                  const rainAlertActive = commuteResult.weather.rain_alert?.active === true || rainChance >= 50;
-                  return (
-                    <section className={`relative overflow-hidden p-3.5 sm:p-4 rounded-2xl border ${weatherHighlight.card}`}>
-                      <span className={`absolute inset-y-0 left-0 w-1 ${weatherHighlight.accent}`} aria-hidden="true" />
-
-                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 pl-1">
-                        <div className="flex items-center gap-2">
-                          <span className="w-9 h-9 rounded-xl bg-white/70 border border-white/70 flex items-center justify-center text-lg flex-shrink-0" aria-hidden="true">{weatherHighlight.icon}</span>
-                          <div className="min-w-0">
-                            <p className={`text-xs font-extrabold ${weatherHighlight.text}`}>Destination Weather</p>
-                            <p className={`text-[10px] font-semibold mt-0.5 truncate ${weatherHighlight.text} opacity-75`}>
-                              {selectedDestinationAddress ? getAddressPrimaryLabel(selectedDestinationAddress) : commuteResult.destination?.name || 'Destination'}
-                            </p>
-                          </div>
-                        </div>
-
-                        <span className={`self-start sm:self-auto px-2.5 py-1 rounded-full text-[10px] font-extrabold ${weatherHighlight.badge}`}>
-                          {weatherHighlight.label}
-                        </span>
-                      </div>
-
-                      {commuteAdviceOptions.includes('rain_risk') && rainAlertActive && (
-                        <div className="mt-3 ml-1 rounded-xl bg-white/80 border border-white/70 px-3 py-2.5">
-                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5">
-                            <div>
-                              <p className={`text-xs font-extrabold ${weatherHighlight.text}`}>
-                                ☔ {Math.round(rainChance)}% chance of rain
-                              </p>
-                              <p className="text-[10px] text-slate-600 mt-0.5">
-                                {commuteResult.weather.rain_intensity_label || 'Rain possible at the destination.'}
-                              </p>
-                            </div>
-                            {commuteResult.weather.expected_precipitation_next_hour_mm != null && (
-                              <div className="sm:text-right">
-                                <p className="text-[8px] uppercase tracking-wider font-extrabold text-slate-500">Possible next hour</p>
-                                <p className={`text-sm font-black ${weatherHighlight.text}`}>
-                                  {formatRainAmount(commuteResult.weather.expected_precipitation_next_hour_mm)}
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-3 ml-1">
-                        {commuteAdviceOptions.includes('route_weather') && commuteResult.weather.temperature_c != null && (
-                          <div className="rounded-xl bg-white/70 border border-white/70 px-2.5 py-2">
-                            <p className="text-[9px] uppercase tracking-wider font-bold text-slate-500">Temperature</p>
-                            <p className="text-sm font-extrabold text-slate-900 mt-0.5">
-                              🌡️ {Math.round(commuteResult.weather.temperature_c)}°C
-                            </p>
-                          </div>
-                        )}
-
-                        {commuteAdviceOptions.includes('route_weather') && commuteResult.weather.apparent_temperature_c != null && (
-                          <div className="rounded-xl bg-white/70 border border-white/70 px-2.5 py-2">
-                            <p className="text-[9px] uppercase tracking-wider font-bold text-slate-500">Feels Like</p>
-                            <p className={`text-sm font-extrabold mt-0.5 ${
-                              Number(commuteResult.weather.apparent_temperature_c) >= 35
-                                ? 'text-orange-600'
-                                : 'text-slate-900'
-                            }`}>
-                              ☀️ {Math.round(commuteResult.weather.apparent_temperature_c)}°C
-                            </p>
-                          </div>
-                        )}
-
-                        {commuteAdviceOptions.includes('rain_risk') && commuteResult.weather.rain_probability != null && (
-                          <div className="rounded-xl bg-white/70 border border-white/70 px-2.5 py-2">
-                            <p className="text-[9px] uppercase tracking-wider font-bold text-slate-500">Rain Chance</p>
-                            <p className={`text-sm font-extrabold mt-0.5 ${
-                              Number(commuteResult.weather.rain_probability) >= 85
-                                ? 'text-red-600'
-                                : Number(commuteResult.weather.rain_probability) >= 70
-                                  ? 'text-orange-600'
-                                  : Number(commuteResult.weather.rain_probability) >= 50
-                                    ? 'text-amber-700'
-                                    : 'text-slate-900'
-                            }`}>
-                              ☔ {Math.round(commuteResult.weather.rain_probability)}%
-                            </p>
-                          </div>
-                        )}
-
-                        {commuteAdviceOptions.includes('rain_risk') && commuteResult.weather.expected_precipitation_next_30_minutes_mm != null && (
-                          <div className="rounded-xl bg-white/70 border border-white/70 px-2.5 py-2">
-                            <p className="text-[9px] uppercase tracking-wider font-bold text-slate-500">Next 30 Min</p>
-                            <p className="text-sm font-extrabold text-slate-900 mt-0.5">
-                              🌧️ {formatRainAmount(commuteResult.weather.expected_precipitation_next_30_minutes_mm)}
-                            </p>
-                          </div>
-                        )}
-
-                        {commuteAdviceOptions.includes('rain_risk') && commuteResult.weather.expected_precipitation_next_hour_mm != null && (
-                          <div className="rounded-xl bg-white/70 border border-white/70 px-2.5 py-2">
-                            <p className="text-[9px] uppercase tracking-wider font-bold text-slate-500">Next Hour</p>
-                            <p className={`text-sm font-extrabold mt-0.5 ${rainAlertActive ? weatherHighlight.text : 'text-slate-900'}`}>
-                              💧 {formatRainAmount(commuteResult.weather.expected_precipitation_next_hour_mm)}
-                            </p>
-                          </div>
-                        )}
-
-                        {commuteAdviceOptions.includes('route_weather') && commuteResult.weather.wind_speed_kmh != null && (
-                          <div className="rounded-xl bg-white/70 border border-white/70 px-2.5 py-2">
-                            <p className="text-[9px] uppercase tracking-wider font-bold text-slate-500">Wind</p>
-                            <p className={`text-sm font-extrabold mt-0.5 ${
-                              Number(commuteResult.weather.wind_speed_kmh) >= 35
-                                ? 'text-cyan-700'
-                                : 'text-slate-900'
-                            }`}>
-                              💨 {Math.round(commuteResult.weather.wind_speed_kmh)} km/h
-                            </p>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="mt-2.5 ml-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] text-slate-500">
-                        <span className="font-bold">Updated {formatWeatherBucketTime(commuteResult.weather.weather_time)}</span>
-                        <span>· {commuteResult.weather.bucket_minutes || 30}-minute weather bucket</span>
-                        {commuteResult.weather.relative_humidity_percent != null && (
-                          <span>· Humidity {Math.round(commuteResult.weather.relative_humidity_percent)}%</span>
-                        )}
-                        {commuteResult.weather.wind_gust_kmh != null && (
-                          <span>· Gusts {Math.round(commuteResult.weather.wind_gust_kmh)} km/h</span>
-                        )}
-                        {commuteResult.weather.rain_probability_method?.includes('estimate') && (
-                          <span className="w-full text-slate-400">The :30 rain chance is estimated from the surrounding hourly ensemble forecast.</span>
-                        )}
-                      </div>
-                    </section>
-                  );
-                })()}
-
-                {commuteAdviceOptions.includes('traffic_delays') && (commuteResult.incidents?.length ?? 0) > 0 && (
-                  <div className="rounded-2xl bg-white border border-slate-200 overflow-hidden">
-                    <button
-                      type="button"
-                      onClick={() => setShowCommuteIncidents((value) => !value)}
-                      className="w-full p-3.5 flex items-center justify-between gap-3 text-left hover:bg-slate-50 transition-colors"
-                    >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="label-branded mb-0">Traffic Incidents</p>
-                          <span className="px-2 py-0.5 rounded-full bg-slate-900  text-white text-[9px] font-extrabold border border-transparent ">
-                            {commuteResult.incidents?.length ?? 0} LIVE
-                          </span>
-                        </div>
-                        <p className="text-[10px] text-slate-500 mt-1">
-                          {showCommuteIncidents ? 'Hide reported incidents' : 'View reported incidents near your route'}
-                        </p>
-                      </div>
-                      <span className={`text-slate-500 text-lg transition-transform ${showCommuteIncidents ? 'rotate-180' : ''}`}>
-                        ⌄
-                      </span>
-                    </button>
-
-                    {showCommuteIncidents && (
-                      <div className="px-3.5 pb-3.5 border-t border-slate-100">
-                        <div className="space-y-2 mt-3">
-                      {(commuteResult.incidents ?? []).slice(0, 5).map((incident, index) => {
-                        const style = getTrafficLevelStyle(incident.severity);
-
-                        return (
-                          <div
-                            key={incident.id || `${incident.type || 'incident'}-${index}`}
-                            className="rounded-xl bg-slate-50 border border-slate-100 p-3"
-                          >
-                            <div className="flex items-start gap-2.5">
-                              <span
-                                className={`mt-1.5 w-2.5 h-2.5 rounded-full flex-shrink-0 ${style.dot}`}
-                              />
-
-                              <div className="min-w-0 flex-1">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <p className="text-xs font-extrabold text-slate-900">
-                                    {incident.location_label ||
-                                      incident.category_label ||
-                                      incident.type ||
-                                      'Traffic incident'}
-                                  </p>
-
-                                  {incident.severity && (
-                                    <span
-                                      className={`px-2 py-0.5 rounded-full border text-[9px] font-extrabold ${style.badge}`}
-                                    >
-                                      {incident.severity}
-                                    </span>
-                                  )}
-                                </div>
-
-                                <p className="text-[10px] text-slate-600 mt-1">
-                                  {incident.category_label ||
-                                    incident.type ||
-                                    'Traffic incident'}
-                                  {incident.delay_minutes
-                                    ? ` · about +${incident.delay_minutes} min`
-                                    : ''}
-                                  {incident.length_meters
-                                    ? ` · ${Math.round(incident.length_meters)} m affected`
-                                    : ''}
-                                </p>
-
-                                {(incident.from || incident.to) && (
-                                  <p className="text-[10px] text-slate-500 mt-1">
-                                    {incident.from || 'Start'} → {incident.to || 'End'}
-                                  </p>
-                                )}
-
-                                {incident.distance_from_route_km != null && (
-                                  <p className="text-[9px] text-slate-400 mt-1">
-                                    {incident.distance_from_route_km <= 0.05
-                                      ? 'On your route'
-                                      : `${incident.distance_from_route_km.toFixed(2)} km from route`}
-                                  </p>
-                                )}
-
-                                {incident.last_report_time && (
-                                  <p className="text-[9px] text-slate-400 mt-1">
-                                    TomTom update:{' '}
-                                    {new Date(incident.last_report_time).toLocaleTimeString(
-                                      'en-US',
-                                      {
-                                        timeZone: 'Asia/Manila',
-                                        hour: '2-digit',
-                                        minute: '2-digit',
-                                      }
-                                    )}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                        <div className="flex flex-wrap gap-3 mt-3 pt-3 border-t border-slate-100 text-[9px] font-bold text-slate-500">
-                          <span><span className="inline-block w-2.5 h-2.5 rounded-full bg-green-500 mr-1" />Light</span>
-                          <span><span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-500 mr-1" />Moderate</span>
-                          <span><span className="inline-block w-2.5 h-2.5 rounded-full bg-red-500 mr-1" />Heavy</span>
-                          <span><span className="inline-block w-2.5 h-2.5 rounded-full bg-red-800 mr-1" />Severe / road closed</span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-
-                {(commuteAdviceOptions.includes('traffic_delays') || commuteAdviceOptions.includes('best_departure')) && (
-                  <div className="flex items-center gap-3 text-[10px] text-slate-500 flex-wrap">
-                    <span className="font-semibold">
-                      Route traffic: {commuteResult.route?.traffic_level ?? 'Unknown'}
-                    </span>
-                    <span>Live ETA/delay from TomTom Routing</span>
-                    <span className="ml-auto">{selectedOriginAddress ? getAddressPrimaryLabel(selectedOriginAddress) : commuteResult.origin?.name ?? 'Origin'} → {selectedDestinationAddress ? getAddressPrimaryLabel(selectedDestinationAddress) : commuteResult.destination?.name ?? 'Destination'}</span>
-                  </div>
-                )}
-
-                <div className="sticky bottom-0 z-30 -mx-3.5 grid grid-cols-2 gap-2 border-t border-slate-200 bg-white/95 px-3.5 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:hidden  ">
-                  <button
-                    type="button"
-                    onClick={() => setIsCommuteFormCollapsed(false)}
-                    className="min-h-11 rounded-xl border border-blue-200 bg-white px-3 text-[10px] font-extrabold text-blue-700 transition hover:bg-blue-50   "
-                  >
-                    ✏️ Edit trip
-                  </button>
-                  <button
-                    type="button"
-                    onClick={checkCommuteRoute}
-                    disabled={commuteLoading}
-                    className="min-h-11 rounded-xl bg-blue-600 px-3 text-[10px] font-extrabold text-white transition hover:bg-blue-700 disabled:opacity-50"
-                  >
-                    {commuteLoading ? 'Refreshing…' : '↻ Refresh advice'}
-                  </button>
-                </div>
-              </div>
+            {commuteResult && isCommuteFormCollapsed && (
+              <CommuteResultExperience
+                key={`${commuteResult.generated_at}-${commuteResult.destination?.name}`}
+                result={commuteResult}
+                uiState={commuteUIState}
+                loading={commuteLoading}
+                originLabel={selectedOriginAddress ? getAddressPrimaryLabel(selectedOriginAddress) : shortCommutePlace(commuteResult.origin?.name, 'Origin')}
+                destinationLabel={selectedDestinationAddress ? getAddressPrimaryLabel(selectedDestinationAddress) : shortCommutePlace(commuteResult.destination?.name, 'Destination')}
+                onEdit={() => setIsCommuteFormCollapsed(false)}
+                onRefresh={checkCommuteRoute}
+              />
             )}
+
             </div>
             </div>
           </div>
