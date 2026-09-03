@@ -15,6 +15,7 @@ import { resolveSeasonalTheme, SEASONAL_THEME_PRESENTATION } from '@/lib/seasona
 import { countChargeableLeaveDays } from '@/lib/leave-rules';
 import { computeAttendanceStatus } from '@/lib/attendance-rules';
 import { errorMessage, type AttendanceDispute, type LeaveRequest } from '@/lib/types/hr';
+import SeasonalDecor from '@/components/seasonal/SeasonalDecor';
 
 const AttendanceInsightsModal = dynamic(() => import('@/components/hr/modals/AttendanceInsightsModal'));
 const DailyOverviewModal = dynamic(() => import('@/components/hr/modals/DailyOverviewModal'));
@@ -32,6 +33,7 @@ const LeaveCreditsModal = dynamic(() => import('@/components/hr/modals/LeaveCred
 const ExportReportsModal = dynamic(() => import('@/components/hr/modals/ExportReportsModal'));
 const HelpDeskRequestsModal = dynamic(() => import('@/components/hr/modals/HelpDeskRequestsModal'));
 const EmployeeDocumentsModal = dynamic(() => import('@/components/hr/modals/EmployeeDocumentsModal'));
+const HRActionCenterModal = dynamic(() => import('@/components/hr/modals/HRActionCenterModal'));
 
 type AttendanceLog = {
   id: string;
@@ -564,6 +566,7 @@ export default function HRDashboard() {
   const [disputeActionLoadingId, setDisputeActionLoadingId] = useState<string | null>(null);
   const [disputeMsg, setDisputeMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [disputesHistoryModalOpen, setDisputesHistoryModalOpen] = useState(false);
+  const [actionCenterOpen, setActionCenterOpen] = useState(false);
 
   // Leave Requests
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
@@ -1956,15 +1959,15 @@ export default function HRDashboard() {
 
   return (
     <main id="hr-dashboard-top" className={`hr-dashboard relative min-h-screen overflow-x-hidden bg-slate-50 p-3 pb-24 text-slate-950 transition-colors dark:bg-[#111512] dark:text-slate-100 sm:p-4 sm:pb-24 md:p-6 lg:py-6 lg:pl-[260px] lg:pr-6 ${seasonalTheme.active ? `seasonal-theme seasonal-${seasonalTheme.variant} seasonal-${seasonalTheme.intensity}` : ''}`}>
-      {seasonalTheme.active && seasonalTheme.snowEnabled ? <div className="seasonal-particles" aria-hidden="true">{Array.from({ length: seasonalTheme.intensity === 'festive' ? 22 : 14 }, (_, index) => <span key={index} style={{ left: `${(index * 37) % 100}%`, fontSize: `${10 + (index % 4) * 3}px`, ['--snow-speed' as string]: `${9 + (index % 6) * 2}s`, ['--snow-delay' as string]: `${-(index % 8) * 1.7}s`, ['--snow-drift' as string]: `${(index % 2 ? 1 : -1) * (18 + index)}px` }}>{seasonalPresentation.particle}</span>)}</div> : null}
-      <HRDesktopSidebar darkMode={darkMode} requestCount={pendingHrActionCount} onDashboard={() => scrollToDashboardSection('hr-dashboard-top')} onAttendance={openAttendanceLog} onEmployees={() => setEmployeesListOpen(true)} onLeave={() => { setSelectedLeaveDetail(null); setLeaveHistoryModalOpen(true); }} onDisputes={() => { setSelectedDisputeDetail(null); setDisputesHistoryModalOpen(true); }} onPayslips={() => setEmployeesListOpen(true)} onDocuments={openDocuments} onAnnouncements={() => setAnnouncementOpen(true)} onHolidays={openHolidays} onReports={openReports} onHelpdesk={openHelpdesk} onToggleTheme={toggleTheme} onLogout={handleLogout} />
+      {seasonalTheme.active && seasonalTheme.snowEnabled ? <SeasonalDecor variant={seasonalTheme.variant} intensity={seasonalTheme.intensity} particle={seasonalPresentation.particle} /> : null}
+      <HRDesktopSidebar darkMode={darkMode} leaveRequestCount={pendingLeaveCount} disputeCount={pendingDisputesCount} onDashboard={() => scrollToDashboardSection('hr-dashboard-top')} onAttendance={openAttendanceLog} onEmployees={() => setEmployeesListOpen(true)} onLeave={() => { setSelectedLeaveDetail(null); setLeaveHistoryModalOpen(true); }} onDisputes={() => { setSelectedDisputeDetail(null); setDisputesHistoryModalOpen(true); }} onPayslips={() => setEmployeesListOpen(true)} onDocuments={openDocuments} onAnnouncements={() => setAnnouncementOpen(true)} onHolidays={openHolidays} onReports={openReports} onHelpdesk={openHelpdesk} onToggleTheme={toggleTheme} onLogout={handleLogout} />
       <div className="seasonal-content relative z-[3] max-w-7xl mx-auto space-y-3 sm:space-y-4 md:space-y-5">
         {/* Header */}
         <header className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_4px_18px_rgba(15,23,42,0.05)] dark:border-slate-700 dark:bg-[#292f2b] sm:p-4">
           <div className="min-w-0"><p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-green-700 dark:text-green-300">Hamdan Engineering</p><h1 className="mt-0.5 truncate text-xl font-bold leading-tight text-slate-950 dark:text-white sm:text-2xl">HR Dashboard</h1><p className="mt-1 hidden text-xs text-slate-600 dark:text-slate-300 sm:block">People, attendance, and employee operations.</p></div>
           <div className="flex flex-none items-center gap-1.5">
             <button type="button" onClick={toggleTheme} className="grid h-11 w-11 place-items-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:!text-white dark:hover:bg-slate-800 lg:hidden" aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}>{darkMode ? <Sun size={18}/> : <Moon size={18}/>}</button>
-            <button type="button" onClick={() => scrollToDashboardSection('action-center')} className="relative grid h-11 w-11 place-items-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:!text-white dark:hover:bg-slate-800" aria-label={`${pendingHrActionCount} pending HR actions`}><Bell size={18}/>{pendingHrActionCount ? <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[9px] font-black text-white">{pendingHrActionCount > 9 ? '9+' : pendingHrActionCount}</span> : null}</button>
+            <button type="button" onClick={() => setActionCenterOpen(true)} className="relative grid h-11 w-11 place-items-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:!text-white dark:hover:bg-slate-800" aria-label={`Open notifications, ${pendingHrActionCount} pending HR actions`}><Bell size={18}/>{pendingHrActionCount ? <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[9px] font-black text-white">{pendingHrActionCount > 9 ? '9+' : pendingHrActionCount}</span> : null}</button>
             <button type="button" onClick={() => setMobileToolsOpen(true)} className="grid h-11 w-11 place-items-center rounded-full border border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:!text-white lg:hidden" aria-label="Open HR tools"><UserRound size={18}/></button>
           </div>
         </header>
@@ -2026,6 +2029,7 @@ export default function HRDashboard() {
             <button type="button" key={stat.key} onClick={() => setDailyOverviewModal(stat.key)} className="group relative flex min-h-24 items-center gap-3 overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 text-left shadow-[0_6px_20px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-700 dark:bg-[#292f2b]" aria-label={`View ${stat.label} records`}>
               <span className={`relative grid h-11 w-11 flex-none place-items-center rounded-2xl bg-gradient-to-br text-white shadow-md ${stat.tone}`}><span className="absolute inset-[3px] rounded-[13px] border border-white/25"/>{stat.icon}</span>
               <span className="min-w-0"><span className="stat-number block text-2xl leading-none text-slate-950 dark:text-white">{stat.value}</span><span className="mt-1.5 block text-[11px] font-bold text-slate-600 dark:text-slate-300">{stat.label}</span></span>
+              <span className={`absolute inset-x-4 bottom-0 h-0.5 rounded-t-full bg-gradient-to-r ${stat.tone}`} aria-hidden="true" />
             </button>
           ))}
         </div></section>
@@ -2043,40 +2047,8 @@ export default function HRDashboard() {
             { title: 'Leave Calendar', description: 'Leaves & holidays', icon: CalendarRange, tone: 'from-violet-500 to-indigo-700', action: openLeaveCalendar },
             { title: 'Help Desk', description: openHrSupportCount ? `${openHrSupportCount} open` : 'All clear', icon: LifeBuoy, tone: 'from-sky-500 to-cyan-700', action: openHelpdesk, warning: openHrSupportCount > 0 },
             { title: 'Documents', description: `${activeHrDocumentsCount} published`, icon: FolderDown, tone: 'from-slate-500 to-slate-800', action: openDocuments },
-          ].map(({ title, description, icon: Icon, tone, action, warning, count }) => <button key={title} type="button" onClick={action} className="group relative flex min-h-28 min-w-0 flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border border-slate-200 bg-white px-1.5 py-3 text-center shadow-[0_5px_16px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:border-green-300 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 dark:border-slate-700 dark:bg-[#292f2b] dark:hover:border-green-700"><span className={`relative grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br text-white shadow-lg ring-1 ring-black/10 ${warning ? 'from-amber-500 to-orange-700' : tone}`}><span className="absolute inset-[3px] rounded-[13px] border border-white/35"/><Icon size={24} strokeWidth={3}/>{typeof count === 'number' && count > 0 && <span className="absolute -right-2 -top-2 grid h-6 min-w-6 place-items-center rounded-full border-2 border-white bg-rose-600 px-1 text-[10px] font-black text-white shadow dark:border-[#292f2b]">{count > 99 ? '99+' : count}</span>}</span><span className="line-clamp-2 text-[10px] font-extrabold leading-tight text-slate-900 dark:text-white sm:text-xs">{title}</span><span className={`hidden max-w-full truncate text-[10px] sm:block ${warning ? 'font-bold text-orange-700 dark:text-orange-300' : 'text-slate-500 dark:text-slate-300'}`}>{description}</span></button>)}
+          ].map(({ title, description, icon: Icon, tone, action, warning, count }) => <button key={title} type="button" onClick={action} className="group relative flex min-h-28 min-w-0 flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border border-slate-200 bg-white px-1.5 py-3 text-center shadow-[0_5px_16px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:border-green-300 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 dark:border-slate-700 dark:bg-[#292f2b] dark:hover:border-green-700"><span className={`relative grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br text-white shadow-lg ring-1 ring-black/10 ${warning ? 'from-amber-500 to-orange-700' : tone}`}><span className="absolute inset-[3px] rounded-[13px] border border-white/35"/><Icon size={24} strokeWidth={3}/>{typeof count === 'number' && count > 0 && <span className="absolute -right-2 -top-2 grid h-6 min-w-6 place-items-center rounded-full border-2 border-white bg-rose-600 px-1 text-[10px] font-black text-white shadow dark:border-[#292f2b]">{count > 99 ? '99+' : count}</span>}</span><span className="line-clamp-2 text-[10px] font-extrabold leading-tight text-slate-900 dark:text-white sm:text-xs">{title}</span><span className={`hidden max-w-full truncate text-[10px] sm:block ${warning ? 'font-bold text-orange-700 dark:text-orange-300' : 'text-slate-500 dark:text-slate-300'}`}>{description}</span><span className={`absolute inset-x-4 bottom-0 h-0.5 rounded-t-full bg-gradient-to-r ${warning ? 'from-amber-500 to-orange-700' : tone}`} aria-hidden="true" /></button>)}
         </div></section>
-
-        {/* Priority action center */}
-        <section id="action-center" className="card-style !p-4 scroll-mt-4">
-          <div className="flex items-center justify-between gap-3 mb-3">
-            <div>
-              <h3 className="mb-0 text-sm">Action Center</h3>
-              <p className="text-slate-400 text-[10px] mt-0.5">Items that may need HR attention today</p>
-            </div>
-            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-              {pendingHrActionCount} open
-            </span>
-          </div>
-          {pendingHrActionCount === 0 ? (
-            <div className="flex items-center justify-center gap-2 py-5 rounded-2xl border-2 border-dashed border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
-              <CheckCircle2 size={17}/><span className="text-xs font-bold">All caught up — no pending HR actions.</span>
-            </div>
-          ) : (
-            <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700">
-              {[
-                { label: 'Pending Disputes', description: 'Review attendance corrections', count: pendingDisputesCount, icon: Clock3, action: () => { setSelectedDisputeDetail(null); setDisputesHistoryModalOpen(true); } },
-                { label: 'Pending Leave Requests', description: 'Approve or reject submitted leave', count: pendingLeaveCount, icon: CalendarClock, action: () => { setSelectedLeaveDetail(null); setLeaveHistoryModalOpen(true); } },
-                { label: 'Open Help Desk Requests', description: 'Respond to employee concerns', count: openHrSupportCount, icon: Headphones, action: openHelpdesk },
-              ].map((item) => (
-                <button key={item.label} type="button" onClick={item.action} className="flex min-h-16 w-full items-center gap-3 border-b border-slate-200 bg-white px-3 py-3 text-left transition last:border-b-0 hover:bg-slate-50 dark:border-slate-700 dark:bg-[#292f2b] dark:hover:bg-slate-800">
-                  <span className="grid h-10 w-10 flex-none place-items-center rounded-xl bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300"><item.icon size={18}/></span>
-                  <span className="min-w-0 flex-1"><span className="block text-xs font-bold text-slate-900 dark:text-white">{item.label}</span><span className="mt-0.5 block text-[10px] text-slate-500 dark:text-slate-300">{item.description}</span></span>
-                  <span className="grid h-7 min-w-7 place-items-center rounded-full bg-slate-100 px-2 text-xs font-black text-slate-700 dark:bg-slate-800 dark:text-slate-200">{item.count}</span><ChevronRight size={17} className="text-slate-400"/>
-                </button>
-              ))}
-            </div>
-          )}
-        </section>
 
         <section className="card-style !p-4">
           <div className="flex items-start justify-between gap-3"><div><h3 className="text-sm mb-0">Attendance Insights</h3><p className="mt-0.5 text-[10px] text-slate-400">Current-month performance</p></div><button type="button" onClick={() => setAttendanceInsightModal('attendance')} className="inline-flex min-h-11 items-center gap-1 rounded-full px-3 text-xs font-bold text-green-700 hover:bg-green-50 dark:text-green-300">View Insights <ChevronRight size={15}/></button></div>
@@ -2328,7 +2300,7 @@ export default function HRDashboard() {
         </div>
       </div>
 
-      <HRMobileBottomNav requestCount={pendingHrActionCount} onHome={() => scrollToDashboardSection('hr-dashboard-top')} onAttendance={openAttendanceLog} onRequests={() => scrollToDashboardSection('action-center')} onEmployees={() => setEmployeesListOpen(true)} onMore={() => setMobileToolsOpen(true)} />
+      <HRMobileBottomNav requestCount={pendingHrActionCount} onHome={() => scrollToDashboardSection('hr-dashboard-top')} onAttendance={openAttendanceLog} onRequests={() => setActionCenterOpen(true)} onEmployees={() => setEmployeesListOpen(true)} onMore={() => setMobileToolsOpen(true)} />
       <HRMobileToolsSheet open={mobileToolsOpen} darkMode={darkMode} onClose={() => setMobileToolsOpen(false)} onToggleTheme={toggleTheme} onLogout={handleLogout} onAnnouncements={() => setAnnouncementOpen(true)} onHolidays={openHolidays} onLeaveCalendar={openLeaveCalendar} onLeaveCredits={openLeaveCreditsModal} onReports={openReports} onDocuments={openDocuments} onHelpdesk={openHelpdesk} />
 
       <EmployeeChoiceModal open={modalMode === 'choice'} onClose={closeModal} initials={initials} openEdit={openEdit} openPayslipsModal={openPayslipsModal} selectedProfile={selectedProfile} />
@@ -2338,6 +2310,8 @@ export default function HRDashboard() {
       <PayslipManagementModal open={modalMode === 'payslips'} onClose={closeModal} onBack={() => setModalMode('choice')} deletePayslip={deletePayslip} employeePayslips={employeePayslips} employeePayslipsLoading={employeePayslipsLoading} generateCutoffOptions={generateCutoffOptions} payslipCutoff={payslipCutoff} payslipFile={payslipFile} payslipFileRef={payslipFileRef} payslipMsg={payslipMsg} payslipUploading={payslipUploading} publishMsg={publishMsg} publishPayslip={publishPayslip} publishingId={publishingId} selectedProfile={selectedProfile} setPayslipCutoff={setPayslipCutoff} setPayslipFile={setPayslipFile} uploadPayslip={uploadPayslip} />
 
       <DisputeHistoryModal open={disputesHistoryModalOpen} onClose={() => setDisputesHistoryModalOpen(false)} approveDispute={approveDispute} rejectDispute={rejectDispute} actionLoadingId={disputeActionLoadingId} message={disputeMsg} loading={disputesLoading} disputeClaimed={disputeClaimed} disputeFieldLabel={disputeFieldLabel} disputeOriginal={disputeOriginal} disputeTypeLabel={disputeTypeLabel} disputes={disputes} formatPh={formatPh} selectedDisputeDetail={selectedDisputeDetail} setSelectedDisputeDetail={setSelectedDisputeDetail} />
+
+      <HRActionCenterModal open={actionCenterOpen} onClose={() => setActionCenterOpen(false)} pendingDisputesCount={pendingDisputesCount} pendingLeaveCount={pendingLeaveCount} openHrSupportCount={openHrSupportCount} onDisputes={() => { setSelectedDisputeDetail(null); setDisputesHistoryModalOpen(true); }} onLeaveRequests={() => { setSelectedLeaveDetail(null); setLeaveHistoryModalOpen(true); }} onHelpDesk={openHelpdesk} />
 
       <LeaveHistoryModal open={leaveHistoryModalOpen} onClose={() => setLeaveHistoryModalOpen(false)} approveLeave={approveLeave} rejectLeave={rejectLeave} actionLoadingId={leaveActionLoadingId} message={leaveMsg} loading={leaveRequestsLoading} countLeaveDays={countLeaveDays} leaveRequests={leaveRequests} leaveHrNotes={leaveHrNotes} setLeaveHrNotes={setLeaveHrNotes} selectedLeaveDetail={selectedLeaveDetail} setSelectedLeaveDetail={setSelectedLeaveDetail} />
 

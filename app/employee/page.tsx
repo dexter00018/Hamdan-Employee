@@ -15,6 +15,7 @@ import { Bell, CalendarX2, CheckCircle2, Clock3, UserRound } from 'lucide-react'
 import { APP_SETTING_DEFINITIONS, DEFAULT_APP_SETTINGS, normalizeAppSettings, type AppSettingsValues } from '@/lib/app-settings';
 import { resolveSeasonalTheme, SEASONAL_THEME_PRESENTATION } from '@/lib/seasonal-theme';
 import { useVerificationDialog } from '@/components/shared/useVerificationDialog';
+import SeasonalDecor from '@/components/seasonal/SeasonalDecor';
 
 const SummaryDetailModal = dynamic(() => import('@/components/employee/modals/SummaryDetailModal'));
 const AttendanceDisputeFormModal = dynamic(() => import('@/components/employee/modals/AttendanceDisputeFormModal'));
@@ -2188,7 +2189,7 @@ export default function EmployeeDashboard() {
           .employee-quick-actions > button > div:last-child p:last-child { display: none; }
         }
       `}</style>
-      {seasonalTheme.active && seasonalTheme.snowEnabled ? <div className="seasonal-particles" aria-hidden="true">{Array.from({ length: seasonalTheme.intensity === 'festive' ? 22 : 14 }, (_, index) => <span key={index} style={{ left: `${(index * 37) % 100}%`, fontSize: `${10 + (index % 4) * 3}px`, ['--snow-speed' as string]: `${9 + (index % 6) * 2}s`, ['--snow-delay' as string]: `${-(index % 8) * 1.7}s`, ['--snow-drift' as string]: `${(index % 2 ? 1 : -1) * (18 + index)}px`, ['--snow-static-top' as string]: `${8 + (index * 41) % 84}%` }}>{seasonalPresentation.particle}</span>)}</div> : null}
+      {seasonalTheme.active && seasonalTheme.snowEnabled ? <SeasonalDecor variant={seasonalTheme.variant} intensity={seasonalTheme.intensity} particle={seasonalPresentation.particle} /> : null}
       <div className="seasonal-content mx-auto max-w-[1600px] space-y-4 md:space-y-6">
 
         {/* Header */}

@@ -330,7 +330,7 @@ export default function SuperAdminDashboard() {
         .map((key) => `${labels[key]} ${savedAppSettings?.[key] ?? 'unset'} → ${appSettings[key]}`);
       setSavedAppSettings({ ...appSettings });
       setAppSettingsMsg({ type: 'success', text: 'Settings saved. ACTIVE controls apply immediately; controls still marked FUTURE remain stored until their backend workflow is available.' });
-      const seasonalChanges = changes.filter((change) => change.toLowerCase().includes('seasonal') || change.startsWith('Theme ') || change.startsWith('Apply To') || change.startsWith('Start Date') || change.startsWith('End Date') || change.startsWith('Snow Effect') || change.startsWith('Holiday Banner'));
+      const seasonalChanges = changes.filter((change) => change.toLowerCase().includes('seasonal') || change.startsWith('Theme ') || change.startsWith('Apply To') || change.startsWith('Start Date') || change.startsWith('End Date') || change.startsWith('Holiday Banner'));
       await logAuditEvent(
         seasonalChanges.length ? 'seasonal_theme_updated' : 'app_settings_updated',
         'system',
