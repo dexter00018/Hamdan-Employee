@@ -191,6 +191,43 @@ describe('conversation, profile, and complete periods', () => {
     expect(call).toHaveBeenCalledTimes(1);
     expect(db.queries).toContainEqual({ table: 'profiles', column: 'id', value: 'alice' });
   });
+  it('answers profile_info from session data without an extra query', async () => {
+    const db = fakeClient({ profiles: [{ id: 'alice', full_name: 'Alice Test', designation: 'Architect', employee_email: 'alice@example.test' }] });
+    const call = vi.fn().mockResolvedValue({ ...classification, intent: 'own_profile', metric: 'profile_info', period: 'today' });
+    const result = await answerEmployeeQuestion(context(db.client), call);
+    expect(result.answer).toBe('Your name is Alice Test, and your designation is Architect.');
+    expect(call).toHaveBeenCalledTimes(1);
+    expect(db.queries.filter(q => q.table === 'profiles')).toHaveLength(1);
+  });
+  it.each([
+    ['timeinout_location', 'Time In / Time Out'],
+    ['dispute_process', 'File Dispute'],
+    ['leave_request_process', 'New Leave Request'],
+    ['payslip_access', 'My Payslips'],
+    ['profile_update', 'Edit Profile'],
+    ['general_navigation', 'Dashboard'],
+  ])('answers how_to metric %s with a canned instruction and no database query', async (metric, expected) => {
+    const db = fakeClient({});
+    const call = vi.fn().mockResolvedValue({ ...classification, intent: 'how_to', metric, period: 'today', target_scope: 'none' });
+    const result = await answerEmployeeQuestion(context(db.client), call);
+    expect(result.answer).toContain(expected);
+    expect(db.queries).toHaveLength(0);
+    expect(call).toHaveBeenCalledTimes(1);
+  });
+  it('answers how_to in Tagalog when the session language is tl', async () => {
+    const db = fakeClient({});
+    const call = vi.fn().mockResolvedValue({ ...classification, intent: 'how_to', metric: 'payslip_access', period: 'today', target_scope: 'none', language: 'tl' });
+    const result = await answerEmployeeQuestion({ ...context(db.client), language: 'tl' }, call);
+    expect(result.answer).toContain('My Payslips');
+    expect(result.answer).toMatch(/Pumunta/);
+  });
+  it('validates the new profile_info and how_to classifications', () => {
+    const profileInfo = { ...classification, intent: 'own_profile', metric: 'profile_info', period: 'today', target_scope: 'self', target_name: '' };
+    expect(validateClassification(profileInfo)).toMatchObject({ intent: 'own_profile', metric: 'profile_info' });
+    const howTo = { ...classification, intent: 'how_to', metric: 'payslip_access', period: 'today', target_scope: 'none', target_name: '' };
+    expect(validateClassification(howTo)).toMatchObject({ intent: 'how_to', metric: 'payslip_access' });
+    for (const change of [{ target_scope: 'self' }, { target_scope: 'other' }, { target_name: 'Bob' }, { metric: 'sql' }]) expect(() => validateClassification({ ...howTo, ...change })).toThrow();
+  });
   it('resolves full months including leap years in Manila', () => {
     expect(periodDates('current_month', new Date('2026-09-07T01:00:00Z'))).toMatchObject({ start: '2026-09-01', end: '2026-09-30' });
     expect(periodDates('current_month', new Date('2028-02-10T01:00:00Z')).end).toBe('2028-02-29');

@@ -1,5 +1,6 @@
 export const intentMetrics = {
-  own_profile: ['full_name', 'designation', 'company_email', 'profile_summary'],
+  own_profile: ['full_name', 'designation', 'company_email', 'profile_summary', 'profile_info'],
+  how_to: ['timeinout_location', 'dispute_process', 'leave_request_process', 'payslip_access', 'profile_update', 'general_navigation'],
   own_attendance: ['absent_count', 'absence_dates', 'late_dates', 'attendance_history', 'last_absent_date', 'late_count', 'present_count', 'leave_day_count', 'attendance_summary', 'time_in', 'time_out'],
   own_leave_balance: ['remaining_credits', 'total_credits', 'used_credits', 'leave_balance_summary'],
   own_leave_history: ['leave_request_count', 'approved_count', 'pending_count', 'rejected_count', 'leave_history_summary'],
@@ -30,6 +31,7 @@ export function validateClassification(v: unknown): Classification {
   if (!(intentMetrics[intent] as readonly unknown[]).includes(v.metric) || !['today', 'current_month', 'current_year', 'previous_month', 'previous_year', 'yesterday', 'custom', 'all_time', 'selected_payslip'].includes(String(v.period)) ||
     !['tl', 'en'].includes(String(v.language)) || typeof v.target_name !== 'string' || !['self', 'other', 'none'].includes(String(v.target_scope))) throw new Error('Invalid classification');
   if (intent.startsWith('own_') && (v.target_scope !== 'self' || v.target_name !== '')) throw new Error('Invalid owner scope');
+  if (intent === 'how_to' && (v.target_scope !== 'none' || v.target_name !== '')) throw new Error('Invalid how_to scope');
   if ((intent === 'own_payslip') !== (v.period === 'selected_payslip')) throw new Error('Invalid period');
   if (v.period === 'all_time' && !(intent === 'own_attendance' && v.metric === 'last_absent_date')) throw new Error('Invalid period');
   if (intent === 'directory_by_designation' && (v.target_scope !== 'other' || !/^[\p{L}\p{M}][\p{L}\p{M}\p{N} ()/'&.-]{1,79}$/u.test(v.target_name))) throw new Error('Invalid designation lookup');
