@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { answerEmployeeQuestion, ownedPayslip, workflowCall } from '@/lib/server/employee-ai';
-import { cutoffDates, payslipAnswer, payslipCutoffFromQuestion, periodDates, validateClassification, validateHistory, validatePayslip } from '@/lib/employee/ask-ai';
+import { classificationDates, designationPattern, cutoffDates, payslipAnswer, payslipCutoffFromQuestion, periodDates, validateClassification, validateHistory, validatePayslip } from '@/lib/employee/ask-ai';
 
 // Synthetic fixture: never commit an actual employee PDF or extracted payroll.
 const extraction = { readable: true, employee_name: 'Test, Alice', period_start: '2026-08-16', period_end: '2026-08-31', currency: null, basic_pay: 100, gross_pay: 120, net_pay: 105, total_deductions: 15, deductions: [{ label: 'Absent', amount: 10 }, { label: 'Late', amount: 5 }] };
@@ -208,5 +208,56 @@ describe('conversation, profile, and complete periods', () => {
     expect(result.answer).toContain('1 approved leave request');
     expect(result.answer).toContain(dates.end + ' ? ' + dates.end + ': Approved');
     expect(result.answer).not.toContain(': Pending');
+  });
+});
+
+
+describe('expanded date and directory scope', () => {
+  it('calculates previous periods correctly at year and leap-year boundaries', () => {
+    expect(periodDates('previous_month', new Date('2027-01-10T00:00:00Z'))).toMatchObject({ start: '2026-12-01', end: '2026-12-31', year: 2026 });
+    expect(periodDates('previous_month', new Date('2028-03-10T00:00:00Z')).end).toBe('2028-02-29');
+    expect(periodDates('yesterday', new Date('2027-01-01T00:00:00Z')).start).toBe('2026-12-31');
+    expect(periodDates('previous_year', new Date('2027-01-01T00:00:00Z'))).toMatchObject({ start: '2026-01-01', end: '2026-12-31' });
+  });
+  it('validates real explicit dates, rejecting overflow and reversed ranges', () => {
+    const base = { ...classification, intent: 'own_attendance', metric: 'absent_count', period: 'custom', date_start: '2026-08-01', date_end: '2026-08-31' };
+    expect(classificationDates(validateClassification(base))).toMatchObject({ start: '2026-08-01', end: '2026-08-31' });
+    for (const changes of [{ date_end: '2026-02-30' }, { date_end: '2026-07-31' }, { date_start: '' }, { period: 'current_month' }]) expect(() => validateClassification({ ...base, ...changes })).toThrow();
+  });
+  it('does not expand a historical attendance query through today', async () => {
+    const db = fakeClient({ attendance_logs: [
+      { user_id: 'alice', log_date: '2024-08-12', status: 'Absent' },
+      { user_id: 'alice', log_date: '2024-09-12', status: 'Absent' },
+      { user_id: 'bob', log_date: '2024-08-12', status: 'Absent' },
+      { user_id: 'alice', log_date: '2024-08-15', status: 'Present', time_in: null },
+    ] });
+    const call = vi.fn().mockResolvedValue({ ...classification, intent: 'own_attendance', metric: 'absent_count', period: 'custom', date_start: '2024-08-01', date_end: '2024-08-31' });
+    const result = await answerEmployeeQuestion(context(db.client), call);
+    expect(result.answer).toContain('1 records tagged Absent');
+    expect(result.answer).toContain('2024-08-31');
+  });
+  it('lists only tagged absence dates and keeps other accounts out', async () => {
+    const db = fakeClient({ attendance_logs: [
+      { user_id: 'alice', log_date: '2024-08-12', status: 'Absent' },
+      { user_id: 'alice', log_date: '2024-08-15', status: 'Present', time_in: null },
+      { user_id: 'bob', log_date: '2024-08-18', status: 'Absent' },
+    ] });
+    const call = vi.fn().mockResolvedValue({ ...classification, intent: 'own_attendance', metric: 'absence_dates', period: 'custom', date_start: '2024-08-01', date_end: '2024-08-31' });
+    const result = await answerEmployeeQuestion(context(db.client), call);
+    expect(result.answer).toContain('2024-08-12: Absent');
+    expect(result.answer).not.toContain('2024-08-15');
+    expect(result.answer).not.toContain('2024-08-18');
+  });
+  it('uses anchored IT and HR aliases rather than matching letters inside Architect', () => {
+    expect(designationPattern('IT')).toBe('IT%');
+    expect(designationPattern('HR')).toBe('HR%');
+    expect(designationPattern('architects')).toBe('%Architect%');
+  });
+  it('asks a focused clarification without a database query', async () => {
+    const db = fakeClient({});
+    const call = vi.fn().mockResolvedValue({ ...classification, intent: 'clarification', metric: 'period', period: 'today', target_scope: 'none' });
+    const result = await answerEmployeeQuestion(context(db.client), call);
+    expect(result.answer).toContain('Which month or year');
+    expect(db.from).not.toHaveBeenCalled();
   });
 });

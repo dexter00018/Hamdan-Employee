@@ -22,6 +22,10 @@ The API requires existing `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON
 
 ## Supported questions
 
+Expanded scope supports yesterday, last month, last year, named months/years, and explicit date ranges. Relative dates are computed on the server in Asia/Manila. Custom dates are validated as real ISO dates in chronological order. A month without a year uses the current year; the returned answer shows the actual range. Follow-ups preserve the previous metric and scope. Clarifications ask for a period, topic, payroll cutoff, or designation rather than repeating generic help.
+
+Directory shorthand includes IT, HR, architects/arkitekto, and engineers. IT/HR use title prefixes to avoid substring matches inside unrelated titles. Other employees remain limited to name, work email, and designation. Own attendance supports absence_dates, late_dates, and attendance_history in addition to counts and latest absence. Existing size limits remain: large attendance/leave queries fail rather than return incomplete totals; date lists display up to 100 matching records.
+
 - Own profile: "Sino ako?", "Anong pangalan ko?", own designation or work email. The server queries only approved profile columns using the verified session ID, without another model call.
 - Current-month leave history spans the first through last calendar day in Asia/Manila, including scheduled requests later in the month. Current-year spans January 1 through December 31. Leave counts and details use requests whose start_date falls in that range; attendance remains capped at today. Payroll cutoff dates are resolved separately.
 

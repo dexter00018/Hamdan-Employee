@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { cutoffDates, isRecord, payslipAnswer, payslipCutoffFromQuestion, periodDates, validateClassification, validatePayslip, type Classification, type ChatTurn } from '@/lib/employee/ask-ai';
+import { classificationDates, designationPattern, cutoffDates, isRecord, payslipAnswer, payslipCutoffFromQuestion, periodDates, validateClassification, validatePayslip, type Classification, type ChatTurn } from '@/lib/employee/ask-ai';
 
 export class EmployeeAIError extends Error {
   constructor(message: string, public status = 503) { super(message); }
@@ -52,7 +52,7 @@ export async function downloadOwnedPdf(client: SupabaseClient, path: string) {
 type Context = { history?: ChatTurn[]; client: SupabaseClient; userId: string; fullName: string; question: string; language: string; payslipId?: string; requestId: string };
 export async function answerEmployeeQuestion(ctx: Context, call = workflowCall) {
   const { client, userId, question, payslipId, requestId } = ctx;
-  const raw = await call(process.env.N8N_EMPLOYEE_AI_CLASSIFIER_URL, { question, history: ctx.history ?? [], language: ctx.language, request_id: requestId });
+  const raw = await call(process.env.N8N_EMPLOYEE_AI_CLASSIFIER_URL, { question, history: ctx.history ?? [], current_date: periodDates('today').today, language: ctx.language, request_id: requestId });
   let c: Classification;
   try { c = validateClassification(raw); } catch { throw new EmployeeAIError('I could not safely understand that question. Please rephrase.', 422); }
   const tl = ctx.language === 'tl' || (ctx.language !== 'en' && c.language === 'tl');
@@ -67,6 +67,12 @@ export async function answerEmployeeQuestion(ctx: Context, call = workflowCall) 
       company_email: `${tl ? 'Ang work email mo ay' : 'Your work email is'} ${data.employee_email || missing}.`,
     };
     return { answer: c.metric === 'profile_summary' ? Object.values(values).join('\n') : values[c.metric] };
+  }
+  if (c.intent === 'clarification') {
+    const prompts: Record<string, string> = tl
+      ? { period: 'Anong buwan o taon ang tinutukoy mo? Maaari ring magbigay ng eksaktong date range.', topic: 'Ano ang gusto mong malaman sa period na iyon: attendance, leave requests, o payslip?', payroll_cutoff: 'Unang cutoff (1?15) o pangalawang cutoff (16?end of month)? Isama ang buwan at taon.', designation: 'Anong designation o team ang hinahanap mo, halimbawa IT, HR, o Architect?' }
+      : { period: 'Which month or year do you mean? You can also give an exact date range.', topic: 'What would you like to check for that period: attendance, leave requests, or payslip?', payroll_cutoff: 'First cutoff (1?15) or second cutoff (16?end of month)? Include the month and year.', designation: 'Which designation or team do you mean, such as IT, HR, or Architect?' };
+    return { answer: prompts[c.metric] };
   }
   if (c.intent === 'unsupported') return { answer: tl ? 'Hindi ko matukoy ang supported na request sa tanong mo. Pakilinaw kung profile, attendance, leave, payslip, o work directory ang tinutukoy mo.' : 'I could not identify a supported request in your question. Please clarify whether you mean your profile, attendance, leave, payslip, or the work directory.' };
   if (c.intent === 'help') return { answer: tl ? 'Puwede kitang tulungan sa sarili mong attendance, leave, at payslip, o work email ng employee o mga employee ayon sa designation. Itanong lang, halimbawa: “Ano ang deductions ko sa August 16–31, 2026?”' : 'I can help with your attendance, leave, and payslip, or an employee’s work email. Just ask, for example: “What are my deductions for August 16–31, 2026?”' };
@@ -85,7 +91,7 @@ export async function answerEmployeeQuestion(ctx: Context, call = workflowCall) 
   }
   if (c.intent === 'directory_by_designation') {
     // Only approved directory fields, with literal designation text (no caller wildcards).
-    const { data, error } = await client.from('profiles').select('full_name, employee_email, designation').eq('role', 'employee').eq('is_active', true).ilike('designation', `%${c.target_name}%`).order('full_name').limit(101);
+    const { data, error } = await client.from('profiles').select('full_name, employee_email, designation').eq('role', 'employee').eq('is_active', true).ilike('designation', designationPattern(c.target_name)).order('full_name').limit(101);
     if (error) throw new EmployeeAIError('Unable to read the employee directory.');
     if (!data?.length) return { answer: tl ? `Walang active employee na may matching designation: ${c.target_name}.` : `No active employees match the designation: ${c.target_name}.` };
     const entries = data.slice(0, 100).map(p => `${p.full_name}\nDesignation: ${p.designation}\nWork email: ${p.employee_email || (tl ? 'Hindi nakalista' : 'Not listed')}`);
@@ -101,10 +107,12 @@ export async function answerEmployeeQuestion(ctx: Context, call = workflowCall) 
     if (c.metric !== 'company_email') parts.push(`Designation: ${p.designation || 'Not listed'}`);
     return { answer: parts.join('\n') };
   }
-  const dates = periodDates(c.period);
+  const dates = classificationDates(c);
   const { start, year } = dates;
-  const end = c.intent === 'own_attendance' ? dates.today : dates.end;
+  const end = c.intent === 'own_attendance' && dates.end > dates.today ? dates.today : dates.end;
+  if (c.intent === 'own_attendance' && start > end) return { answer: tl ? 'Future pa ang period na iyon. Wala pang recorded attendance para rito.' : 'That period is in the future; there is no recorded attendance to summarize yet.' };
   if (c.intent === 'own_leave_balance') {
+    if (start.slice(0, 4) !== end.slice(0, 4)) return { answer: tl ? 'Anong taon ng leave credits ang gusto mong tingnan? Isang taon bawat balance.' : 'Which year of leave credits would you like? Balances are recorded per year.' };
     const { data, error } = await client.from('leave_credits').select('total_credits, used_credits').eq('user_id', userId).eq('year', year).maybeSingle();
     if (error) throw new EmployeeAIError('Unable to read your leave balance.');
     if (!data) return { answer: tl ? `Wala pang recorded leave balance para sa ${year}. Kontakin ang HR.` : `No recorded leave balance for ${year}. Please contact HR.` };
@@ -136,6 +144,11 @@ export async function answerEmployeeQuestion(ctx: Context, call = workflowCall) 
     const { data, error } = await client.from('attendance_logs').select('log_date, status, time_in, time_out').eq('user_id', userId).gte('log_date', start).lte('log_date', end).order('log_date').limit(1000);
     if (error || (data?.length ?? 0) >= 1000) throw new EmployeeAIError('Unable to read a complete attendance summary.');
     const rows = data ?? [];
+    if (['absence_dates', 'late_dates', 'attendance_history'].includes(c.metric)) {
+      const matching = rows.filter(r => c.metric === 'attendance_history' || r.status?.trim().toLowerCase() === (c.metric === 'absence_dates' ? 'absent' : 'late'));
+      const entries = matching.slice(-100).map(r => `${r.log_date}: ${r.status}`).join('\n');
+      return { answer: `${tl ? 'Sarili mong attendance records' : 'Your attendance records'} (${start} ? ${end}):\n${entries || (tl ? 'Walang matching record.' : 'No matching records.')}${matching.length > 100 ? '\nShowing the latest 100 matches.' : ''}` };
+    }
     if (c.metric === 'time_in' || c.metric === 'time_out') {
       const time = (v: string | null) => v ? new Date(v).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila' }) : 'Not recorded';
       return { answer: `${tl ? 'Sarili mong attendance' : 'Your attendance'} (${start} – ${end}, Asia/Manila):\n${rows.slice(-31).map(r => `${r.log_date}: ${time(r[c.metric as 'time_in' | 'time_out'])}`).join('\n') || 'No recorded logs.'}${rows.length > 31 ? '\nShowing the latest 31 recorded days.' : ''}` };

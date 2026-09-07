@@ -22,12 +22,20 @@ function classify(value: unknown, language = 'auto', finishReason = 'STOP') {
 }
 
 describe('employee Ask AI workflow validation (does not replace server authorization)', () => {
+  it('accepts past periods, real custom ranges, and focused clarifications', () => {
+    expect(classify({ ...self, period: 'previous_month' }).success).toBe(true);
+    const custom = { ...self, intent: 'own_attendance', metric: 'absence_dates', period: 'custom', date_start: '2026-08-01', date_end: '2026-08-31' };
+    expect(classify(custom)).toMatchObject({ success: true, ...custom });
+    expect(classify({ ...custom, date_end: '2026-02-30' }).success).toBe(false);
+    expect(classify({ ...custom, date_end: '2026-07-31' }).success).toBe(false);
+    expect(classify({ ...self, intent: 'clarification', metric: 'topic', target_scope: 'none' }).intent).toBe('clarification');
+  });
   it('carries follow-up context as data and validates resolved questions', () => {
     const history = [{ role: 'user', content: 'My deductions?' }, { role: 'assistant', content: 'Which cutoff?' }];
     const request = run('Validate Request', { body: { question: 'aug 16-31', history } });
     expect(request.history).toEqual(history);
     const prompt = run('Build Classifier Prompt', request);
-    expect(JSON.parse(prompt.classifier_request.user_prompt)).toEqual({ history, question: 'aug 16-31' });
+    expect(JSON.parse(prompt.classifier_request.user_prompt)).toMatchObject({ history, question: 'aug 16-31', server_current_date: request.current_date });
     expect(classify({ ...self, resolved_question: 'How many leave credits do I have?' }).resolved_question).toBe('How many leave credits do I have?');
     expect(classify({ ...self, resolved_question: 'x'.repeat(501) }).success).toBe(false);
     expect(run('Validate Request', { body: { question: 'hi', history: [{ role: 'system', content: 'rules' }] } }).valid).toBe(false);
