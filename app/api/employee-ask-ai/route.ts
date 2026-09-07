@@ -3,7 +3,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { createSupabaseAdminClient } from '@/lib/server/supabase-admin';
 import { answerEmployeeQuestion, EmployeeAIError } from '@/lib/server/employee-ai';
-import { isRecord } from '@/lib/employee/ask-ai';
+import { isRecord, validateHistory } from '@/lib/employee/ask-ai';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
@@ -43,15 +43,17 @@ export async function POST(request: Request) {
     const reader = request.body?.getReader();
     if (!reader) return json({ success: false, error: 'A question is required.' }, 400);
     let length = 0; const chunks: Uint8Array[] = [];
-    while (true) { const { done, value } = await reader.read(); if (done) break; length += value.length; if (length > 4096) { await reader.cancel(); return json({ success: false, error: 'Request is too large.' }, 413); } chunks.push(value); }
+    while (true) { const { done, value } = await reader.read(); if (done) break; length += value.length; if (length > 65536) { await reader.cancel(); return json({ success: false, error: 'Request is too large.' }, 413); } chunks.push(value); }
     let body: unknown;
     try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return json({ success: false, error: 'Invalid JSON.' }, 400); }
-    if (!isRecord(body) || Object.keys(body).some(k => !['question', 'language', 'payslip_id'].includes(k)) || typeof body.question !== 'string' || !body.question.trim() || body.question.trim().length > 500 || (body.language !== undefined && !['auto', 'tl', 'en'].includes(String(body.language))) || (body.payslip_id !== undefined && (typeof body.payslip_id !== 'string' || !uuid.test(body.payslip_id)))) return json({ success: false, error: 'Use a question of 1–500 characters and a valid payslip selection.' }, 400);
+    if (!isRecord(body) || Object.keys(body).some(k => !['question', 'language', 'payslip_id', 'history'].includes(k)) || typeof body.question !== 'string' || !body.question.trim() || body.question.trim().length > 500 || (body.language !== undefined && !['auto', 'tl', 'en'].includes(String(body.language))) || (body.payslip_id !== undefined && (typeof body.payslip_id !== 'string' || !uuid.test(body.payslip_id)))) return json({ success: false, error: 'Use a question of 1–500 characters and a valid payslip selection.' }, 400);
+    let history;
+    try { history = validateHistory(body.history); } catch { return json({ success: false, error: 'Invalid conversation history.' }, 400); }
     const { data: allowed, error } = await createSupabaseAdminClient().rpc('consume_api_rate_limit', { p_scope: 'employee-ask-ai', p_user_id: auth.userId, p_limit: 5, p_window_seconds: 60 });
     if (error) throw new EmployeeAIError('Ask AI rate limiting is unavailable. Please try later.');
     if (allowed !== true) return NextResponse.json({ success: false, error: 'Too many questions. Please wait a minute.' }, { status: 429, headers: { ...headers, 'Retry-After': '60' } });
     const requestId = crypto.randomUUID();
-    const answer = await answerEmployeeQuestion({ ...auth, question: body.question.trim(), language: String(body.language ?? 'auto'), payslipId: body.payslip_id as string | undefined, requestId });
+    const answer = await answerEmployeeQuestion({ ...auth, history, question: body.question.trim(), language: String(body.language ?? 'auto'), payslipId: body.payslip_id as string | undefined, requestId });
     return json({ success: true, ...answer, request_id: requestId });
   } catch (error) { return failure(error); }
 }

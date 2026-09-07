@@ -35,7 +35,7 @@ export default function EmployeeAskAI() {
     try {
       const response = await fetch('/api/employee-ask-ai', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
-        body: JSON.stringify({ question: trimmed, language: 'auto' }),
+        body: JSON.stringify({ question: trimmed, language: 'auto', history: messages.filter(message => !message.error).slice(-8).map(message => ({ role: message.role, content: message.text.slice(0, 1000) })) }),
       });
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.error || 'I couldn’t answer just now. Please try again.');
@@ -74,7 +74,7 @@ export default function EmployeeAskAI() {
         <ConversationScrollButton className="border-slate-200 bg-white text-slate-600 dark:border-slate-600 dark:bg-slate-800 dark:text-white" />
       </Conversation>
       <footer className="shrink-0 border-t border-slate-100 bg-white p-4 dark:border-white/10 dark:bg-[#18241f]">
-        {privacy && <p className="mb-3 text-[11px] leading-relaxed text-slate-500 dark:text-[#a8b9af]">Only your own private records are available. Payslip questions send your PDF to n8n and Google Gemini. Answers can contain mistakes; check the original payslip.</p>}
+        {privacy && <p className="mb-3 text-[11px] leading-relaxed text-slate-500 dark:text-[#a8b9af]">Only your own private records are available. Your question and up to 8 recent messages are sent to n8n and Google Gemini for context. Payslip questions send your PDF to n8n and Google Gemini. Answers can contain mistakes; check the original payslip.</p>}
         <form onSubmit={event => { event.preventDefault(); void send(question); }} className="flex items-end gap-2 rounded-[20px] border border-slate-200 bg-slate-50 p-2 transition focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500/10 dark:border-white/15 dark:bg-white/[0.035]">
           <textarea ref={input} aria-label="Message Ask AI" value={question} onChange={event => setQuestion(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(question); } }} maxLength={500} rows={2} placeholder="Ask me anything about your work…" className="max-h-28 min-h-11 flex-1 resize-none border-0 bg-transparent px-2 py-2 text-[13px] leading-relaxed text-slate-900 outline-none placeholder:text-slate-400 dark:text-[#f1f5f3]" />
           <button type="submit" disabled={busy || !question.trim()} aria-label="Send message" className="mb-0.5 grid size-9 shrink-0 place-items-center rounded-full bg-emerald-700 text-white transition hover:bg-emerald-800 disabled:bg-slate-200 disabled:text-slate-400 dark:disabled:bg-white/10 dark:disabled:text-slate-600">{busy ? <LoaderCircle size={17} className="animate-spin" /> : <ArrowUp size={19} />}</button>

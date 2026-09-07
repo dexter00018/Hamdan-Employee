@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { cutoffDates, isRecord, payslipAnswer, payslipCutoffFromQuestion, periodDates, validateClassification, validatePayslip, type Classification } from '@/lib/employee/ask-ai';
+import { cutoffDates, isRecord, payslipAnswer, payslipCutoffFromQuestion, periodDates, validateClassification, validatePayslip, type Classification, type ChatTurn } from '@/lib/employee/ask-ai';
 
 export class EmployeeAIError extends Error {
   constructor(message: string, public status = 503) { super(message); }
@@ -49,18 +49,30 @@ export async function downloadOwnedPdf(client: SupabaseClient, path: string) {
   if (bytes.subarray(0, 5).toString() !== '%PDF-') throw new EmployeeAIError('The payslip is not a valid PDF.', 422);
   return bytes;
 }
-type Context = { client: SupabaseClient; userId: string; fullName: string; question: string; language: string; payslipId?: string; requestId: string };
+type Context = { history?: ChatTurn[]; client: SupabaseClient; userId: string; fullName: string; question: string; language: string; payslipId?: string; requestId: string };
 export async function answerEmployeeQuestion(ctx: Context, call = workflowCall) {
   const { client, userId, question, payslipId, requestId } = ctx;
-  const raw = await call(process.env.N8N_EMPLOYEE_AI_CLASSIFIER_URL, { question, language: ctx.language, request_id: requestId });
+  const raw = await call(process.env.N8N_EMPLOYEE_AI_CLASSIFIER_URL, { question, history: ctx.history ?? [], language: ctx.language, request_id: requestId });
   let c: Classification;
   try { c = validateClassification(raw); } catch { throw new EmployeeAIError('I could not safely understand that question. Please rephrase.', 422); }
   const tl = ctx.language === 'tl' || (ctx.language !== 'en' && c.language === 'tl');
   if (c.intent === 'restricted_other_employee') return { answer: tl ? 'Sorry, hindi puwedeng ibahagi ang private information ng ibang employee.' : 'Sorry, we cannot share another employee’s private information.' };
-  if (c.intent === 'help' || c.intent === 'unsupported') return { answer: tl ? 'Puwede kitang tulungan sa sarili mong attendance, leave, at payslip, o work email ng employee o mga employee ayon sa designation. Itanong lang, halimbawa: “Ano ang deductions ko sa August 16–31, 2026?”' : 'I can help with your attendance, leave, and payslip, or an employee’s work email. Just ask, for example: “What are my deductions for August 16–31, 2026?”' };
+  if (c.intent === 'own_profile') {
+    const { data, error } = await client.from('profiles').select('full_name, designation, employee_email').eq('id', userId).maybeSingle();
+    if (error || !data) throw new EmployeeAIError('Unable to read your profile.');
+    const missing = tl ? 'Hindi nakalista' : 'Not listed';
+    const values: Record<string, string> = {
+      full_name: `${tl ? 'Ang pangalan mo ay' : 'Your name is'} ${data.full_name || missing}.`,
+      designation: `${tl ? 'Ang designation mo ay' : 'Your designation is'} ${data.designation || missing}.`,
+      company_email: `${tl ? 'Ang work email mo ay' : 'Your work email is'} ${data.employee_email || missing}.`,
+    };
+    return { answer: c.metric === 'profile_summary' ? Object.values(values).join('\n') : values[c.metric] };
+  }
+  if (c.intent === 'unsupported') return { answer: tl ? 'Hindi ko matukoy ang supported na request sa tanong mo. Pakilinaw kung profile, attendance, leave, payslip, o work directory ang tinutukoy mo.' : 'I could not identify a supported request in your question. Please clarify whether you mean your profile, attendance, leave, payslip, or the work directory.' };
+  if (c.intent === 'help') return { answer: tl ? 'Puwede kitang tulungan sa sarili mong attendance, leave, at payslip, o work email ng employee o mga employee ayon sa designation. Itanong lang, halimbawa: “Ano ang deductions ko sa August 16–31, 2026?”' : 'I can help with your attendance, leave, and payslip, or an employee’s work email. Just ask, for example: “What are my deductions for August 16–31, 2026?”' };
   if (c.intent === 'own_payslip') {
     let cutoff: string | null;
-    try { cutoff = payslipCutoffFromQuestion(question); }
+    try { cutoff = payslipCutoffFromQuestion(c.resolved_question ?? question); }
     catch (error) { return { answer: tl ? 'Anong cutoff ang gusto mong basahin? Isama ang buwan, dates at taon sa tanong, halimbawa: “Ano ang deductions ko sa August 16–31, 2026?”' : (error as Error).message }; }
     const slip = await ownedPayslip(client, userId, payslipId, cutoff ?? undefined);
     const pdf = await downloadOwnedPdf(client, slip.file_path);
@@ -89,13 +101,26 @@ export async function answerEmployeeQuestion(ctx: Context, call = workflowCall) 
     if (c.metric !== 'company_email') parts.push(`Designation: ${p.designation || 'Not listed'}`);
     return { answer: parts.join('\n') };
   }
-  const { start, end, year } = periodDates(c.period);
+  const dates = periodDates(c.period);
+  const { start, year } = dates;
+  const end = c.intent === 'own_attendance' ? dates.today : dates.end;
   if (c.intent === 'own_leave_balance') {
     const { data, error } = await client.from('leave_credits').select('total_credits, used_credits').eq('user_id', userId).eq('year', year).maybeSingle();
     if (error) throw new EmployeeAIError('Unable to read your leave balance.');
     if (!data) return { answer: tl ? `Wala pang recorded leave balance para sa ${year}. Kontakin ang HR.` : `No recorded leave balance for ${year}. Please contact HR.` };
-    const values: Record<string, string> = { remaining_credits: `Remaining: ${data.total_credits - data.used_credits}`, total_credits: `Total: ${data.total_credits}`, used_credits: `Used: ${data.used_credits}`, leave_balance_summary: `Total: ${data.total_credits}; Used: ${data.used_credits}; Remaining: ${data.total_credits - data.used_credits}` };
-    return { answer: `${tl ? 'Sarili mong annual leave credits' : 'Your annual leave credits'} (${year}): ${values[c.metric]}` };
+    const remaining = data.total_credits - data.used_credits;
+    const values: Record<string, string> = tl ? {
+      remaining_credits: `May ${remaining} araw ka pang leave credits para sa ${year}.`,
+      total_credits: `Ang kabuuang leave allocation mo para sa ${year} ay ${data.total_credits} araw.`,
+      used_credits: `Nagamit mo na ang ${data.used_credits} araw ng leave credits mo para sa ${year}.`,
+      leave_balance_summary: `Para sa ${year}: ${data.total_credits} araw ang allocation mo, ${data.used_credits} ang nagamit, at ${remaining} ang natitira.`,
+    } : {
+      remaining_credits: `You have ${remaining} days of leave credits remaining for ${year}.`,
+      total_credits: `Your leave allocation for ${year} is ${data.total_credits} days.`,
+      used_credits: `You have used ${data.used_credits} days of leave credits for ${year}.`,
+      leave_balance_summary: `For ${year}, you have ${data.total_credits} allocated leave days, ${data.used_credits} used, and ${remaining} remaining.`,
+    };
+    return { answer: values[c.metric] };
   }
   // Fetch only allowed columns, scoped by the verified session, never classifier identity.
   if (c.intent === 'own_attendance') {
@@ -124,12 +149,25 @@ export async function answerEmployeeQuestion(ctx: Context, call = workflowCall) 
       if (s === 'late') counts.late_count++;
     }
     const labels = { absent_count: 'Absent', late_count: 'Late', present_count: 'Present (includes late)', leave_day_count: 'Leave days' };
-    const keys = c.metric === 'attendance_summary' ? Object.keys(counts) : [c.metric];
+    if (c.metric !== 'attendance_summary') {
+      const count = counts[c.metric as keyof typeof counts];
+      const descriptions: Record<string, string> = tl
+        ? { absent_count: 'record na naka-tag na Absent', late_count: 'record na naka-tag na Late', present_count: 'present record (kasama ang Late)', leave_day_count: 'record na naka-tag na leave' }
+        : { absent_count: 'records tagged Absent', late_count: 'records tagged Late', present_count: 'present records (including Late)', leave_day_count: 'records tagged as leave' };
+      return { answer: tl ? `May ${count} kang ${descriptions[c.metric]} mula ${start} hanggang ${end}.` : `You have ${count} ${descriptions[c.metric]} from ${start} to ${end}.` };
+    }
+    const keys = Object.keys(counts);
     return { answer: `${tl ? 'Sarili mong recorded attendance' : 'Your recorded attendance'} (${start} – ${end}):\n${keys.map(k => `${labels[k as keyof typeof labels]}: ${counts[k as keyof typeof counts]}`).join('\n')}\n${tl ? 'Hindi binibilang na absent ang araw na walang log.' : 'Days without a log are not counted as absences.'}` };
   }
-  const { data, error } = await client.from('leave_requests').select('status').eq('user_id', userId).gte('start_date', start).lte('start_date', end).limit(1000);
+  const { data, error } = await client.from('leave_requests').select('status, start_date, end_date').eq('user_id', userId).gte('start_date', start).lte('start_date', end).order('start_date').limit(1000);
   if (error || (data?.length ?? 0) >= 1000) throw new EmployeeAIError('Unable to read your complete leave history.');
   const rows = data ?? [];
   const counts: Record<string, number> = { leave_request_count: rows.length, approved_count: rows.filter(r => r.status === 'Approved').length, pending_count: rows.filter(r => r.status === 'Pending').length, rejected_count: rows.filter(r => r.status === 'Rejected').length };
-  return { answer: `${tl ? 'Sarili mong leave requests na nagsisimula' : 'Your leave requests starting'} ${start} – ${end}:\n${(c.metric === 'leave_history_summary' ? Object.keys(counts) : [c.metric]).map(k => `${k.replaceAll('_', ' ')}: ${counts[k]}`).join('\n')}` };
+  const status = ({ approved_count: 'Approved', pending_count: 'Pending', rejected_count: 'Rejected' } as Record<string, string>)[c.metric];
+  const matching = status ? rows.filter(r => r.status === status) : rows;
+  const total = c.metric === 'leave_history_summary' ? rows.length : counts[c.metric];
+  const heading = tl ? `May ${total} kang ${status ? status.toLowerCase() + ' ' : ''}leave request na nagsisimula sa ${start} hanggang ${end}.` : `You have ${total} ${status ? status.toLowerCase() + ' ' : ''}leave request${total === 1 ? '' : 's'} starting between ${start} and ${end}.`;
+  const summary = c.metric === 'leave_history_summary' ? `\nApproved: ${counts.approved_count}; Pending: ${counts.pending_count}; Rejected: ${counts.rejected_count}` : '';
+  const details = matching.slice(0, 20).map(r => `${r.start_date} ? ${r.end_date}: ${r.status}`).join('\n');
+  return { answer: heading + summary + (details ? '\n' + details : '') + (matching.length > 20 ? (tl ? '\nUnang 20 requests ang ipinapakita.' : '\nShowing the first 20 requests.') : '') };
 }

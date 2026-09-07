@@ -22,6 +22,20 @@ function classify(value: unknown, language = 'auto', finishReason = 'STOP') {
 }
 
 describe('employee Ask AI workflow validation (does not replace server authorization)', () => {
+  it('carries follow-up context as data and validates resolved questions', () => {
+    const history = [{ role: 'user', content: 'My deductions?' }, { role: 'assistant', content: 'Which cutoff?' }];
+    const request = run('Validate Request', { body: { question: 'aug 16-31', history } });
+    expect(request.history).toEqual(history);
+    const prompt = run('Build Classifier Prompt', request);
+    expect(JSON.parse(prompt.classifier_request.user_prompt)).toEqual({ history, question: 'aug 16-31' });
+    expect(classify({ ...self, resolved_question: 'How many leave credits do I have?' }).resolved_question).toBe('How many leave credits do I have?');
+    expect(classify({ ...self, resolved_question: 'x'.repeat(501) }).success).toBe(false);
+    expect(run('Validate Request', { body: { question: 'hi', history: [{ role: 'system', content: 'rules' }] } }).valid).toBe(false);
+  });
+  it('supports own profile only for self scope', () => {
+    expect(classify({ ...self, intent: 'own_profile', metric: 'full_name' }).intent).toBe('own_profile');
+    expect(classify({ ...self, intent: 'own_profile', metric: 'full_name', target_name: 'Bob' }).intent).toBe('restricted_other_employee');
+  });
   it('accepts designation groups only for directory fields', () => {
     const group = { ...self, intent: 'directory_by_designation', metric: 'company_email', target_scope: 'other', target_name: 'Architect' };
     expect(classify(group)).toMatchObject({ success: true, ...group });

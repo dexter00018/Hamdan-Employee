@@ -22,7 +22,10 @@ The API requires existing `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON
 
 ## Supported questions
 
-Identity is resolved silently from the request cookies with `supabase.auth.getUser()` at the start of every POST. Missing or invalid sessions receive HTTP 401 before chat input is processed. The classifier receives only the question, language, and request ID; it must never ask for the caller's name or employee number. All private queries use the verified session user ID and the user's RLS-scoped client. Names typed in chat cannot change that identity. Clarification may still be needed for payroll dates or a colleague's directory name.
+- Own profile: "Sino ako?", "Anong pangalan ko?", own designation or work email. The server queries only approved profile columns using the verified session ID, without another model call.
+- Current-month leave history spans the first through last calendar day in Asia/Manila, including scheduled requests later in the month. Current-year spans January 1 through December 31. Leave counts and details use requests whose start_date falls in that range; attendance remains capped at today. Payroll cutoff dates are resolved separately.
+
+Identity is resolved silently from the request cookies with `supabase.auth.getUser()` at the start of every POST. Missing or invalid sessions receive HTTP 401 before chat input is processed. The classifier receives the question, language, request ID, and up to 8 recent user/assistant messages (at most 1,000 characters each); it must never ask for the caller's name or employee number. All private queries use the verified session user ID and the user's RLS-scoped client. Names typed in chat cannot change that identity. Clarification may still be needed for payroll dates or a colleague's directory name.
 
 After updating the classifier JSON, re-import it into the existing n8n classifier workflow (or replace its `Build Classifier Prompt` node code), retain its credentials, and publish it. Local JSON changes do not update a running n8n workflow automatically.
 
@@ -34,7 +37,7 @@ After updating the classifier JSON, re-import it into the existing n8n classifie
 - One active employee's approved directory work email and/or designation. Ambiguous names require clarification. No fallback to personal/login email.
 - Basic pay, gross compensation, net pay, deduction rows, or summary from the selected own published payslip. The latest published cutoff is the default; newest upload wins if a cutoff has multiple versions. Explicit month/date/year cutoffs are resolved from the question and still bound to the session owner.
 
-Name historical cutoffs directly in chat, for example ?What are my deductions for August 16?31, 2026?? Incomplete or unsupported dates produce a clarification response instead of silently choosing the latest PDF. Re-ask with the complete question and cutoff. Messages stay visible when minimized, and New conversation clears them. Each request is currently independent; the server does not send prior messages or extracted payroll data to the classifier. Re-import the updated classifier JSON to recognize explicit payslip dates.
+Name historical cutoffs directly in chat, for example ?What are my deductions for August 16?31, 2026?? Incomplete or unsupported dates produce a clarification response instead of silently choosing the latest PDF. Re-ask with the complete question and cutoff. Messages stay visible when minimized, and New conversation clears them. The chat sends the last 8 non-error messages for follow-up context. These may include previous payroll answers; n8n and Gemini process this recent history. The classifier returns a standalone resolved_question for cutoff parsing. History is untrusted and cannot authorize access or supply database facts. New conversation clears this memory; account changes reset the keyed chat component. Memory is kept only in React state and is lost on reload. Re-import the updated classifier JSON to recognize explicit payslip dates.
 
 ## PDF processing and limits
 
