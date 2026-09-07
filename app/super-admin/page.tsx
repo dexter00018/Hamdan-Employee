@@ -1,4 +1,5 @@
 'use client';
+import { applyPortalTheme } from '@/lib/portal-theme';
 import ArchivePasswordModal from '@/components/super-admin/modals/ArchivePasswordModal';
 import BackupPasswordModal from '@/components/super-admin/modals/BackupPasswordModal';
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -138,8 +139,7 @@ export default function SuperAdminDashboard() {
   const attendancePageSize = Number(appSettings.attendance_page_size || PAGE_SIZE);
 
   const applyTheme = useCallback((nextDark: boolean) => {
-    document.documentElement.classList.toggle('dark', nextDark);
-    document.documentElement.style.colorScheme = nextDark ? 'dark' : 'light';
+    applyPortalTheme(nextDark);
     try { localStorage.setItem('theme', nextDark ? 'dark' : 'light'); } catch { /* unavailable storage */ }
     setDarkMode(nextDark);
   }, []);
@@ -1000,7 +1000,7 @@ export default function SuperAdminDashboard() {
   if (!healthStatusLoading && !lastArchiveAt) attentionItems.push({ id: 'archive', title: 'No Archive Recorded', description: 'No completed data archival appears in the administrative audit trail.', actionLabel: 'Open archival', action: () => setArchivalModalOpen(true) });
 
   return (
-    <main id="super-admin-dashboard-top" className="min-h-screen bg-slate-50 p-3 pb-24 transition-colors dark:bg-[#111512] sm:p-4 md:p-6 lg:pb-6 lg:pl-[300px]">
+    <main id="super-admin-dashboard-top" className="dashboard-shell min-h-screen bg-slate-50 p-3 pb-24 transition-colors dark:bg-[#111512] sm:p-4 md:p-6 lg:pb-6 lg:pl-[300px]">
       <SuperAdminDesktopSidebar darkMode={darkMode} email={currentAdminEmail} onToggleTheme={toggleTheme} onLogout={handleLogout} onHome={() => document.getElementById('super-admin-dashboard-top')?.scrollIntoView({ behavior: 'smooth' })} onCreate={openCreateAccountModal} onAccounts={openUserAccountsModal} onAttendance={openAttendanceRecordsModal} onSettings={openAppSettingsModal} onReset={openResetPasswordModal} onAudit={openAuditLogModal} onHealth={openHealthModal} onBackup={() => setBackupModalOpen(true)} onArchive={() => setArchivalModalOpen(true)} />
       <div className="mx-auto max-w-7xl space-y-4 md:space-y-5">
         {/* SUPER ADMIN HEADER — aligned with HR / Employee hierarchy */}

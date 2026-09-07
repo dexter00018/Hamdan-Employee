@@ -1,4 +1,5 @@
 'use client';
+import { applyPortalTheme } from '@/lib/portal-theme';
 import MobileBottomNav from '@/components/employee/MobileBottomNav';
 import EmployeeSummaryCard from '@/components/employee/EmployeeSummaryCard';
 import EmployeeQuickActions from '@/components/employee/EmployeeQuickActions';
@@ -127,8 +128,7 @@ export default function EmployeeDashboard() {
   const [darkMode, setDarkMode] = useState(false);
 
   const applyTheme = useCallback((nextDark: boolean) => {
-    document.documentElement.classList.toggle('dark', nextDark);
-    document.documentElement.style.colorScheme = nextDark ? 'dark' : 'light';
+    applyPortalTheme(nextDark);
     try { localStorage.setItem('theme', nextDark ? 'dark' : 'light'); } catch { /* localStorage can be unavailable */ }
     setDarkMode(nextDark);
   }, []);
@@ -2008,7 +2008,7 @@ export default function EmployeeDashboard() {
   }
 
   return (
-    <main id="employee-dashboard-top" className={`employee-dashboard relative min-h-screen overflow-x-hidden p-3 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:p-4 sm:pb-[calc(6rem+env(safe-area-inset-bottom))] md:p-6 md:pb-[calc(6rem+env(safe-area-inset-bottom))] lg:p-8 ${seasonalTheme.active ? `seasonal-theme seasonal-${seasonalTheme.variant} seasonal-${seasonalTheme.intensity}` : ''}`}>
+    <main id="employee-dashboard-top" className={`dashboard-shell employee-dashboard relative min-h-screen overflow-x-hidden p-3 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:p-4 sm:pb-[calc(6rem+env(safe-area-inset-bottom))] md:p-6 md:pb-[calc(6rem+env(safe-area-inset-bottom))] lg:p-8 ${seasonalTheme.active ? `seasonal-theme seasonal-${seasonalTheme.variant} seasonal-${seasonalTheme.intensity}` : ''}`}>
       <style jsx global>{`
         /* DARK MODE — neutral dark gray, not pure black. */
         .dark { color-scheme: dark; }

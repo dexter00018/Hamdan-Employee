@@ -50,12 +50,12 @@ export default function EmployeeDesktopSidebar(props: Props) {
   ];
 
   return (
-    <aside className="sticky top-6 hidden h-[calc(100vh-3rem)] flex-col rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_30px_rgba(15,23,42,0.06)] dark:bg-[#292f2b] lg:flex">
+    <aside className="dashboard-sidebar sticky top-6 hidden h-[calc(100vh-3rem)] flex-col rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_30px_rgba(15,23,42,0.06)] dark:bg-[#292f2b] lg:flex">
       <div className="border-b border-slate-100 px-2 pb-4">
         <p className="text-base font-extrabold tracking-tight text-slate-900 dark:text-white">HAMDAN</p>
         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#16a34a]">Engineering</p>
       </div>
-      <nav aria-label="Employee desktop navigation" className="mt-4 flex-1 space-y-1 overflow-y-auto">
+      <nav aria-label="Employee desktop navigation" className="mt-4 min-h-0 flex-1 space-y-1 overflow-y-auto">
         {items.map(({ label, icon: Icon, action, badge }, index) => (
           <button key={label} type="button" onClick={action} className={`flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-medium transition ${index === 0 ? 'bg-green-50 text-green-700 dark:bg-[#263b2f] dark:text-[#8ee6a7]' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:hover:bg-[#343b36]'}`}>
             <Icon aria-hidden="true" size={18} strokeWidth={2} />

@@ -7,7 +7,7 @@ export default function ThemeRouteGuard() {
   const pathname = usePathname();
 
   useEffect(() => {
-    const supportsPortalTheme = pathname === '/employee' || pathname.startsWith('/employee/') || pathname === '/hr' || pathname.startsWith('/hr/');
+    const supportsPortalTheme = pathname === '/employee' || pathname.startsWith('/employee/') || pathname === '/hr' || pathname.startsWith('/hr/') || pathname === '/super-admin' || pathname.startsWith('/super-admin/');
     if (!supportsPortalTheme) {
       document.documentElement.classList.remove('dark');
       document.documentElement.style.colorScheme = 'light';

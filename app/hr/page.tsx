@@ -1,4 +1,5 @@
 'use client';
+import { applyPortalTheme } from '@/lib/portal-theme';
 import HRDesktopSidebar from '@/components/hr/HRDesktopSidebar';
 import HRMobileBottomNav from '@/components/hr/HRMobileBottomNav';
 import HRMobileToolsSheet from '@/components/hr/HRMobileToolsSheet';
@@ -194,6 +195,7 @@ export default function HRDashboard() {
   // --- Export Reports (CSV + print-ready PDF) ---
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [exportCutoff, setExportCutoff] = useState('');
+  const [exportEmployeeId, setExportEmployeeId] = useState('');
   const [rawExportMonth, setRawExportMonth] = useState(() =>
     new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit' })
       .format(new Date())
@@ -295,10 +297,11 @@ export default function HRDashboard() {
 
   const buildPayrollSummaryRows = () => {
     if (!exportCutoff) throw new Error('Please select a cutoff period first.');
-    const cutoffLogs = attendance.filter((log) => log.log_date && matchesCutoff(log.log_date, exportCutoff));
+    const cutoffLogs = attendance.filter((log) => (!exportEmployeeId || log.user_id === exportEmployeeId) && log.log_date && matchesCutoff(log.log_date, exportCutoff));
     const byEmployee = new Map<string, { name: string; empId: string; present: number; late: number; lateMinutes: number; absent: number; leave: number }>();
 
     for (const p of profiles) {
+      if (exportEmployeeId && p.id !== exportEmployeeId) continue;
       byEmployee.set(p.id, { name: p.full_name || 'Unknown', empId: p.employee_id || '-', present: 0, late: 0, lateMinutes: 0, absent: 0, leave: 0 });
     }
     for (const log of cutoffLogs) {
@@ -327,7 +330,7 @@ export default function HRDashboard() {
     try {
       const rows = buildPayrollSummaryRows();
       downloadCsv(
-        `payroll-summary-${exportCutoff.replace(':', '_')}.csv`,
+        `payroll-summary-${exportCutoff.replace(':', '_')}-${exportEmployeeId || 'all-employees'}.csv`,
         ['Employee ID', 'Name', 'Present Days', 'Late Days', 'Total Late Minutes', 'Absent Days', 'Leave Days'],
         rows
       );
@@ -346,7 +349,7 @@ export default function HRDashboard() {
       const rows = buildPayrollSummaryRows();
       printReportAsPdf(
         'Payroll Summary',
-        formatCutoffLabel(exportCutoff),
+        `${formatCutoffLabel(exportCutoff)} - ${exportEmployeeId ? profiles.find(p => p.id === exportEmployeeId)?.full_name || 'Selected employee' : 'All employees'}`,
         ['Employee ID', 'Name', 'Present Days', 'Late Days', 'Late Minutes', 'Absent Days', 'Leave Days'],
         rows
       );
@@ -437,15 +440,15 @@ export default function HRDashboard() {
   const rawExportPreviewCount = useMemo(() => {
     try {
       const { start, end } = getRawExportRange();
-      return attendance.filter((log) => !!log.log_date && log.log_date >= start && log.log_date <= end).length;
+      return attendance.filter((log) => (!exportEmployeeId || log.user_id === exportEmployeeId) && !!log.log_date && log.log_date >= start && log.log_date <= end).length;
     } catch {
       return 0;
     }
-  }, [attendance, rawExportMonth, rawExportPeriod]);
+  }, [attendance, rawExportMonth, rawExportPeriod, exportEmployeeId]);
 
   const fetchRawAttendanceRows = async () => {
     const range = getRawExportRange();
-    const { data, error } = await supabase
+    let query = supabase
       .from('attendance_logs')
       .select('id, user_id, log_date, time_in, time_out, status, profiles!inner(full_name, employee_id, role, is_active)')
       .eq('profiles.role', 'employee')
@@ -453,8 +456,15 @@ export default function HRDashboard() {
       .gte('log_date', range.start)
       .lte('log_date', range.end)
       .order('log_date', { ascending: true })
-      .order('time_in', { ascending: true, nullsFirst: false });
-    if (error) throw error;
+      .order('time_in', { ascending: true, nullsFirst: false }).order('id');
+    if (exportEmployeeId) query = query.eq('user_id', exportEmployeeId);
+    const data: AttendanceLog[] = [];
+    for (let offset = 0; ; offset += 500) {
+      const { data: page, error } = await query.range(offset, offset + 499);
+      if (error) throw error;
+      data.push(...((page || []) as unknown as AttendanceLog[]));
+      if (!page || page.length < 500) break;
+    }
 
     const logs = ((data || []) as unknown as AttendanceLog[]).sort((a, b) => {
       const dateCompare = (a.log_date || '').localeCompare(b.log_date || '');
@@ -476,7 +486,8 @@ export default function HRDashboard() {
         isLate ? formatLateDuration(getMinutesLate(log.time_in as string)) : '-',
       ];
     });
-    return { ...range, rows };
+    const employeeLabel = exportEmployeeId ? profiles.find(p => p.id === exportEmployeeId)?.full_name || 'Selected employee' : 'All employees';
+    return { ...range, label: `${range.label} - ${employeeLabel}`, suffix: `${range.suffix}-${exportEmployeeId || 'all-employees'}`, rows };
   };
 
   // Raw Attendance Log has an independent whole-month / cutoff filter.
@@ -1926,8 +1937,7 @@ export default function HRDashboard() {
   }, []);
 
   const applyTheme = (useDark: boolean) => {
-    document.documentElement.classList.toggle('dark', useDark);
-    document.documentElement.style.colorScheme = useDark ? 'dark' : 'light';
+    applyPortalTheme(useDark);
     try { localStorage.setItem('theme', useDark ? 'dark' : 'light'); } catch { /* storage can be unavailable */ }
     setDarkMode(useDark);
   };
@@ -1958,7 +1968,7 @@ export default function HRDashboard() {
   const openAttendanceLog = () => { setAttendanceHistoryOpen(true); scrollToDashboardSection('attendance-history'); };
 
   return (
-    <main id="hr-dashboard-top" className={`hr-dashboard relative min-h-screen overflow-x-hidden bg-slate-50 p-3 pb-24 text-slate-950 transition-colors dark:bg-[#111512] dark:text-slate-100 sm:p-4 sm:pb-24 md:p-6 lg:py-6 lg:pl-[260px] lg:pr-6 ${seasonalTheme.active ? `seasonal-theme seasonal-${seasonalTheme.variant} seasonal-${seasonalTheme.intensity}` : ''}`}>
+    <main id="hr-dashboard-top" className={`dashboard-shell hr-dashboard relative min-h-screen overflow-x-hidden bg-slate-50 p-3 pb-24 text-slate-950 transition-colors dark:bg-[#111512] dark:text-slate-100 sm:p-4 sm:pb-24 md:p-6 lg:py-6 lg:pl-[260px] lg:pr-6 ${seasonalTheme.active ? `seasonal-theme seasonal-${seasonalTheme.variant} seasonal-${seasonalTheme.intensity}` : ''}`}>
       {seasonalTheme.active && seasonalTheme.snowEnabled ? <SeasonalDecor variant={seasonalTheme.variant} intensity={seasonalTheme.intensity} particle={seasonalPresentation.particle} /> : null}
       <HRDesktopSidebar darkMode={darkMode} leaveRequestCount={pendingLeaveCount} disputeCount={pendingDisputesCount} onDashboard={() => scrollToDashboardSection('hr-dashboard-top')} onAttendance={openAttendanceLog} onEmployees={() => setEmployeesListOpen(true)} onLeave={() => { setSelectedLeaveDetail(null); setLeaveHistoryModalOpen(true); }} onDisputes={() => { setSelectedDisputeDetail(null); setDisputesHistoryModalOpen(true); }} onPayslips={() => setEmployeesListOpen(true)} onDocuments={openDocuments} onAnnouncements={() => setAnnouncementOpen(true)} onHolidays={openHolidays} onReports={openReports} onHelpdesk={openHelpdesk} onToggleTheme={toggleTheme} onLogout={handleLogout} />
       <div className="seasonal-content relative z-[3] max-w-7xl mx-auto space-y-3 sm:space-y-4 md:space-y-5">
@@ -2323,7 +2333,7 @@ export default function HRDashboard() {
 
       <LeaveCreditsModal open={leaveCreditsModalOpen} onClose={() => setLeaveCreditsModalOpen(false)} fallbackLeaveCredits={fallbackLeaveCredits} leaveCreditsLoading={leaveCreditsLoading} sortedLeaveCreditsData={sortedLeaveCreditsData} />
 
-      <ExportReportsModal open={exportModalOpen} onClose={() => setExportModalOpen(false)} availableCutoffs={availableCutoffs} exportCutoff={exportCutoff} exportEmployeeMasterListCSV={exportEmployeeMasterListCSV} exportEmployeeMasterListPDF={exportEmployeeMasterListPDF} exportMsg={exportMsg} exportPayrollSummaryCSV={exportPayrollSummaryCSV} exportPayrollSummaryPDF={exportPayrollSummaryPDF} exportRawAttendanceCSV={exportRawAttendanceCSV} exportRawAttendancePDF={exportRawAttendancePDF} exportingType={exportingType} formatCutoffLabel={formatCutoffLabel} rawExportMonth={rawExportMonth} rawExportPeriod={rawExportPeriod} rawExportPreviewCount={rawExportPreviewCount} setExportCutoff={setExportCutoff} setExportMsg={setExportMsg} setRawExportMonth={setRawExportMonth} setRawExportPeriod={setRawExportPeriod} />
+      <ExportReportsModal employees={profiles} exportEmployeeId={exportEmployeeId} setExportEmployeeId={setExportEmployeeId} open={exportModalOpen} onClose={() => setExportModalOpen(false)} availableCutoffs={availableCutoffs} exportCutoff={exportCutoff} exportEmployeeMasterListCSV={exportEmployeeMasterListCSV} exportEmployeeMasterListPDF={exportEmployeeMasterListPDF} exportMsg={exportMsg} exportPayrollSummaryCSV={exportPayrollSummaryCSV} exportPayrollSummaryPDF={exportPayrollSummaryPDF} exportRawAttendanceCSV={exportRawAttendanceCSV} exportRawAttendancePDF={exportRawAttendancePDF} exportingType={exportingType} formatCutoffLabel={formatCutoffLabel} rawExportMonth={rawExportMonth} rawExportPeriod={rawExportPeriod} rawExportPreviewCount={rawExportPreviewCount} setExportCutoff={setExportCutoff} setExportMsg={setExportMsg} setRawExportMonth={setRawExportMonth} setRawExportPeriod={setRawExportPeriod} />
 
       {verificationDialog}
 

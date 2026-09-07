@@ -7,9 +7,9 @@ import ModalShell from '@/components/shared/ModalShell';
 type Period = 'MONTH' | 'H1' | 'H2';
 type Feedback = { type: 'success' | 'error'; text: string } | null;
 type ExportAction = () => void | Promise<void>;
-type Props = { open: boolean; onClose: () => void; availableCutoffs: string[]; exportCutoff: string; exportEmployeeMasterListCSV: ExportAction; exportEmployeeMasterListPDF: ExportAction; exportMsg: Feedback; exportPayrollSummaryCSV: ExportAction; exportPayrollSummaryPDF: ExportAction; exportRawAttendanceCSV: ExportAction; exportRawAttendancePDF: ExportAction; exportingType: string | null; formatCutoffLabel: (key: string) => string; rawExportMonth: string; rawExportPeriod: Period; rawExportPreviewCount: number; setExportCutoff: Dispatch<SetStateAction<string>>; setExportMsg: Dispatch<SetStateAction<Feedback>>; setRawExportMonth: Dispatch<SetStateAction<string>>; setRawExportPeriod: Dispatch<SetStateAction<Period>> };
+type Props = { employees: { id: string; full_name: string | null; employee_id?: string | null }[]; exportEmployeeId: string; setExportEmployeeId: Dispatch<SetStateAction<string>>; open: boolean; onClose: () => void; availableCutoffs: string[]; exportCutoff: string; exportEmployeeMasterListCSV: ExportAction; exportEmployeeMasterListPDF: ExportAction; exportMsg: Feedback; exportPayrollSummaryCSV: ExportAction; exportPayrollSummaryPDF: ExportAction; exportRawAttendanceCSV: ExportAction; exportRawAttendancePDF: ExportAction; exportingType: string | null; formatCutoffLabel: (key: string) => string; rawExportMonth: string; rawExportPeriod: Period; rawExportPreviewCount: number; setExportCutoff: Dispatch<SetStateAction<string>>; setExportMsg: Dispatch<SetStateAction<Feedback>>; setRawExportMonth: Dispatch<SetStateAction<string>>; setRawExportPeriod: Dispatch<SetStateAction<Period>> };
 
-export default function ExportReportsModal({ open, onClose, availableCutoffs, exportCutoff, exportEmployeeMasterListCSV, exportEmployeeMasterListPDF, exportMsg, exportPayrollSummaryCSV, exportPayrollSummaryPDF, exportRawAttendanceCSV, exportRawAttendancePDF, exportingType, formatCutoffLabel, rawExportMonth, rawExportPeriod, rawExportPreviewCount, setExportCutoff, setExportMsg, setRawExportMonth, setRawExportPeriod }: Props) {
+export default function ExportReportsModal({ employees, exportEmployeeId, setExportEmployeeId, open, onClose, availableCutoffs, exportCutoff, exportEmployeeMasterListCSV, exportEmployeeMasterListPDF, exportMsg, exportPayrollSummaryCSV, exportPayrollSummaryPDF, exportRawAttendanceCSV, exportRawAttendancePDF, exportingType, formatCutoffLabel, rawExportMonth, rawExportPeriod, rawExportPreviewCount, setExportCutoff, setExportMsg, setRawExportMonth, setRawExportPeriod }: Props) {
   return (
     <ModalShell open={open} onClose={onClose} title="Export Reports" icon={<FileDown size={17} strokeWidth={2.4}/>} size="sm" closeDisabled={Boolean(exportingType)} className="dark:!border-[#34453a] dark:!bg-[#151d18]">
             {exportMsg && (
@@ -18,6 +18,14 @@ export default function ExportReportsModal({ open, onClose, availableCutoffs, ex
               </div>
             )}
 
+            <div className="mb-4">
+              <label htmlFor="attendance-export-employee" className="mb-1 block text-xs font-bold text-slate-700 dark:text-slate-200">Employee for attendance reports</label>
+              <select id="attendance-export-employee" className="input-field !text-xs" value={exportEmployeeId} disabled={!!exportingType} onChange={event => { setExportEmployeeId(event.target.value); setExportMsg(null); }}>
+                <option value="">All employees</option>
+                {[...employees].sort((a,b) => (a.full_name || '').localeCompare(b.full_name || '')).map(employee => <option key={employee.id} value={employee.id}>{employee.full_name || 'Unnamed employee'}{employee.employee_id ? ' - ' + employee.employee_id : ''}</option>)}
+              </select>
+              <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">Applies to Payroll Summary and Raw Attendance Log. Employee Master List includes all employees.</p>
+            </div>
             {/* Payroll Summary per Cutoff */}
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 mb-3 dark:!border-[#34453a] dark:!bg-[#0d1510]">
               <p className="font-bold text-slate-900 text-xs mb-1 dark:!text-white">Payroll Summary</p>

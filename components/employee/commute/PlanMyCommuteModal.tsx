@@ -643,7 +643,7 @@ export default function PlanMyCommuteModal({
           data-theme={darkMode ? 'dark' : 'light'}
         >
           <div className={`commute-canvas-surface w-[calc(100%-1rem)] max-w-[620px] max-h-[92dvh] overflow-y-auto rounded-[24px] p-4 shadow-2xl sm:p-6 ${darkMode ? 'bg-slate-950' : 'bg-[#fcfbf8]'}`}>
-            <div className="commute-modal-header sticky top-0 z-50 -mx-4 -mt-4 mb-4 flex items-start justify-between gap-4 border-b border-slate-200/80 bg-[#fcfbf8]/95 px-4 pb-3 pt-4 backdrop-blur-xl sm:-mx-6 sm:-mt-6 sm:px-6 sm:pb-4 sm:pt-6">
+            <div className="commute-modal-header sticky top-0 z-50 -mx-4 -mt-4 mb-4 flex items-start justify-between gap-4 border-b border-slate-200/80 bg-[#fcfbf8]/95 dark:!bg-[#1f252d] px-4 pb-3 pt-4 backdrop-blur-xl sm:-mx-6 sm:-mt-6 sm:px-6 sm:pb-4 sm:pt-6">
               <div className="flex items-start gap-3 min-w-0">
                 <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center flex-shrink-0 text-xl  ">
                   🌦️

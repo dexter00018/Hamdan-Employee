@@ -16,7 +16,7 @@ export default function AttendanceDisputesModal({ open, onClose, cancelDispute, 
             {!selectedMyDisputeDetail && (
               <button
                 type="button"
-                onClick={() => openDisputeModal(null, '', 'TimeIn', false)}
+                onClick={() => { close(); openDisputeModal(null, '', 'TimeIn', false); }}
                 className="inline-flex items-center justify-center gap-1.5 w-full bg-blue-600 text-white text-xs font-bold px-3.5 py-2.5 rounded-full hover:bg-blue-700 active:scale-95 transition mb-4 flex-shrink-0 shadow-sm"
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
