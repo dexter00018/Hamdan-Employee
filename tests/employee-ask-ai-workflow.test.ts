@@ -22,8 +22,21 @@ function classify(value: unknown, language = 'auto', finishReason = 'STOP') {
 }
 
 describe('employee Ask AI workflow validation (does not replace server authorization)', () => {
+  it('accepts designation groups only for directory fields', () => {
+    const group = { ...self, intent: 'directory_by_designation', metric: 'company_email', target_scope: 'other', target_name: 'Architect' };
+    expect(classify(group)).toMatchObject({ success: true, ...group });
+    expect(classify({ ...group, metric: 'net_pay' }).success).toBe(false);
+    expect(classify({ ...group, target_name: '%' }).success).toBe(false);
+  });
+  it('accepts last absent date across history, without enabling all-time counts', () => {
+    const last = { ...self, intent: 'own_attendance', metric: 'last_absent_date', period: 'all_time' };
+    expect(classify(last)).toMatchObject({ success: true, ...last });
+    expect(classify({ ...last, metric: 'absent_count' }).success).toBe(false);
+  });
   it.each([null, [], 3, 'hello', {}, { ...self, metric: 'salary' },
     { ...self, period: 'last_year' }, { ...self, user_id: 'dex' },
+    { ...self, question: 'What is your employee number?' },
+    { answer: 'Please tell me your name first.' },
     { ...self, target_name: 123 }])('rejects malformed classifier output: %j', value => {
     expect(classify(value).success).toBe(false);
   });

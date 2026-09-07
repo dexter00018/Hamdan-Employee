@@ -2,10 +2,10 @@
 
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowDownToLine, ArrowUp, Check, ChevronDown, Info, LoaderCircle, Plus, Sparkles, X } from 'lucide-react';
+import { ArrowUp, Check, ChevronDown, Info, LoaderCircle, Plus, Sparkles, X } from 'lucide-react';
 import { Conversation, ConversationContent, ConversationScrollButton } from '@/components/ai-elements/conversation';
 
-type Message = { id: string; role: 'user' | 'assistant'; text: string; payslip_id?: string; cutoff_label?: string; error?: boolean };
+type Message = { id: string; role: 'user' | 'assistant'; text: string; error?: boolean };
 const subscribe = () => () => {};
 export default function EmployeeAskAI() {
   const mounted = useSyncExternalStore(subscribe, () => true, () => false);
@@ -39,7 +39,7 @@ export default function EmployeeAskAI() {
       });
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.error || 'I couldn’t answer just now. Please try again.');
-      if (!controller.signal.aborted) setMessages(current => [...current, { id: crypto.randomUUID(), role: 'assistant', text: data.answer, payslip_id: data.payslip_id, cutoff_label: data.cutoff_label }]);
+      if (!controller.signal.aborted) setMessages(current => [...current, { id: crypto.randomUUID(), role: 'assistant', text: data.answer }]);
     } catch (error) {
       setMessages(current => [...current, { id: crypto.randomUUID(), role: 'assistant', error: true, text: controller.signal.aborted ? 'That took longer than expected. Please try again.' : error instanceof Error ? error.message : 'I couldn’t answer just now. Please try again.' }]);
     } finally { window.clearTimeout(timer); active.current = null; setBusy(false); input.current?.focus(); }
@@ -67,7 +67,6 @@ export default function EmployeeAskAI() {
             {message.role === 'assistant' && <span className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400"><Sparkles size={12} /> Ask AI</span>}
             <div className={`max-w-[92%] whitespace-pre-wrap break-words rounded-[20px] px-4 py-3 text-[13px] leading-relaxed ${message.role === 'user' ? 'rounded-br-md bg-emerald-700 text-white' : 'rounded-tl-md bg-slate-100 text-slate-700 dark:bg-white/[0.06] dark:text-[#e1ebe5]'}`} role={message.error ? 'alert' : undefined}>
               {message.text}
-              {message.payslip_id && <a href={`/api/employee-ask-ai?payslip_id=${encodeURIComponent(message.payslip_id)}`} className="mt-3 flex items-center gap-2 border-t border-slate-200 pt-3 text-xs font-semibold text-emerald-700 underline underline-offset-4 dark:border-white/10 dark:text-emerald-300"><ArrowDownToLine size={14} />Payslip · {message.cutoff_label}</a>}
             </div>
           </div>)}
           {busy && <div role="status" className="flex items-center gap-2 text-xs text-slate-500 dark:text-[#a8b9af]"><LoaderCircle size={14} className="animate-spin motion-reduce:animate-none" />Thinking…</div>}

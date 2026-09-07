@@ -22,6 +22,12 @@ The API requires existing `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON
 
 ## Supported questions
 
+Identity is resolved silently from the request cookies with `supabase.auth.getUser()` at the start of every POST. Missing or invalid sessions receive HTTP 401 before chat input is processed. The classifier receives only the question, language, and request ID; it must never ask for the caller's name or employee number. All private queries use the verified session user ID and the user's RLS-scoped client. Names typed in chat cannot change that identity. Clarification may still be needed for payroll dates or a colleague's directory name.
+
+After updating the classifier JSON, re-import it into the existing n8n classifier workflow (or replace its `Build Classifier Prompt` node code), retain its credentials, and publish it. Local JSON changes do not update a running n8n workflow automatically.
+
+- Latest own absence: "Kelan ako huling nag absent?" uses last_absent_date, only status Absent, newest log_date first, excluding future dates. Without an explicit period it searches all available history; a stated current month/year/today limits the search. Missing time-in never implies absence.
+- Group directory lookup: "Ano ang email ng mga architect?" returns names, work emails, and designations for active employees whose designation contains Architect, including Project Architect and Junior Architect / Interior Designer. Only approved directory fields are selected. At most 100 matches are shown with an explicit truncation notice; private group questions remain refused.
 - Own recorded attendance today, current month, or current year: absences, lateness, present/leave days, time-in and time-out. Missing logs are not inferred as absences. Time lists show at most the latest 31 recorded days, with an explicit notice.
 - Own annual recorded leave credits. Missing balance rows produce an explicit unavailable message rather than invented credits.
 - Counts of own leave requests whose start dates fall within the selected period.
@@ -36,7 +42,7 @@ The sample reviewed in this session was one image-only, unencrypted PDF page. Th
 
 The server verifies the selected payslip's session owner, published status and owner-prefixed storage path before download. It sends only PDF bytes and a random request ID to the reader. The reader has no Supabase credentials, database tools, external-URL download step, employee question, or session token. **n8n and Google Gemini process the payslip contents.** The UI discloses this.
 
-PDF size is limited to 4 MB; encrypted/unreadable/ambiguous or multiple-employee documents must be refused. The server validates the returned fields, matches the employee name (order-independent exact normalized tokens) and cutoff dates, checks cents precision, and checks gross-minus-deductions versus net pay when all three are readable. A nickname or missing middle name can cause a safe refusal; contact HR rather than guessing identity. Numeric checks cannot prove OCR accuracy; the answer links to an authenticated original-PDF download for comparison.
+PDF size is limited to 4 MB; encrypted/unreadable/ambiguous or multiple-employee documents must be refused. The server validates the returned fields, matches the employee name (order-independent exact normalized tokens) and cutoff dates, checks cents precision, and checks gross-minus-deductions versus net pay when all three are readable. A nickname or missing middle name can cause a safe refusal; contact HR rather than guessing identity. Numeric checks cannot prove OCR accuracy; Ask AI displays the requested amounts and deductions directly in chat, with no PDF attachment or download link. Its former PDF download endpoint returns HTTP 410.
 
 Blank/dash/unclear amounts remain null and display as “Not stated / unclear”. Currency is not inferred if the PDF does not state it. Basic pay is labelled as cutoff pay, never extrapolated to a monthly salary. No actual employee PDF, salary fixture, or extracted amount is committed to this repository.
 

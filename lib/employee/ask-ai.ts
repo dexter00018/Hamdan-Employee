@@ -1,21 +1,24 @@
 export const intentMetrics = {
-  own_attendance: ['absent_count', 'late_count', 'present_count', 'leave_day_count', 'attendance_summary', 'time_in', 'time_out'],
+  own_attendance: ['absent_count', 'last_absent_date', 'late_count', 'present_count', 'leave_day_count', 'attendance_summary', 'time_in', 'time_out'],
   own_leave_balance: ['remaining_credits', 'total_credits', 'used_credits', 'leave_balance_summary'],
   own_leave_history: ['leave_request_count', 'approved_count', 'pending_count', 'rejected_count', 'leave_history_summary'],
   own_payslip: ['basic_pay', 'gross_pay', 'net_pay', 'deductions', 'payslip_summary'],
   directory_lookup: ['company_email', 'designation', 'directory_profile'],
+  directory_by_designation: ['company_email', 'directory_profile'],
   restricted_other_employee: ['none'], help: ['none'], unsupported: ['none'],
 } as const;
 export type Intent = keyof typeof intentMetrics;
-export type Classification = { intent: Intent; metric: string; period: 'today' | 'current_month' | 'current_year' | 'selected_payslip'; target_scope: 'self' | 'other' | 'none'; target_name: string; language: 'tl' | 'en' };
+export type Classification = { intent: Intent; metric: string; period: 'today' | 'current_month' | 'current_year' | 'all_time' | 'selected_payslip'; target_scope: 'self' | 'other' | 'none'; target_name: string; language: 'tl' | 'en' };
 export const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 export function validateClassification(v: unknown): Classification {
   if (!isRecord(v) || v.success !== true || typeof v.intent !== 'string' || !Object.hasOwn(intentMetrics, v.intent)) throw new Error('Invalid classification');
   const intent = v.intent as Intent;
-  if (!(intentMetrics[intent] as readonly unknown[]).includes(v.metric) || !['today', 'current_month', 'current_year', 'selected_payslip'].includes(String(v.period)) ||
+  if (!(intentMetrics[intent] as readonly unknown[]).includes(v.metric) || !['today', 'current_month', 'current_year', 'all_time', 'selected_payslip'].includes(String(v.period)) ||
     !['tl', 'en'].includes(String(v.language)) || typeof v.target_name !== 'string' || !['self', 'other', 'none'].includes(String(v.target_scope))) throw new Error('Invalid classification');
   if (intent.startsWith('own_') && (v.target_scope !== 'self' || v.target_name !== '')) throw new Error('Invalid owner scope');
   if ((intent === 'own_payslip') !== (v.period === 'selected_payslip')) throw new Error('Invalid period');
+  if (v.period === 'all_time' && !(intent === 'own_attendance' && v.metric === 'last_absent_date')) throw new Error('Invalid period');
+  if (intent === 'directory_by_designation' && (v.target_scope !== 'other' || !/^[\p{L}\p{M}][\p{L}\p{M}\p{N} ()/'&.-]{1,79}$/u.test(v.target_name))) throw new Error('Invalid designation lookup');
   if (intent === 'directory_lookup' && (v.target_scope !== 'other' || !/^[\p{L}\p{M} .'-]{2,80}$/u.test(v.target_name))) throw new Error('Invalid directory lookup');
   return { intent, metric: v.metric as string, period: v.period as Classification['period'], target_scope: v.target_scope as Classification['target_scope'], target_name: v.target_name, language: v.language as 'tl' | 'en' };
 }

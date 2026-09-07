@@ -57,7 +57,7 @@ export async function answerEmployeeQuestion(ctx: Context, call = workflowCall) 
   try { c = validateClassification(raw); } catch { throw new EmployeeAIError('I could not safely understand that question. Please rephrase.', 422); }
   const tl = ctx.language === 'tl' || (ctx.language !== 'en' && c.language === 'tl');
   if (c.intent === 'restricted_other_employee') return { answer: tl ? 'Sorry, hindi puwedeng ibahagi ang private information ng ibang employee.' : 'Sorry, we cannot share another employee’s private information.' };
-  if (c.intent === 'help' || c.intent === 'unsupported') return { answer: tl ? 'Puwede kitang tulungan sa sarili mong attendance, leave, at payslip, o work email ng isang employee. Itanong lang, halimbawa: “Ano ang deductions ko sa August 16–31, 2026?”' : 'I can help with your attendance, leave, and payslip, or an employee’s work email. Just ask, for example: “What are my deductions for August 16–31, 2026?”' };
+  if (c.intent === 'help' || c.intent === 'unsupported') return { answer: tl ? 'Puwede kitang tulungan sa sarili mong attendance, leave, at payslip, o work email ng employee o mga employee ayon sa designation. Itanong lang, halimbawa: “Ano ang deductions ko sa August 16–31, 2026?”' : 'I can help with your attendance, leave, and payslip, or an employee’s work email. Just ask, for example: “What are my deductions for August 16–31, 2026?”' };
   if (c.intent === 'own_payslip') {
     let cutoff: string | null;
     try { cutoff = payslipCutoffFromQuestion(question); }
@@ -68,8 +68,16 @@ export async function answerEmployeeQuestion(ctx: Context, call = workflowCall) 
     try {
       if (!isRecord(result) || result.success !== true || result.request_id !== requestId) throw new Error('Invalid extraction');
       const extraction = validatePayslip(result.extraction, ctx.fullName, slip.cutoff_period);
-      return { answer: payslipAnswer(extraction, c.metric, slip.cutoff_label, tl), payslip_id: slip.id, cutoff_label: slip.cutoff_label };
+      return { answer: payslipAnswer(extraction, c.metric, slip.cutoff_label, tl) };
     } catch { throw new EmployeeAIError(tl ? 'Hindi ko makumpirma ang pangalan, cutoff, o amounts sa PDF. Buksan ang original payslip o kontakin ang HR.' : 'I could not verify the name, cutoff, or amounts in this PDF. Please open the original payslip or contact HR.', 422); }
+  }
+  if (c.intent === 'directory_by_designation') {
+    // Only approved directory fields, with literal designation text (no caller wildcards).
+    const { data, error } = await client.from('profiles').select('full_name, employee_email, designation').eq('role', 'employee').eq('is_active', true).ilike('designation', `%${c.target_name}%`).order('full_name').limit(101);
+    if (error) throw new EmployeeAIError('Unable to read the employee directory.');
+    if (!data?.length) return { answer: tl ? `Walang active employee na may matching designation: ${c.target_name}.` : `No active employees match the designation: ${c.target_name}.` };
+    const entries = data.slice(0, 100).map(p => `${p.full_name}\nDesignation: ${p.designation}\nWork email: ${p.employee_email || (tl ? 'Hindi nakalista' : 'Not listed')}`);
+    return { answer: `${tl ? 'Mga active employee na may designation na tumutugma sa' : 'Active employees with a designation matching'} "${c.target_name}":\n\n${entries.join('\n\n')}${data.length > 100 ? (tl ? '\n\nUnang 100 matches lang ang ipinapakita. Gumamit ng mas specific na designation.' : '\n\nShowing the first 100 matches. Use a more specific designation.') : ''}` };
   }
   if (c.intent === 'directory_lookup') {
     const { data, error } = await client.from('profiles').select('full_name, employee_email, designation').eq('role', 'employee').eq('is_active', true).ilike('full_name', `%${c.target_name}%`).limit(2);
@@ -91,6 +99,15 @@ export async function answerEmployeeQuestion(ctx: Context, call = workflowCall) 
   }
   // Fetch only allowed columns, scoped by the verified session, never classifier identity.
   if (c.intent === 'own_attendance') {
+    if (c.metric === 'last_absent_date') {
+      let query = client.from('attendance_logs').select('log_date').eq('user_id', userId).eq('status', 'Absent').lte('log_date', end);
+      if (c.period !== 'all_time') query = query.gte('log_date', start);
+      const { data, error } = await query.order('log_date', { ascending: false }).limit(1).maybeSingle();
+      if (error) throw new EmployeeAIError('Unable to read your last recorded absence.');
+      const range = c.period === 'all_time' ? '' : ` (${start} – ${end})`;
+      if (!data) return { answer: tl ? `Wala kang recorded na may status na Absent${range}.` : `You have no records tagged Absent${range}.` };
+      return { answer: tl ? `Huli kang naka-tag na Absent noong ${data.log_date}${range}. Batay ito sa attendance status, hindi sa kawalan ng time-in.` : `Your most recent record tagged Absent was ${data.log_date}${range}. This uses the attendance status, not a missing time-in.` };
+    }
     const { data, error } = await client.from('attendance_logs').select('log_date, status, time_in, time_out').eq('user_id', userId).gte('log_date', start).lte('log_date', end).order('log_date').limit(1000);
     if (error || (data?.length ?? 0) >= 1000) throw new EmployeeAIError('Unable to read a complete attendance summary.');
     const rows = data ?? [];

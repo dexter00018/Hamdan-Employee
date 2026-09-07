@@ -2,7 +2,7 @@ import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { createSupabaseAdminClient } from '@/lib/server/supabase-admin';
-import { answerEmployeeQuestion, downloadOwnedPdf, EmployeeAIError, ownedPayslip } from '@/lib/server/employee-ai';
+import { answerEmployeeQuestion, EmployeeAIError } from '@/lib/server/employee-ai';
 import { isRecord } from '@/lib/employee/ask-ai';
 
 export const runtime = 'nodejs';
@@ -27,13 +27,7 @@ function failure(error: unknown) {
 export async function GET(request: Request) {
   try {
     const { client, userId } = await authenticate();
-    const id = new URL(request.url).searchParams.get('payslip_id');
-    if (id) {
-      if (!uuid.test(id)) return json({ success: false, error: 'Invalid payslip.' }, 400);
-      const slip = await ownedPayslip(client, userId, id);
-      const bytes = await downloadOwnedPdf(client, slip.file_path);
-      return new Response(new Uint8Array(bytes), { headers: { ...headers, 'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename="my-payslip.pdf"' } });
-    }
+    if (new URL(request.url).searchParams.has('payslip_id')) return json({ success: false, error: 'PDF downloads are not available in Ask AI.' }, 410);
     const { data, error } = await client.from('payslips').select('id, cutoff_label, cutoff_period').eq('user_id', userId).eq('published', true).order('cutoff_period', { ascending: false }).order('uploaded_at', { ascending: false }).limit(100);
     if (error) throw new EmployeeAIError('Unable to load your payslip list.');
     return json({ success: true, payslips: data, configured: !!(process.env.N8N_EMPLOYEE_AI_CLASSIFIER_URL && process.env.N8N_EMPLOYEE_AI_WEBHOOK_SECRET), payslip_reader_configured: !!process.env.N8N_EMPLOYEE_AI_PAYSLIP_URL });
@@ -41,9 +35,11 @@ export async function GET(request: Request) {
 }
 export async function POST(request: Request) {
   try {
+    // Re-verify the cookie session on every request, before reading chat input.
+    // Only this user ID may scope private queries; the classifier provides intent only.
+    const auth = await authenticate();
     // JSON-only endpoint: browsers cannot submit a cross-origin simple form POST.
     if (!request.headers.get('content-type')?.startsWith('application/json') || request.headers.get('sec-fetch-site') === 'cross-site') return json({ success: false, error: 'Invalid request.' }, 400);
-    const auth = await authenticate();
     const reader = request.body?.getReader();
     if (!reader) return json({ success: false, error: 'A question is required.' }, 400);
     let length = 0; const chunks: Uint8Array[] = [];

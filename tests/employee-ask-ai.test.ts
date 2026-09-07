@@ -15,7 +15,10 @@ function fakeClient(tables: Record<string, Row[]>) {
     const chain = {
       select: () => chain,
       eq: (column: string, value: unknown) => { queries.push({ table, column, value }); rows = rows.filter(r => r[column] === value); return chain; },
-      gte: () => chain, lte: () => chain, order: () => chain,
+      gte: (column: string, value: string) => { rows = rows.filter(r => String(r[column]) >= value); return chain; },
+      lte: (column: string, value: string) => { rows = rows.filter(r => String(r[column]) <= value); return chain; },
+      ilike: (column: string, pattern: string) => { rows = rows.filter(r => String(r[column] ?? '').toLowerCase().includes(pattern.replaceAll('%', '').toLowerCase())); return chain; },
+      order: (column: string, options?: { ascending: boolean }) => { rows.sort((a, b) => String(a[column]).localeCompare(String(b[column])) * (options?.ascending === false ? -1 : 1)); return chain; },
       limit: (n: number) => { rows = rows.slice(0, n); return chain; },
       maybeSingle: () => { single = true; return chain; },
       then: (resolve: (v: unknown) => unknown) => Promise.resolve({ data: single ? rows[0] ?? null : rows, error: null }).then(resolve),
@@ -52,7 +55,8 @@ describe('Ask AI owner authorization', () => {
     const db = fakeClient({ payslips: [slip('mine', 'alice')] });
     const call = vi.fn().mockResolvedValueOnce(classification).mockResolvedValueOnce({ success: true, request_id: 'random-test-id', extraction });
     const answer = await answerEmployeeQuestion(context(db.client), call);
-    expect(answer.answer).toContain('Absent: 10.00'); expect(answer.payslip_id).toBe('mine');
+    expect(answer.answer).toContain('Absent: 10.00'); expect(answer).not.toHaveProperty('payslip_id');
+    expect(Object.keys(answer)).toEqual(['answer']);
     expect(Object.keys(call.mock.calls[1][1]).sort()).toEqual(['pdf_base64', 'request_id']);
     expect(call.mock.calls[0][1]).not.toHaveProperty('user_id');
     expect(db.download).toHaveBeenCalledWith('alice/mine.pdf');
@@ -110,5 +114,56 @@ describe('PDF extraction checks', () => {
   });
   it('does not send data if workflows are unconfigured', async () => {
     await expect(workflowCall(undefined, { question: 'hello' })).rejects.toThrow('not configured');
+  });
+});
+
+
+describe('directory groups and last tagged absence', () => {
+  const classify = (changes: Record<string, unknown>) => vi.fn().mockResolvedValue({ ...classification, period: 'current_month', ...changes });
+  it('returns only active employee directory matches, without private fields', async () => {
+    const db = fakeClient({ profiles: [
+      { full_name: 'Alice', role: 'employee', is_active: true, designation: 'Project Architect', employee_email: 'alice@example.test', salary: 12345 },
+      { full_name: 'Bob', role: 'employee', is_active: true, designation: 'Junior Architect / Interior Designer', employee_email: null, email: 'private@example.test' },
+      { full_name: 'Inactive', role: 'employee', is_active: false, designation: 'Architect' },
+      { full_name: 'Admin', role: 'admin', is_active: true, designation: 'Architect' },
+      { full_name: 'Engineer', role: 'employee', is_active: true, designation: 'Engineer' },
+    ] });
+    const result = await answerEmployeeQuestion(context(db.client), classify({ intent: 'directory_by_designation', metric: 'company_email', target_scope: 'other', target_name: 'Architect' }));
+    expect(result.answer).toContain('alice@example.test');
+    expect(result.answer).toContain('Bob');
+    expect(result.answer).toContain('Not listed');
+    for (const value of ['12345', 'private@example.test', 'Inactive', 'Admin', 'Engineer']) expect(result.answer).not.toContain(value);
+  });
+  it('returns the latest own Absent tag even across years, never a missing time-in', async () => {
+    const db = fakeClient({ attendance_logs: [
+      { user_id: 'alice', log_date: '2023-01-01', status: 'Absent', time_in: null },
+      { user_id: 'alice', log_date: '2024-02-03', status: 'Absent', time_in: 'recorded' },
+      { user_id: 'alice', log_date: '2025-03-04', status: 'Present', time_in: null },
+      { user_id: 'alice', log_date: '2025-04-04', status: 'Leave', time_in: null },
+      { user_id: 'bob', log_date: '2025-05-05', status: 'Absent', time_in: null },
+      { user_id: 'alice', log_date: '2099-01-01', status: 'Absent', time_in: null },
+    ] });
+    const result = await answerEmployeeQuestion(context(db.client), classify({ intent: 'own_attendance', metric: 'last_absent_date', period: 'all_time' }));
+    expect(result.answer).toContain('2024-02-03');
+    expect(result.answer).not.toContain('2025-');
+    expect(db.queries).toContainEqual({ table: 'attendance_logs', column: 'user_id', value: 'alice' });
+    expect(db.queries).toContainEqual({ table: 'attendance_logs', column: 'status', value: 'Absent' });
+  });
+  it('does not substitute an older absence for a requested current period', async () => {
+    const db = fakeClient({ attendance_logs: [{ user_id: 'alice', log_date: '2000-01-01', status: 'Absent' }] });
+    const result = await answerEmployeeQuestion(context(db.client), classify({ intent: 'own_attendance', metric: 'last_absent_date', period: 'current_month' }));
+    expect(result.answer).toContain('no records tagged Absent');
+  });
+  it('reports no tagged absences when only missing time-ins exist', async () => {
+    const db = fakeClient({ attendance_logs: [{ user_id: 'alice', log_date: '2024-01-01', status: 'Present', time_in: null }] });
+    const result = await answerEmployeeQuestion(context(db.client), classify({ intent: 'own_attendance', metric: 'last_absent_date', period: 'all_time' }));
+    expect(result.answer).toContain('no records tagged Absent');
+  });
+  it('rejects private group metrics, wildcard designations, and unsupported all-time queries', () => {
+    for (const changes of [
+      { intent: 'directory_by_designation', metric: 'net_pay', target_scope: 'other', target_name: 'Architect' },
+      { intent: 'directory_by_designation', metric: 'company_email', target_scope: 'other', target_name: '%' },
+      { intent: 'own_attendance', metric: 'absent_count', period: 'all_time' },
+    ]) expect(() => validateClassification({ ...classification, period: 'current_month', ...changes })).toThrow();
   });
 });
