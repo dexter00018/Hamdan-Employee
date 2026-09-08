@@ -28,7 +28,7 @@ function fakeClient(tables: Record<string, Row[]>) {
   });
   return { client: { from, storage: { from: () => ({ download }) } } as unknown as SupabaseClient, download, queries, from };
 }
-const slip = (id: string, user_id: string, published = true) => ({ id, user_id, published, cutoff_period: '2026-08:H2', cutoff_label: 'August 16–31, 2026', file_path: `${user_id}/${id}.pdf` });
+const slip = (id: string, user_id: string, published = true, uploaded_at = '2026-09-01T00:00:00Z', cutoff_period = '2026-08:H2') => ({ id, user_id, published, cutoff_period, cutoff_label: cutoff_period === '2026-09:H1' ? 'September 1–15, 2026' : 'August 16–31, 2026', file_path: `${user_id}/${id}.pdf`, uploaded_at });
 const context = (client: SupabaseClient) => ({ client, userId: 'alice', fullName: 'Alice Test', question: 'What are my deductions?', language: 'en', requestId: 'random-test-id' });
 const unlockedContext = (client: SupabaseClient) => ({ ...context(client), payslipUnlocked: true });
 
@@ -55,6 +55,13 @@ describe('Ask AI owner authorization', () => {
   it('refuses a PDF path assigned to another user', async () => {
     const db = fakeClient({ payslips: [{ ...slip('one', 'alice'), file_path: 'bob/one.pdf' }] });
     await expect(ownedPayslip(db.client, 'alice')).rejects.toThrow('access denied');
+  });
+  it('uses the last uploaded published payslip when no cutoff is requested', async () => {
+    const db = fakeClient({ payslips: [
+      slip('older-cutoff-new-upload', 'alice', true, '2026-09-10T00:00:00Z', '2026-08:H2'),
+      slip('newer-cutoff-old-upload', 'alice', true, '2026-09-01T00:00:00Z', '2026-09:H1'),
+    ] });
+    await expect(ownedPayslip(db.client, 'alice')).resolves.toMatchObject({ id: 'older-cutoff-new-upload' });
   });
   it('rejects colleague questions before querying records', async () => {
     const db = fakeClient({});
@@ -120,11 +127,14 @@ describe('PDF extraction checks', () => {
   });
   it('allows latest payslip extraction to use the database cutoff when the printed period is unclear', async () => {
     const db = fakeClient({ payslips: [slip('mine', 'alice')] });
-    const unclearPeriod = { ...extraction, period_start: '', period_end: '', deductions: [{ label: 'SSS EE Share:', amount: 10 }, { label: 'Pag-IBIG/HDMF', amount: null }] };
+    const unclearPeriod = { ...extraction, employee_name: '', period_start: '', period_end: '', deductions: [{ label: 'SSS EE Share:', amount: 10 }, { label: 'Pag-IBIG/HDMF', amount: null }] };
     const call = vi.fn().mockResolvedValueOnce(classification).mockResolvedValueOnce({ success: true, request_id: 'random-test-id', extraction: unclearPeriod });
     const answer = await answerEmployeeQuestion(unlockedContext(db.client), call);
     expect(answer.answer).toContain('SSS EE Share:');
     expect(answer.answer).toContain('Pag-IBIG/HDMF: Not stated / unclear');
+  });
+  it('still refuses latest payslip extraction when OCR returns a different employee name', () => {
+    expect(() => validatePayslip({ ...extraction, employee_name: 'Bob Private' }, 'Alice Test', '2026-08:H2', { requireName: false, requirePeriod: false })).toThrow('name mismatch');
   });
   it('still requires an exact PDF period when the user asks for a specific cutoff', async () => {
     const db = fakeClient({ payslips: [slip('mine', 'alice')] });

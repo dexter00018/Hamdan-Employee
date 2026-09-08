@@ -58,8 +58,8 @@ export const SYSTEM_KNOWLEDGE: Record<SystemKnowledgeMetric, { en: string; tl: s
     tl: 'Makikita sa My Leave Requests ang submitted leave requests mo, dates, type, status, reason, HR notes kung meron, filed time, at resolved time. Pending requests lang ang puwedeng i-review o i-cancel kapag pinapayagan ng portal.',
   },
   payslip_access: {
-    en: 'Open My Payslips to view published payslips from HR. Ask AI can answer questions about your own latest or selected payslip, such as deductions, gross pay, basic pay for the cutoff, and net pay. It does not provide downloadable PDFs inside chat.',
-    tl: 'Buksan ang My Payslips para makita ang published payslips mula HR. Kayang sagutin ng Ask AI ang tanong tungkol sa sarili mong latest o selected payslip, tulad ng deductions, gross pay, basic pay para sa cutoff, at net pay. Hindi ito nagbibigay ng downloadable PDFs sa chat.',
+    en: 'Open My Payslips to view published payslips from HR. Ask AI can answer questions about your own latest or selected payslip, such as deductions, gross pay, basic pay for the cutoff, and net pay. Latest means your most recently uploaded published payslip. An explicit cutoff selects that period instead. It does not provide downloadable PDFs inside chat.',
+    tl: 'Buksan ang My Payslips para makita ang published payslips mula HR. Kayang sagutin ng Ask AI ang tanong tungkol sa sarili mong latest o selected payslip, tulad ng deductions, gross pay, basic pay para sa cutoff, at net pay. Ang latest ay ang huling uploaded na published payslip mo. Kung may specific cutoff, iyon ang pipiliin. Hindi ito nagbibigay ng downloadable PDFs sa chat.',
   },
   payslip_ai_security: {
     en: 'Payslip questions require password confirmation before Ask AI reads the PDF. The password is verified by Supabase and is not sent to n8n or Gemini. The unlock is short-lived and applies only to the signed-in employee’s own payslips.',

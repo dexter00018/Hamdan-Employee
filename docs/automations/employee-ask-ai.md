@@ -40,7 +40,7 @@ After updating the classifier JSON, re-import it into the existing n8n classifie
 - Own annual recorded leave credits. Missing balance rows produce an explicit unavailable message rather than invented credits.
 - Counts of own leave requests whose start dates fall within the selected period.
 - One active employee's approved directory work email and/or designation. Ambiguous names require clarification. No fallback to personal/login email.
-- Basic pay, gross compensation, net pay, deduction rows, or summary from the selected own published payslip. The latest published cutoff is the default; newest upload wins if a cutoff has multiple versions. Explicit month/date/year cutoffs are resolved from the question and still bound to the session owner.
+- Basic pay, gross compensation, net pay, deduction rows, or summary from the selected own published payslip. The default "latest payslip" is the newest uploaded published payslip for the signed-in employee. Explicit month/date/year cutoffs are resolved from the question and still bound to the session owner.
 
 Name historical cutoffs directly in chat, for example "What are my deductions for August 16-31, 2026?" Incomplete or unsupported dates produce a clarification response instead of silently choosing the latest PDF. Re-ask with the complete question and cutoff. Messages stay visible when minimized, and New conversation clears them. The chat sends the last 8 non-error messages for follow-up context. These may include previous payroll answers; n8n and Gemini process this recent history. The classifier returns a standalone resolved_question for cutoff parsing. History is untrusted and cannot authorize access or supply database facts. New conversation clears this memory; account changes reset the keyed chat component. Memory is kept only in React state and is lost on reload. Re-import the updated classifier JSON to recognize explicit payslip dates and system workflow questions.
 
@@ -50,7 +50,7 @@ The sample reviewed in this session was one image-only, unencrypted PDF page. Th
 
 The server verifies the selected payslip's session owner, published status and owner-prefixed storage path before download. It sends only PDF bytes and a random request ID to the reader. The reader has no Supabase credentials, database tools, external-URL download step, employee question, or session token. **n8n and Google Gemini process the payslip contents.** The UI discloses this.
 
-PDF size is limited to 4 MB; encrypted/unreadable or multiple-employee documents must be refused. The reader should not mark the whole PDF unreadable only because one amount or deduction row is unclear; unclear values remain null. The server validates the returned fields, requires the verified employee's first and last name tokens, validates cutoff dates for explicit cutoff questions, and checks amount formats and cents precision. Latest-payslip questions use the database-selected latest published payslip as the cutoff source of truth. Numeric checks cannot prove OCR accuracy; Ask AI displays the requested amounts and deductions directly in chat, with no PDF attachment or download link. Its former PDF download endpoint returns HTTP 410.
+PDF size is limited to 4 MB; encrypted/unreadable or multiple-employee documents must be refused. The reader should not mark the whole PDF unreadable only because one amount or deduction row is unclear; unclear values remain null. The server validates the returned fields, requires the verified employee's first and last name tokens when a name is extracted, validates cutoff dates for explicit cutoff questions, and checks amount formats and cents precision. Latest-payslip questions use the database-selected newest uploaded published payslip as the source of truth, so unclear extracted name/date text does not block an otherwise readable own PDF unless OCR returns a different employee name. Numeric checks cannot prove OCR accuracy; Ask AI displays the requested amounts and deductions directly in chat, with no PDF attachment or download link. Its former PDF download endpoint returns HTTP 410.
 
 Blank/dash/unclear amounts remain null and display as “Not stated / unclear”. Currency is not inferred if the PDF does not state it. Basic pay is labelled as cutoff pay, never extrapolated to a monthly salary. No actual employee PDF, salary fixture, or extracted amount is committed to this repository.
 
@@ -76,3 +76,18 @@ Blank/dash/unclear amounts remain null and display as “Not stated / unclear”
 Supabase's security advisor still reports existing callable SECURITY DEFINER functions (including archive/settlement functions) and disabled leaked-password protection; these were not introduced or changed here. See [function advisor guidance](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable) and [password protection](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection). The rate-limit table intentionally has RLS with no employee policies.
 
 References: [Gemini PDF processing](https://ai.google.dev/gemini-api/docs/generate-content/document-processing), [Supabase Storage RLS](https://supabase.com/docs/guides/storage/security/access-control).
+
+## Shared Ask AI baseline
+
+Apply these rules together across the chat templates, server handlers, classifier, PDF reader, and system knowledge whenever changing Ask AI:
+
+- Bind private queries to the authenticated employee. Password confirmation unlocks only that employee's payslip access; it never authorizes another employee's records.
+- Allow only approved active-employee directory fields for other people: name, work email, and designation.
+- Resolve follow-ups from recent conversation while treating history as untrusted context, never identity or database evidence.
+- Keep English starter prompts supported end to end. ?What are the deductions in my latest payslip?? selects the newest uploaded published own payslip without requesting a cutoff. Explicit cutoffs remain explicit.
+- Return actual queried/extracted values. Missing or unreadable values must be identified as unavailable, never invented or replaced with zero. Partial PDF extraction may answer supported fields; a different extracted employee name still fails validation.
+- Count absences only from saved Absent status. Preserve requested dates and use complete calendar months for month queries.
+- Keep workflow guidance free of private records and credentials. Passwords stay in the application authentication flow, never chat history or n8n/Gemini.
+- Update classifier prompt and validator together when extending the schema; update the server validator, handler, documentation, and relevant regression tests in the same change.
+
+Canonical n8n imports are `employee-ask-ai-classifier.json` and `employee-ask-ai-payslip-reader.json` in this directory. Downloaded exports are deployment copies. Deploy application changes and update both affected workflows together; preserve the configured credentials when importing. Local tests do not prove that the live n8n workflows have been updated.

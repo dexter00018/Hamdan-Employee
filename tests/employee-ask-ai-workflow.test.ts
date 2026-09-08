@@ -137,7 +137,7 @@ describe('exported PDF reader workflow', () => {
   it('does not tell the PDF reader to fail the whole payslip for one unclear amount', () => {
     const prepared = pdfNode('Prepare PDF', { body: { pdf_base64: Buffer.from('%PDF-1.7\nsynthetic').toString('base64'), request_id: 'synthetic-request' } });
     const prompt = prepared.gemini_body.systemInstruction.parts[0].text;
-    expect(prompt).toContain('Do not mark the whole PDF unreadable only because one amount');
+    expect(prompt).toContain('Do not mark the whole PDF unreadable only because the employee name, cutoff text, one amount, or a deduction row is unclear');
     expect(prompt).toContain('partly unreadable amount MUST be null');
   });
   it.each([null, [], { readable: false }, { readable: true, deductions: [null] }])('refuses invalid PDF response: %j', extraction => {

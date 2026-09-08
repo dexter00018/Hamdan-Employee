@@ -100,7 +100,7 @@ export type PayslipExtraction = {
   basic_pay: number | null; gross_pay: number | null; net_pay: number | null; total_deductions: number | null;
   deductions: { label: string; amount: number | null }[];
 };
-export function validatePayslip(v: unknown, fullName: string, cutoff: string, options: { requirePeriod?: boolean } = {}): PayslipExtraction {
+export function validatePayslip(v: unknown, fullName: string, cutoff: string, options: { requirePeriod?: boolean; requireName?: boolean } = {}): PayslipExtraction {
   if (!isRecord(v) || v.readable !== true || typeof v.employee_name !== 'string') throw new Error('Unreadable payslip');
   const nameTokens = (name: string) =>
     name
@@ -114,7 +114,8 @@ export function validatePayslip(v: unknown, fullName: string, cutoff: string, op
   const requiredNameTokens = expectedNameTokens.length >= 2
     ? [expectedNameTokens[0], expectedNameTokens[expectedNameTokens.length - 1]]
     : expectedNameTokens;
-  if (requiredNameTokens.length < 2 || requiredNameTokens.some(token => !extractedNameTokens.has(token))) {
+  const extractedNameHasEnoughTokens = extractedNameTokens.size >= 2;
+  if ((options.requireName !== false || extractedNameHasEnoughTokens) && (requiredNameTokens.length < 2 || requiredNameTokens.some(token => !extractedNameTokens.has(token)))) {
     throw new Error('Payslip name mismatch');
   }
   const period = cutoffDates(cutoff);

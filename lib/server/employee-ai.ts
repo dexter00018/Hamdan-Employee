@@ -31,10 +31,12 @@ export async function workflowCall(url: string | undefined, payload: unknown, ti
 }
 
 export async function ownedPayslip(client: SupabaseClient, userId: string, id?: string, cutoff?: string) {
-  let query = client.from('payslips').select('id, user_id, cutoff_period, cutoff_label, file_path, published').eq('user_id', userId).eq('published', true);
+  let query = client.from('payslips').select('id, user_id, cutoff_period, cutoff_label, file_path, published, uploaded_at').eq('user_id', userId).eq('published', true);
   if (id) query = query.eq('id', id);
   if (cutoff) query = query.eq('cutoff_period', cutoff);
-  const { data, error } = await query.order('cutoff_period', { ascending: false }).order('uploaded_at', { ascending: false }).limit(1).maybeSingle();
+  if (cutoff || id) query = query.order('uploaded_at', { ascending: false }).order('cutoff_period', { ascending: false });
+  else query = query.order('uploaded_at', { ascending: false });
+  const { data, error } = await query.limit(1).maybeSingle();
   if (error) throw new EmployeeAIError('Unable to read your payslip.');
   if (!data) throw new EmployeeAIError('No matching published payslip is available for your account.', 404);
   // Defense in depth even if an upstream policy is accidentally broadened.
@@ -92,7 +94,7 @@ export async function answerEmployeeQuestion(ctx: Context, call = workflowCall) 
     const result = await call(process.env.N8N_EMPLOYEE_AI_PAYSLIP_URL, { pdf_base64: pdf.toString('base64'), request_id: requestId }, 60_000);
     try {
       if (!isRecord(result) || result.success !== true || result.request_id !== requestId) throw new Error('Invalid extraction');
-      const extraction = validatePayslip(result.extraction, ctx.fullName, slip.cutoff_period, { requirePeriod: cutoff !== null });
+      const extraction = validatePayslip(result.extraction, ctx.fullName, slip.cutoff_period, { requirePeriod: cutoff !== null, requireName: cutoff !== null });
       return { answer: payslipAnswer(extraction, c.metric, slip.cutoff_label, tl) };
     } catch { throw new EmployeeAIError(tl ? 'Hindi ko makumpirma ang pangalan, cutoff, o amounts sa PDF. Buksan ang original payslip o kontakin ang HR.' : 'I could not verify the name, cutoff, or amounts in this PDF. Please open the original payslip or contact HR.', 422); }
   }
