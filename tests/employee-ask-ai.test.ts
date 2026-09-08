@@ -245,6 +245,10 @@ describe('conversation, profile, and complete periods', () => {
     ['dispute_process', 'File Dispute'],
     ['leave_request_process', 'New Leave Request'],
     ['payslip_access', 'My Payslips'],
+    ['payslip_ai_security', 'password confirmation'],
+    ['commute_planner', 'Plan My Commute'],
+    ['attendance_statuses', 'saved status tag'],
+    ['privacy_rules', 'Supabase session'],
     ['profile_update', 'Edit Profile'],
     ['general_navigation', 'Dashboard'],
   ])('answers how_to metric %s with a canned instruction and no database query', async (metric, expected) => {
@@ -260,7 +264,7 @@ describe('conversation, profile, and complete periods', () => {
     const call = vi.fn().mockResolvedValue({ ...classification, intent: 'how_to', metric: 'payslip_access', period: 'today', target_scope: 'none', language: 'tl' });
     const result = await answerEmployeeQuestion({ ...context(db.client), language: 'tl' }, call);
     expect(result.answer).toContain('My Payslips');
-    expect(result.answer).toMatch(/Pumunta/);
+    expect(result.answer).toMatch(/Buksan|Pumunta/);
   });
   it('validates the new profile_info and how_to classifications', () => {
     const profileInfo = { ...classification, intent: 'own_profile', metric: 'profile_info', period: 'today', target_scope: 'self', target_name: '' };

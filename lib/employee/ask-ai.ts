@@ -1,6 +1,8 @@
+import type { SystemKnowledgeMetric } from '@/lib/employee/system-knowledge';
+
 export const intentMetrics = {
   own_profile: ['full_name', 'designation', 'company_email', 'profile_summary', 'profile_info'],
-  how_to: ['timeinout_location', 'dispute_process', 'leave_request_process', 'payslip_access', 'profile_update', 'general_navigation'],
+  how_to: ['dashboard_overview', 'timeinout_location', 'attendance_history', 'attendance_statuses', 'dispute_process', 'missing_log_process', 'leave_request_process', 'leave_credits', 'leave_history', 'payslip_access', 'payslip_ai_security', 'commute_planner', 'profile_update', 'directory_lookup', 'privacy_rules', 'notifications_announcements', 'theme_display', 'hr_workflows_overview', 'admin_workflows_overview', 'general_navigation'] satisfies SystemKnowledgeMetric[],
   own_attendance: ['absent_count', 'absence_dates', 'late_dates', 'attendance_history', 'last_absent_date', 'late_count', 'present_count', 'leave_day_count', 'attendance_summary', 'time_in', 'time_out'],
   own_leave_balance: ['remaining_credits', 'total_credits', 'used_credits', 'leave_balance_summary'],
   own_leave_history: ['leave_request_count', 'approved_count', 'pending_count', 'rejected_count', 'leave_history_summary'],

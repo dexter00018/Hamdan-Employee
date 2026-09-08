@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { classificationDates, designationPattern, cutoffDates, isRecord, payslipAnswer, payslipCutoffFromQuestion, periodDates, validateClassification, validatePayslip, type Classification, type ChatTurn } from '@/lib/employee/ask-ai';
+import { SYSTEM_KNOWLEDGE, type SystemKnowledgeMetric } from '@/lib/employee/system-knowledge';
 
 export class EmployeeAIError extends Error {
   constructor(message: string, public status = 503, public code?: string) { super(message); }
@@ -58,34 +59,8 @@ export async function answerEmployeeQuestion(ctx: Context, call = workflowCall) 
   const tl = ctx.language === 'tl' || (ctx.language !== 'en' && c.language === 'tl');
   if (c.intent === 'restricted_other_employee') return { answer: tl ? 'Sorry, hindi puwedeng ibahagi ang private information ng ibang employee.' : 'Sorry, we cannot share another employee’s private information.' };
   if (c.intent === 'how_to') {
-    const howTo: Record<string, { tl: string; en: string }> = {
-      timeinout_location: {
-        tl: 'Sa Dashboard, hanapin ang Time In / Time Out button sa itaas ng page. I-click ito para mag-clock in o clock out; awtomatikong naitatala ang oras.',
-        en: 'On your Dashboard, look for the Time In / Time Out button near the top of the page. Click it to clock in or out; the time is recorded automatically.',
-      },
-      dispute_process: {
-        tl: 'Pumunta sa Attendance tab, piliin ang date na may maling record, at i-click ang "File Dispute". Ilagay ang dahilan at i-submit; irereview ito ng HR.',
-        en: 'Go to Attendance, select the date with the incorrect record, and click "File Dispute". Enter your reason and submit; HR will review it.',
-      },
-      leave_request_process: {
-        tl: 'Pumunta sa Leave tab, i-click ang "New Leave Request", piliin ang leave type at mga petsa, at i-submit. Susundan ito ng approval mula sa iyong supervisor o HR.',
-        en: 'Go to the Leave tab, click "New Leave Request", choose the leave type and dates, then submit. Your supervisor or HR will review it for approval.',
-      },
-      payslip_access: {
-        tl: 'Pumunta sa My Payslips tab para tingnan ang mga published payslip mo. Puwede mo ring itanong dito sa Ask AI ang mga detalye ng piniling payslip.',
-        en: 'Go to the My Payslips tab to view your published payslips. You can also ask Ask AI here for details from a selected payslip.',
-      },
-      profile_update: {
-        tl: 'Pumunta sa Profile tab at i-click ang "Edit Profile" para i-update ang editable fields mo. Ang ibang detalye ay kailangang baguhin sa pamamagitan ng HR.',
-        en: 'Go to the Profile tab and click "Edit Profile" to update your editable fields. Some details can only be changed through HR.',
-      },
-      general_navigation: {
-        tl: 'Ang portal ay may Dashboard (time in/out), Attendance, Leave, My Payslips, at Profile. Gamitin ang sidebar o menu para lumipat sa bawat section.',
-        en: 'The portal has Dashboard (time in/out), Attendance, Leave, My Payslips, and Profile sections. Use the sidebar or menu to switch between them.',
-      },
-    };
-    const entry = howTo[c.metric];
-    return { answer: entry ? (tl ? entry.tl : entry.en) : (tl ? 'Hindi ko mahanap ang instructional na sagot para dito.' : 'I could not find instructions for that.') };
+    const entry = SYSTEM_KNOWLEDGE[c.metric as SystemKnowledgeMetric];
+    return { answer: entry ? (tl ? entry.tl : entry.en) : (tl ? 'Hindi ko mahanap ang system guide para dito.' : 'I could not find a system guide for that.') };
   }
   if (c.intent === 'own_profile') {
     const { data, error } = await client.from('profiles').select('full_name, designation, employee_email').eq('id', userId).maybeSingle();

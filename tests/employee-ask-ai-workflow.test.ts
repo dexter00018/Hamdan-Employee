@@ -48,6 +48,9 @@ describe('employee Ask AI workflow validation (does not replace server authoriza
   it('supports safe how-to questions without allowing employee identity scope', () => {
     const howTo = { ...self, intent: 'how_to', metric: 'payslip_access', period: 'today', target_scope: 'none', target_name: '' };
     expect(classify(howTo)).toMatchObject({ success: true, intent: 'how_to', metric: 'payslip_access' });
+    expect(classify({ ...howTo, metric: 'commute_planner' }).metric).toBe('commute_planner');
+    expect(classify({ ...howTo, metric: 'privacy_rules' }).metric).toBe('privacy_rules');
+    expect(classify({ ...howTo, metric: 'admin_workflows_overview' }).metric).toBe('admin_workflows_overview');
     expect(classify({ ...howTo, target_scope: 'self' }).intent).toBe('unsupported');
     expect(classify({ ...howTo, target_name: 'Bob' }).intent).toBe('unsupported');
   });
