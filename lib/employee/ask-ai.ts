@@ -98,25 +98,33 @@ export type PayslipExtraction = {
   basic_pay: number | null; gross_pay: number | null; net_pay: number | null; total_deductions: number | null;
   deductions: { label: string; amount: number | null }[];
 };
-export function validatePayslip(v: unknown, fullName: string, cutoff: string): PayslipExtraction {
+export function validatePayslip(v: unknown, fullName: string, cutoff: string, options: { requirePeriod?: boolean } = {}): PayslipExtraction {
   if (!isRecord(v) || v.readable !== true || typeof v.employee_name !== 'string') throw new Error('Unreadable payslip');
-  // Order-independent but exact name tokens. No fuzzy identity guesses.
-  const nameKey = (name: string) => name.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().match(/[\p{L}\p{N}]+/gu)?.sort().join(' ');
-  if (!nameKey(fullName) || nameKey(v.employee_name) !== nameKey(fullName)) throw new Error('Payslip name mismatch');
+  const nameTokens = (name: string) =>
+    name
+      .normalize('NFKD')
+      .replace(/\p{M}/gu, '')
+      .toLowerCase()
+      .match(/[\p{L}\p{N}]+/gu)
+      ?.filter(token => token.length > 1) ?? [];
+  const expectedNameTokens = nameTokens(fullName);
+  const extractedNameTokens = new Set(nameTokens(v.employee_name));
+  const requiredNameTokens = expectedNameTokens.length >= 2
+    ? [expectedNameTokens[0], expectedNameTokens[expectedNameTokens.length - 1]]
+    : expectedNameTokens;
+  if (requiredNameTokens.length < 2 || requiredNameTokens.some(token => !extractedNameTokens.has(token))) {
+    throw new Error('Payslip name mismatch');
+  }
   const period = cutoffDates(cutoff);
-  if (v.period_start !== period.start || v.period_end !== period.end) throw new Error('Payslip period mismatch');
+  if (options.requirePeriod !== false && (v.period_start !== period.start || v.period_end !== period.end)) throw new Error('Payslip period mismatch');
   const amount = (n: unknown) => n === null || (typeof n === 'number' && Number.isFinite(n) && Math.abs(n) < 1e9 && Math.abs(n * 100 - Math.round(n * 100)) < 0.001);
   for (const key of ['basic_pay', 'gross_pay', 'net_pay', 'total_deductions']) if (!amount(v[key])) throw new Error('Invalid amount');
   if (v.currency !== null && !['PHP', 'USD', 'AED', 'SAR', 'EUR'].includes(String(v.currency))) throw new Error('Invalid currency');
   if (!Array.isArray(v.deductions) || v.deductions.length > 40) throw new Error('Invalid deductions');
   const deductions = v.deductions.map(item => {
-    if (!isRecord(item) || typeof item.label !== 'string' || !/^[\p{L}\p{N} .()/'&-]{1,80}$/u.test(item.label) || !amount(item.amount)) throw new Error('Invalid deduction');
+    if (!isRecord(item) || typeof item.label !== 'string' || !/^[\p{L}\p{N} .,:()/'&+#%-]{1,80}$/u.test(item.label) || !amount(item.amount)) throw new Error('Invalid deduction');
     return { label: item.label, amount: item.amount as number | null };
   });
-  if (v.gross_pay !== null && v.total_deductions !== null && v.net_pay !== null &&
-    Math.abs(Math.round(Number(v.gross_pay) * 100) - Math.round(Number(v.total_deductions) * 100) - Math.round(Number(v.net_pay) * 100)) > 1) throw new Error('Payslip totals disagree');
-  if (v.total_deductions !== null && deductions.length && deductions.every(d => d.amount !== null) &&
-    Math.abs(deductions.reduce((sum, d) => sum + Math.round(d.amount! * 100), 0) - Math.round(Number(v.total_deductions) * 100)) > 1) throw new Error('Deduction totals disagree');
   return { readable: true, employee_name: v.employee_name, period_start: period.start, period_end: period.end, currency: v.currency as string | null,
     basic_pay: v.basic_pay as number | null, gross_pay: v.gross_pay as number | null, net_pay: v.net_pay as number | null, total_deductions: v.total_deductions as number | null, deductions };
 }

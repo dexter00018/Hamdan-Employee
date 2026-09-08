@@ -72,6 +72,110 @@ const unwrapWorkflowPayload = (rawPayload: unknown): JsonRecord => {
   return isJsonRecord(current) ? current : {};
 };
 
+const normalizePoint = (value: unknown) => {
+  if (!isJsonRecord(value)) return null;
+
+  const lat = Number(value.lat);
+  const lon = Number(value.lon);
+
+  if (
+    !Number.isFinite(lat) ||
+    !Number.isFinite(lon) ||
+    lat < -90 ||
+    lat > 90 ||
+    lon < -180 ||
+    lon > 180
+  ) {
+    return null;
+  }
+
+  return {
+    name: typeof value.name === 'string' ? value.name : '',
+    lat,
+    lon,
+  };
+};
+
+const deriveTrafficLevel = (delaySeconds: number, normalSeconds: number) => {
+  const ratio = normalSeconds > 0 ? delaySeconds / normalSeconds : 0;
+
+  if (ratio >= 0.6) return 'Severe';
+  if (ratio >= 0.3) return 'Heavy';
+  if (ratio >= 0.1) return 'Moderate';
+  return 'Light';
+};
+
+const fetchTomTomRouteFallback = async ({
+  origin,
+  destination,
+  requestedDepartureAt,
+  signal,
+}: {
+  origin: { name: string; lat: number; lon: number };
+  destination: { name: string; lat: number; lon: number };
+  requestedDepartureAt: string;
+  signal: AbortSignal;
+}) => {
+  const apiKey = process.env.TOMTOM_API_KEY || process.env.NEXT_PUBLIC_TOMTOM_API_KEY;
+  if (!apiKey) return null;
+
+  const url = new URL(
+    `https://api.tomtom.com/routing/1/calculateRoute/${origin.lat},${origin.lon}:${destination.lat},${destination.lon}/json`
+  );
+  url.searchParams.set('key', apiKey);
+  url.searchParams.set('traffic', 'true');
+  url.searchParams.set('computeTravelTimeFor', 'all');
+  url.searchParams.set('routeRepresentation', 'polyline');
+  url.searchParams.set('travelMode', 'car');
+  url.searchParams.set('departAt', requestedDepartureAt);
+
+  const response = await fetch(url, { signal, cache: 'no-store' });
+  if (!response.ok) return null;
+
+  const data = await response.json();
+  const route = Array.isArray(data?.routes) ? data.routes[0] : null;
+  const summary = route?.summary;
+
+  if (!summary || typeof summary !== 'object') return null;
+
+  const travelSeconds = Math.max(0, Number(summary.travelTimeInSeconds ?? 0));
+  const normalSeconds = Math.max(
+    0,
+    Number(summary.noTrafficTravelTimeInSeconds ?? summary.historicTrafficTravelTimeInSeconds ?? travelSeconds)
+  );
+  const delaySeconds = Math.max(
+    0,
+    Number(summary.trafficDelayInSeconds ?? Math.max(travelSeconds - normalSeconds, 0))
+  );
+  const distanceMeters = Math.max(0, Number(summary.lengthInMeters ?? 0));
+  const points = Array.isArray(route?.legs)
+    ? route.legs.flatMap((leg: JsonRecord) =>
+        Array.isArray(leg?.points)
+          ? leg.points
+              .map((point: JsonRecord) => ({
+                lat: Number(point?.latitude),
+                lon: Number(point?.longitude),
+              }))
+              .filter((point: { lat: number; lon: number }) =>
+                Number.isFinite(point.lat) && Number.isFinite(point.lon)
+              )
+          : []
+      )
+    : [];
+
+  return {
+    eta_minutes: Math.round(travelSeconds / 60),
+    normal_minutes: Math.round(normalSeconds / 60),
+    delay_minutes: Math.round(delaySeconds / 60),
+    distance_km: Math.round((distanceMeters / 1000) * 10) / 10,
+    traffic_level: deriveTrafficLevel(delaySeconds, normalSeconds),
+    coordinates: points,
+    departure_time: requestedDepartureAt,
+    arrival_time: new Date(new Date(requestedDepartureAt).getTime() + travelSeconds * 1000).toISOString(),
+    weather_checkpoint_count: points.length,
+  };
+};
+
 export async function POST(request: NextRequest) {
   try {
     const cookieStore = await cookies();
@@ -272,6 +376,7 @@ export async function POST(request: NextRequest) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          // Must match the commute workflow's Header Auth credential.
           'x-commute-secret': webhookSecret,
         },
         body: JSON.stringify({
@@ -323,6 +428,38 @@ export async function POST(request: NextRequest) {
           502,
           'route_failed'
         );
+      }
+
+      const wantsTraffic =
+        normalizedAdviceOptions.includes('traffic_delays') ||
+        normalizedAdviceOptions.includes('best_departure');
+
+      if (wantsTraffic && !payload.route) {
+        const payloadOrigin = normalizePoint(payload.origin);
+        const payloadDestination = normalizePoint(payload.destination);
+        const fallbackOrigin = payloadOrigin || (
+          originPosition ? { ...originPosition, name: origin } : null
+        );
+        const fallbackDestination = payloadDestination || (
+          destinationPosition ? { ...destinationPosition, name: destination } : null
+        );
+
+        if (fallbackOrigin && fallbackDestination) {
+          const fallbackRoute = await fetchTomTomRouteFallback({
+            origin: fallbackOrigin,
+            destination: fallbackDestination,
+            requestedDepartureAt,
+            signal: controller.signal,
+          });
+
+          if (fallbackRoute) {
+            payload.route = fallbackRoute;
+            payload.data_status = 'partial';
+            const partial = isJsonRecord(payload.partial) ? payload.partial : {};
+            partial.traffic_available = true;
+            payload.partial = partial;
+          }
+        }
       }
 
       return NextResponse.json(payload, {

@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { createSupabaseAdminClient } from '@/lib/server/supabase-admin';
 import { answerEmployeeQuestion, EmployeeAIError } from '@/lib/server/employee-ai';
+import { PAYSLIP_REAUTH_COOKIE, verifyPayslipReauthToken } from '@/lib/server/employee-ai-reauth';
 import { isRecord, validateHistory } from '@/lib/employee/ask-ai';
 
 export const runtime = 'nodejs';
@@ -10,6 +11,9 @@ export const maxDuration = 120;
 const headers = { 'Cache-Control': 'private, no-store, max-age=0', 'X-Content-Type-Options': 'nosniff' };
 const json = (body: unknown, status = 200) => NextResponse.json(body, { status, headers });
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function cookieValue(jar: Awaited<ReturnType<typeof cookies>>, name: string) {
+  return typeof jar.get === 'function' ? jar.get(name)?.value : jar.getAll().find(cookie => cookie.name === name)?.value;
+}
 async function authenticate() {
   const jar = await cookies();
   const client = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
@@ -22,7 +26,8 @@ async function authenticate() {
   return { client, userId: user.id, fullName: profile.full_name ?? '' };
 }
 function failure(error: unknown) {
-  return json({ success: false, error: error instanceof EmployeeAIError ? error.message : 'Ask AI is temporarily unavailable. Please try again later.' }, error instanceof EmployeeAIError ? error.status : 503);
+  const body = { success: false, error: error instanceof EmployeeAIError ? error.message : 'Ask AI is temporarily unavailable. Please try again later.', ...(error instanceof EmployeeAIError && error.code === 'payslip_reauth_required' ? { reauth_required: true } : {}) };
+  return json(body, error instanceof EmployeeAIError ? error.status : 503);
 }
 export async function GET(request: Request) {
   try {
@@ -53,7 +58,8 @@ export async function POST(request: Request) {
     if (error) throw new EmployeeAIError('Ask AI rate limiting is unavailable. Please try later.');
     if (allowed !== true) return NextResponse.json({ success: false, error: 'Too many questions. Please wait a minute.' }, { status: 429, headers: { ...headers, 'Retry-After': '60' } });
     const requestId = crypto.randomUUID();
-    const answer = await answerEmployeeQuestion({ ...auth, history, question: body.question.trim(), language: String(body.language ?? 'auto'), payslipId: body.payslip_id as string | undefined, requestId });
+    const payslipUnlocked = verifyPayslipReauthToken(cookieValue(await cookies(), PAYSLIP_REAUTH_COOKIE), auth.userId);
+    const answer = await answerEmployeeQuestion({ ...auth, history, question: body.question.trim(), language: String(body.language ?? 'auto'), payslipId: body.payslip_id as string | undefined, payslipUnlocked, requestId });
     return json({ success: true, ...answer, request_id: requestId });
   } catch (error) { return failure(error); }
 }

@@ -6,6 +6,8 @@ import { ArrowUp, Check, ChevronDown, Info, LoaderCircle, Plus, Sparkles, X } fr
 import { Conversation, ConversationContent, ConversationScrollButton } from '@/components/ai-elements/conversation';
 
 type Message = { id: string; role: 'user' | 'assistant'; text: string; error?: boolean };
+type HistoryTurn = { role: 'user' | 'assistant'; content: string };
+type PendingSecureQuestion = { text: string; history: HistoryTurn[] };
 const subscribe = () => () => {};
 export default function EmployeeAskAI() {
   const mounted = useSyncExternalStore(subscribe, () => true, () => false);
@@ -14,35 +16,76 @@ export default function EmployeeAskAI() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [busy, setBusy] = useState(false);
   const [privacy, setPrivacy] = useState(false);
+  const [securePromptOpen, setSecurePromptOpen] = useState(false);
+  const [securePassword, setSecurePassword] = useState('');
+  const [secureError, setSecureError] = useState<string | null>(null);
+  const [secureBusy, setSecureBusy] = useState(false);
+  const [pendingSecureQuestion, setPendingSecureQuestion] = useState<PendingSecureQuestion | null>(null);
   const active = useRef<AbortController | null>(null);
   const input = useRef<HTMLTextAreaElement>(null);
+  const passwordInput = useRef<HTMLInputElement>(null);
   const launcher = useRef<HTMLButtonElement>(null);
   const panelId = useId();
   const titleId = useId();
+  const secureTitleId = useId();
 
   useEffect(() => () => active.current?.abort(), []);
   useEffect(() => {
     if (open) input.current?.focus();
   }, [open]);
+  useEffect(() => {
+    if (securePromptOpen) passwordInput.current?.focus();
+  }, [securePromptOpen]);
   const close = () => { setOpen(false); launcher.current?.focus(); };
-  const send = async (text: string) => {
+  const send = async (text: string, options?: { addUser?: boolean; history?: HistoryTurn[] }) => {
     const trimmed = text.trim();
     if (!trimmed || active.current) return;
     const controller = new AbortController(); active.current = controller;
     const timer = window.setTimeout(() => controller.abort(), 110_000);
+    const history = options?.history ?? messages.filter(message => !message.error).slice(-8).map(message => ({ role: message.role, content: message.text.slice(0, 1000) }));
     setQuestion(''); setBusy(true);
-    setMessages(current => [...current, { id: crypto.randomUUID(), role: 'user', text: trimmed }]);
+    if (options?.addUser !== false) setMessages(current => [...current, { id: crypto.randomUUID(), role: 'user', text: trimmed }]);
     try {
       const response = await fetch('/api/employee-ask-ai', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
-        body: JSON.stringify({ question: trimmed, language: 'auto', history: messages.filter(message => !message.error).slice(-8).map(message => ({ role: message.role, content: message.text.slice(0, 1000) })) }),
+        body: JSON.stringify({ question: trimmed, language: 'auto', history }),
       });
       const data = await response.json();
+      if (response.status === 403 && data?.reauth_required) {
+        setPendingSecureQuestion({ text: trimmed, history });
+        setSecureError(null);
+        setSecurePassword('');
+        setSecurePromptOpen(true);
+        return;
+      }
       if (!response.ok || !data.success) throw new Error(data.error || 'I couldn’t answer just now. Please try again.');
       if (!controller.signal.aborted) setMessages(current => [...current, { id: crypto.randomUUID(), role: 'assistant', text: data.answer }]);
     } catch (error) {
       setMessages(current => [...current, { id: crypto.randomUUID(), role: 'assistant', error: true, text: controller.signal.aborted ? 'That took longer than expected. Please try again.' : error instanceof Error ? error.message : 'I couldn’t answer just now. Please try again.' }]);
     } finally { window.clearTimeout(timer); active.current = null; setBusy(false); input.current?.focus(); }
+  };
+  const confirmSecureAccess = async () => {
+    if (!pendingSecureQuestion || secureBusy || !securePassword) return;
+    setSecureBusy(true);
+    setSecureError(null);
+    try {
+      const response = await fetch('/api/employee-ask-ai/reauth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: securePassword }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || 'Unable to confirm password.');
+      const pending = pendingSecureQuestion;
+      setSecurePromptOpen(false);
+      setSecurePassword('');
+      setPendingSecureQuestion(null);
+      await send(pending.text, { addUser: false, history: pending.history });
+    } catch (error) {
+      setSecureError(error instanceof Error ? error.message : 'Unable to confirm password.');
+    } finally {
+      setSecureBusy(false);
+    }
   };
   if (!mounted) return null;
   return createPortal(<div className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] right-4 z-[48] font-sans lg:bottom-6 lg:right-6">
@@ -60,7 +103,7 @@ export default function EmployeeAskAI() {
             <h3 className="text-[23px] font-semibold tracking-tight">Hi! How can I help?</h3>
             <p className="mt-2 max-w-[280px] text-sm leading-relaxed text-slate-500 dark:text-[#a8b9af]">Ask me about your attendance, leave, or payslip.</p>
             <div className="mt-7 flex w-full flex-col gap-2">
-              {['Ilan pa ang leave ko?', 'Ano ang deductions sa latest payslip ko?'].map(prompt => <button type="button" key={prompt} onClick={() => void send(prompt)} className="flex min-h-12 items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left text-xs font-medium transition hover:border-emerald-300 hover:bg-emerald-50 dark:border-white/10 dark:bg-white/[0.025] dark:hover:border-emerald-500/40 dark:hover:bg-emerald-500/5"><span>{prompt}</span><ArrowUp size={14} className="shrink-0 rotate-45 text-slate-400" /></button>)}
+              {['How many leave credits do I have?', 'What are the deductions in my latest payslip?'].map(prompt => <button type="button" key={prompt} onClick={() => void send(prompt)} className="flex min-h-12 items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left text-xs font-medium transition hover:border-emerald-300 hover:bg-emerald-50 dark:border-white/10 dark:bg-white/[0.025] dark:hover:border-emerald-500/40 dark:hover:bg-emerald-500/5"><span>{prompt}</span><ArrowUp size={14} className="shrink-0 rotate-45 text-slate-400" /></button>)}
             </div>
           </div>}
           {messages.map(message => <div key={message.id} className={`flex flex-col ${message.role === 'user' ? 'items-end' : 'items-start'}`}>
@@ -74,13 +117,29 @@ export default function EmployeeAskAI() {
         <ConversationScrollButton className="border-slate-200 bg-white text-slate-600 dark:border-slate-600 dark:bg-slate-800 dark:text-white" />
       </Conversation>
       <footer className="shrink-0 border-t border-slate-100 bg-white p-4 dark:border-white/10 dark:bg-[#18241f]">
-        {privacy && <p className="mb-3 text-[11px] leading-relaxed text-slate-500 dark:text-[#a8b9af]">Only your own private records are available. Your question and up to 8 recent messages are sent to n8n and Google Gemini for context. Payslip questions send your PDF to n8n and Google Gemini. Answers can contain mistakes; check the original payslip.</p>}
+        {privacy && <p className="mb-3 text-[11px] leading-relaxed text-slate-500 dark:text-[#a8b9af]">Only your own private records are available. Your question and up to 8 recent messages are sent to n8n and Google Gemini for context. Payslip questions require password confirmation before your PDF is sent to n8n and Google Gemini. Answers can contain mistakes; check the original payslip.</p>}
         <form onSubmit={event => { event.preventDefault(); void send(question); }} className="flex items-end gap-2 rounded-[20px] border border-slate-200 bg-slate-50 p-2 transition focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500/10 dark:border-white/15 dark:bg-white/[0.035]">
           <textarea ref={input} aria-label="Message Ask AI" value={question} onChange={event => setQuestion(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(question); } }} maxLength={500} rows={2} placeholder="Ask me anything about your work…" className="max-h-28 min-h-11 flex-1 resize-none border-0 bg-transparent px-2 py-2 text-[13px] leading-relaxed text-slate-900 outline-none placeholder:text-slate-400 dark:text-[#f1f5f3]" />
           <button type="submit" disabled={busy || !question.trim()} aria-label="Send message" className="mb-0.5 grid size-9 shrink-0 place-items-center rounded-full bg-emerald-700 text-white transition hover:bg-emerald-800 disabled:bg-slate-200 disabled:text-slate-400 dark:disabled:bg-white/10 dark:disabled:text-slate-600">{busy ? <LoaderCircle size={17} className="animate-spin" /> : <ArrowUp size={19} />}</button>
         </form>
         <div className="mt-2 flex items-center justify-between px-1 text-[10px] text-slate-400"><span>Ask naturally, in English or Filipino</span><button type="button" aria-expanded={privacy} onClick={() => setPrivacy(value => !value)} className="flex items-center gap-1 rounded px-1 py-1 hover:text-slate-600 dark:hover:text-slate-200"><Info size={11} />Privacy</button></div>
       </footer>
+      {securePromptOpen && <div className="absolute inset-0 z-10 grid place-items-center bg-slate-950/35 p-5 backdrop-blur-sm dark:bg-black/45">
+        <form role="dialog" aria-modal="true" aria-labelledby={secureTitleId} onSubmit={event => { event.preventDefault(); void confirmSecureAccess(); }} className="w-full rounded-[24px] border border-emerald-100 bg-white p-5 text-slate-900 shadow-2xl dark:border-white/10 dark:bg-[#203027] dark:text-[#f1f5f3]">
+          <div className="mb-4 flex items-start gap-3">
+            <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300"><Sparkles size={20} /></span>
+            <div className="min-w-0 flex-1">
+              <h3 id={secureTitleId} className="text-sm font-bold">Confirm payslip access</h3>
+              <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-[#b7c8bf]">Enter your password to let Ask AI read your own payslip for the next 10 minutes.</p>
+            </div>
+            <button type="button" onClick={() => { setSecurePromptOpen(false); setSecurePassword(''); setSecureError(null); setPendingSecureQuestion(null); input.current?.focus(); }} aria-label="Cancel password confirmation" className="grid size-9 place-items-center rounded-full text-slate-500 transition hover:bg-slate-100 dark:text-[#a8b9af] dark:hover:bg-white/5"><X size={17} /></button>
+          </div>
+          <input ref={passwordInput} type="password" value={securePassword} onChange={event => setSecurePassword(event.target.value)} autoComplete="current-password" placeholder="Password" className="min-h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-medium text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 dark:border-white/15 dark:bg-white/[0.04] dark:text-[#f1f5f3] dark:placeholder:text-[#7f9288]" />
+          {secureError && <p role="alert" className="mt-3 rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 dark:border-red-900/70 dark:bg-red-950/40 dark:text-red-200">{secureError}</p>}
+          <button type="submit" disabled={secureBusy || !securePassword} className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-700 px-4 text-sm font-bold text-white transition hover:bg-emerald-800 disabled:bg-slate-200 disabled:text-slate-400 dark:disabled:bg-white/10 dark:disabled:text-slate-600">{secureBusy ? <><LoaderCircle size={16} className="animate-spin" />Confirming…</> : 'Confirm and continue'}</button>
+          <p className="mt-3 text-[11px] leading-relaxed text-slate-500 dark:text-[#a8b9af]">Your password is not sent to n8n or Gemini.</p>
+        </form>
+      </div>}
     </section>}
     <button ref={launcher} type="button" onClick={() => open ? close() : setOpen(true)} aria-label={open ? 'Close Ask AI' : 'Open Ask AI'} aria-expanded={open} aria-controls={open ? panelId : undefined} className="group relative ml-auto flex size-16 items-center justify-center rounded-[22px] border border-emerald-300/30 bg-gradient-to-br from-emerald-500 via-emerald-700 to-teal-900 text-white shadow-[0_10px_32px_-6px_rgba(4,120,87,0.5),inset_0_1px_0_rgba(255,255,255,0.25)] transition duration-200 hover:-translate-y-1 hover:shadow-[0_14px_36px_-6px_rgba(4,120,87,0.6)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-600 motion-reduce:transform-none">
       {open ? <X size={25} /> : <>

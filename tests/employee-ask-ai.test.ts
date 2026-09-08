@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { answerEmployeeQuestion, ownedPayslip, workflowCall } from '@/lib/server/employee-ai';
+import { createPayslipReauthToken, verifyPayslipReauthToken } from '@/lib/server/employee-ai-reauth';
 import { classificationDates, designationPattern, cutoffDates, payslipAnswer, payslipCutoffFromQuestion, periodDates, validateClassification, validateHistory, validatePayslip } from '@/lib/employee/ask-ai';
 
 // Synthetic fixture: never commit an actual employee PDF or extracted payroll.
@@ -29,8 +30,19 @@ function fakeClient(tables: Record<string, Row[]>) {
 }
 const slip = (id: string, user_id: string, published = true) => ({ id, user_id, published, cutoff_period: '2026-08:H2', cutoff_label: 'August 16–31, 2026', file_path: `${user_id}/${id}.pdf` });
 const context = (client: SupabaseClient) => ({ client, userId: 'alice', fullName: 'Alice Test', question: 'What are my deductions?', language: 'en', requestId: 'random-test-id' });
+const unlockedContext = (client: SupabaseClient) => ({ ...context(client), payslipUnlocked: true });
 
 describe('Ask AI owner authorization', () => {
+  it('signs payslip unlocks for one employee and a short expiry only', () => {
+    const previous = process.env.N8N_EMPLOYEE_AI_WEBHOOK_SECRET;
+    process.env.N8N_EMPLOYEE_AI_WEBHOOK_SECRET = 'x'.repeat(64);
+    const token = createPayslipReauthToken('alice', 1_000_000);
+    expect(verifyPayslipReauthToken(token, 'alice', 1_000_000)).toBe(true);
+    expect(verifyPayslipReauthToken(token, 'bob', 1_000_000)).toBe(false);
+    expect(verifyPayslipReauthToken(`${token.slice(0, -1)}a`, 'alice', 1_000_000)).toBe(false);
+    expect(verifyPayslipReauthToken(token, 'alice', 1_000_000 + 601_000)).toBe(false);
+    process.env.N8N_EMPLOYEE_AI_WEBHOOK_SECRET = previous;
+  });
   it('never downloads another employee PDF when an ID is spoofed', async () => {
     const db = fakeClient({ payslips: [slip('bobs-slip', 'bob'), slip('alice-slip', 'alice')] });
     await expect(ownedPayslip(db.client, 'alice', 'bobs-slip')).rejects.toThrow('No matching');
@@ -54,7 +66,7 @@ describe('Ask AI owner authorization', () => {
   it('forwards only the authorized PDF and random request ID to extraction', async () => {
     const db = fakeClient({ payslips: [slip('mine', 'alice')] });
     const call = vi.fn().mockResolvedValueOnce(classification).mockResolvedValueOnce({ success: true, request_id: 'random-test-id', extraction });
-    const answer = await answerEmployeeQuestion(context(db.client), call);
+    const answer = await answerEmployeeQuestion(unlockedContext(db.client), call);
     expect(answer.answer).toContain('Absent: 10.00'); expect(answer).not.toHaveProperty('payslip_id');
     expect(Object.keys(answer)).toEqual(['answer']);
     expect(Object.keys(call.mock.calls[1][1]).sort()).toEqual(['pdf_base64', 'request_id']);
@@ -64,7 +76,13 @@ describe('Ask AI owner authorization', () => {
   it('fails closed on a swapped extraction request ID', async () => {
     const db = fakeClient({ payslips: [slip('mine', 'alice')] });
     const call = vi.fn().mockResolvedValueOnce(classification).mockResolvedValueOnce({ success: true, request_id: 'another-request', extraction });
-    await expect(answerEmployeeQuestion(context(db.client), call)).rejects.toThrow('could not verify');
+    await expect(answerEmployeeQuestion(unlockedContext(db.client), call)).rejects.toThrow('could not verify');
+  });
+  it('requires a recent password confirmation before reading a payslip PDF', async () => {
+    const db = fakeClient({ payslips: [slip('mine', 'alice')] });
+    const call = vi.fn().mockResolvedValueOnce(classification);
+    await expect(answerEmployeeQuestion(context(db.client), call)).rejects.toMatchObject({ status: 403, code: 'payslip_reauth_required' });
+    expect(db.download).not.toHaveBeenCalled();
   });
   it('still uses session owner when a malicious question is misclassified as self', async () => {
     const db = fakeClient({ leave_credits: [{ user_id: 'alice', year: new Date().getFullYear(), total_credits: 12, used_credits: 2 }, { user_id: 'bob', year: new Date().getFullYear(), total_credits: 900, used_credits: 0 }] });
@@ -91,10 +109,33 @@ describe('PDF extraction checks', () => {
   it('allows reordered name tokens and preserves currency absence', () => {
     expect(validatePayslip(extraction, 'Alice Test', '2026-08:H2').currency).toBeNull();
   });
+  it('allows verified employee names with middle initials, commas, and different printed order', () => {
+    const printed = { ...extraction, employee_name: 'TEST, ALICE B.' };
+    expect(validatePayslip(printed, 'Alice Test', '2026-08:H2').employee_name).toBe('TEST, ALICE B.');
+  });
+  it('keeps readable payslips usable when extracted totals do not perfectly reconcile', () => {
+    const p = validatePayslip({ ...extraction, net_pay: 999, deductions: [{ label: 'Absent', amount: 12 }] }, 'Alice Test', '2026-08:H2');
+    expect(p.net_pay).toBe(999);
+    expect(p.deductions).toEqual([{ label: 'Absent', amount: 12 }]);
+  });
+  it('allows latest payslip extraction to use the database cutoff when the printed period is unclear', async () => {
+    const db = fakeClient({ payslips: [slip('mine', 'alice')] });
+    const unclearPeriod = { ...extraction, period_start: '', period_end: '', deductions: [{ label: 'SSS EE Share:', amount: 10 }, { label: 'Pag-IBIG/HDMF', amount: null }] };
+    const call = vi.fn().mockResolvedValueOnce(classification).mockResolvedValueOnce({ success: true, request_id: 'random-test-id', extraction: unclearPeriod });
+    const answer = await answerEmployeeQuestion(unlockedContext(db.client), call);
+    expect(answer.answer).toContain('SSS EE Share:');
+    expect(answer.answer).toContain('Pag-IBIG/HDMF: Not stated / unclear');
+  });
+  it('still requires an exact PDF period when the user asks for a specific cutoff', async () => {
+    const db = fakeClient({ payslips: [slip('mine', 'alice')] });
+    const wrongPeriod = { ...extraction, period_start: '2026-08-01', period_end: '2026-08-15' };
+    const call = vi.fn().mockResolvedValueOnce({ ...classification, resolved_question: 'What are my deductions for August 16-31, 2026?' }).mockResolvedValueOnce({ success: true, request_id: 'random-test-id', extraction: wrongPeriod });
+    await expect(answerEmployeeQuestion(unlockedContext(db.client), call)).rejects.toThrow('could not verify');
+  });
   it.each([
     { employee_name: 'Bob Test' }, { period_start: '2026-08-01' }, { readable: false },
-    { net_pay: 999 }, { net_pay: '105' }, { basic_pay: 10.123 }, { gross_pay: Infinity },
-    { deductions: [{ label: 'Absent', amount: 12 }] }, { currency: 'invented' },
+    { net_pay: '105' }, { basic_pay: 10.123 }, { gross_pay: Infinity },
+    { currency: 'invented' },
   ])('refuses invalid or inconsistent extraction: %j', change => {
     expect(() => validatePayslip({ ...extraction, ...change }, 'Alice Test', '2026-08:H2')).toThrow();
   });
@@ -178,7 +219,7 @@ describe('conversation, profile, and complete periods', () => {
     const db = fakeClient({ payslips: [slip('mine', 'alice')] });
     const history = [{ role: 'user' as const, content: 'What are my deductions for August 2026?' }, { role: 'assistant' as const, content: 'Which cutoff?' }];
     const call = vi.fn().mockResolvedValueOnce({ ...classification, resolved_question: 'What are my deductions for August 16-31, 2026?' }).mockResolvedValueOnce({ success: true, request_id: 'random-test-id', extraction });
-    const result = await answerEmployeeQuestion({ ...context(db.client), history, question: 'aug 16-31' }, call);
+    const result = await answerEmployeeQuestion({ ...unlockedContext(db.client), history, question: 'aug 16-31' }, call);
     expect(result.answer).toContain('Absent: 10.00');
     expect(call.mock.calls[0][1]).toMatchObject({ question: 'aug 16-31', history });
     expect(db.queries).toContainEqual({ table: 'payslips', column: 'cutoff_period', value: '2026-08:H2' });

@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { classificationDates, designationPattern, cutoffDates, isRecord, payslipAnswer, payslipCutoffFromQuestion, periodDates, validateClassification, validatePayslip, type Classification, type ChatTurn } from '@/lib/employee/ask-ai';
 
 export class EmployeeAIError extends Error {
-  constructor(message: string, public status = 503) { super(message); }
+  constructor(message: string, public status = 503, public code?: string) { super(message); }
 }
 export const MAX_PDF_BYTES = 4 * 1024 * 1024;
 export async function workflowCall(url: string | undefined, payload: unknown, timeout = 20_000): Promise<unknown> {
@@ -49,7 +49,7 @@ export async function downloadOwnedPdf(client: SupabaseClient, path: string) {
   if (bytes.subarray(0, 5).toString() !== '%PDF-') throw new EmployeeAIError('The payslip is not a valid PDF.', 422);
   return bytes;
 }
-type Context = { history?: ChatTurn[]; client: SupabaseClient; userId: string; fullName: string; question: string; language: string; payslipId?: string; requestId: string };
+type Context = { history?: ChatTurn[]; client: SupabaseClient; userId: string; fullName: string; question: string; language: string; payslipId?: string; payslipUnlocked?: boolean; requestId: string };
 export async function answerEmployeeQuestion(ctx: Context, call = workflowCall) {
   const { client, userId, question, payslipId, requestId } = ctx;
   const raw = await call(process.env.N8N_EMPLOYEE_AI_CLASSIFIER_URL, { question, history: ctx.history ?? [], current_date: periodDates('today').today, language: ctx.language, request_id: requestId });
@@ -108,6 +108,7 @@ export async function answerEmployeeQuestion(ctx: Context, call = workflowCall) 
   if (c.intent === 'unsupported') return { answer: tl ? 'Hindi ko matukoy ang supported na request sa tanong mo. Pakilinaw kung profile, attendance, leave, payslip, o work directory ang tinutukoy mo.' : 'I could not identify a supported request in your question. Please clarify whether you mean your profile, attendance, leave, payslip, or the work directory.' };
   if (c.intent === 'help') return { answer: tl ? 'Puwede kitang tulungan sa sarili mong attendance, leave, at payslip, o work email ng employee o mga employee ayon sa designation. Itanong lang, halimbawa: “Ano ang deductions ko sa August 16–31, 2026?”' : 'I can help with your attendance, leave, and payslip, or an employee’s work email. Just ask, for example: “What are my deductions for August 16–31, 2026?”' };
   if (c.intent === 'own_payslip') {
+    if (ctx.payslipUnlocked !== true) throw new EmployeeAIError(tl ? 'Kailangan munang i-confirm ang password bago ko basahin ang payslip details mo.' : 'Please confirm your password before I read your payslip details.', 403, 'payslip_reauth_required');
     let cutoff: string | null;
     try { cutoff = payslipCutoffFromQuestion(c.resolved_question ?? question); }
     catch (error) { return { answer: tl ? 'Anong cutoff ang gusto mong basahin? Isama ang buwan, dates at taon sa tanong, halimbawa: “Ano ang deductions ko sa August 16–31, 2026?”' : (error as Error).message }; }
@@ -116,7 +117,7 @@ export async function answerEmployeeQuestion(ctx: Context, call = workflowCall) 
     const result = await call(process.env.N8N_EMPLOYEE_AI_PAYSLIP_URL, { pdf_base64: pdf.toString('base64'), request_id: requestId }, 60_000);
     try {
       if (!isRecord(result) || result.success !== true || result.request_id !== requestId) throw new Error('Invalid extraction');
-      const extraction = validatePayslip(result.extraction, ctx.fullName, slip.cutoff_period);
+      const extraction = validatePayslip(result.extraction, ctx.fullName, slip.cutoff_period, { requirePeriod: cutoff !== null });
       return { answer: payslipAnswer(extraction, c.metric, slip.cutoff_label, tl) };
     } catch { throw new EmployeeAIError(tl ? 'Hindi ko makumpirma ang pangalan, cutoff, o amounts sa PDF. Buksan ang original payslip o kontakin ang HR.' : 'I could not verify the name, cutoff, or amounts in this PDF. Please open the original payslip or contact HR.', 422); }
   }

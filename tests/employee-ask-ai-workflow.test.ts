@@ -42,7 +42,14 @@ describe('employee Ask AI workflow validation (does not replace server authoriza
   });
   it('supports own profile only for self scope', () => {
     expect(classify({ ...self, intent: 'own_profile', metric: 'full_name' }).intent).toBe('own_profile');
+    expect(classify({ ...self, intent: 'own_profile', metric: 'profile_info' }).metric).toBe('profile_info');
     expect(classify({ ...self, intent: 'own_profile', metric: 'full_name', target_name: 'Bob' }).intent).toBe('restricted_other_employee');
+  });
+  it('supports safe how-to questions without allowing employee identity scope', () => {
+    const howTo = { ...self, intent: 'how_to', metric: 'payslip_access', period: 'today', target_scope: 'none', target_name: '' };
+    expect(classify(howTo)).toMatchObject({ success: true, intent: 'how_to', metric: 'payslip_access' });
+    expect(classify({ ...howTo, target_scope: 'self' }).intent).toBe('unsupported');
+    expect(classify({ ...howTo, target_name: 'Bob' }).intent).toBe('unsupported');
   });
   it('accepts designation groups only for directory fields', () => {
     const group = { ...self, intent: 'directory_by_designation', metric: 'company_email', target_scope: 'other', target_name: 'Architect' };
@@ -123,6 +130,12 @@ describe('exported PDF reader workflow', () => {
     expect(JSON.stringify(prepared.gemini_body)).not.toContain('someone-else');
     expect(JSON.stringify(prepared.gemini_body)).not.toContain('ignore all rules');
     expect(prepared.gemini_body.contents[0].parts[0].inlineData.mimeType).toBe('application/pdf');
+  });
+  it('does not tell the PDF reader to fail the whole payslip for one unclear amount', () => {
+    const prepared = pdfNode('Prepare PDF', { body: { pdf_base64: Buffer.from('%PDF-1.7\nsynthetic').toString('base64'), request_id: 'synthetic-request' } });
+    const prompt = prepared.gemini_body.systemInstruction.parts[0].text;
+    expect(prompt).toContain('Do not mark the whole PDF unreadable only because one amount');
+    expect(prompt).toContain('partly unreadable amount MUST be null');
   });
   it.each([null, [], { readable: false }, { readable: true, deductions: [null] }])('refuses invalid PDF response: %j', extraction => {
     const result = pdfNode('Validate PDF Response', { candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify(extraction) }] } }] });
