@@ -629,6 +629,7 @@ export default function HRDashboard() {
     const { data, error } = await supabase
       .from('employee_support_requests')
       .select('id, user_id, category, subject, description, status, hr_notes, created_at, updated_at')
+      .neq('category', 'IT Concern')
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -647,7 +648,6 @@ export default function HRDashboard() {
       const { data: employees, error: employeesError } = await supabase
         .from('profiles')
         .select('id, full_name, employee_id')
-        .eq('is_active', true)
         .in('id', employeeIds);
 
       if (employeesError) {
@@ -662,7 +662,7 @@ export default function HRDashboard() {
       }
     }
 
-    const rows = requests.filter((request: any) => employeeById[request.user_id]).map((request: any) => ({
+    const rows = requests.map((request: any) => ({
       ...request,
       employee: employeeById[request.user_id] || null,
     }));
@@ -673,10 +673,10 @@ export default function HRDashboard() {
 
   const saveHrSupportRequest = async (requestId: string) => {
     const draft = hrSupportDrafts[requestId];
-    if (!draft) return;
+    if (!draft || ['Resolved', 'Cancelled'].includes(hrSupportRequests.find(r => r.id === requestId)?.status)) return;
     setHrSupportSavingId(requestId);
-    const { error } = await supabase.from('employee_support_requests').update({ status: draft.status, hr_notes: draft.hr_notes.trim() || null }).eq('id', requestId);
-    if (error) alert('Failed to update request: ' + error.message);
+    const { data: saved, error } = await supabase.from('employee_support_requests').update({ status: draft.status, hr_notes: draft.hr_notes.trim() || null }).eq('id', requestId).neq('category', 'IT Concern').not('status', 'in', '(Resolved,Cancelled)').select('id').maybeSingle();
+    if (error || !saved) alert(error?.message || 'Request is already closed or unavailable.');
     else await fetchHrSupportRequests();
     setHrSupportSavingId(null);
   };
@@ -1858,7 +1858,7 @@ export default function HRDashboard() {
 
   const pendingDisputesCount = disputes.filter((dispute) => dispute.status === 'Pending').length;
   const pendingLeaveCount = leaveRequests.filter((leave) => leave.status === 'Pending').length;
-  const openHrSupportCount = hrSupportRequests.filter((request) => request.status !== 'Resolved').length;
+  const openHrSupportCount = hrSupportRequests.filter((request) => !['Resolved', 'Cancelled'].includes(request.status)).length;
   const activeHrDocumentsCount = hrDocuments.filter((document) => document.is_active).length;
 
   const attendanceInsightMeta = attendanceInsightModal ? {

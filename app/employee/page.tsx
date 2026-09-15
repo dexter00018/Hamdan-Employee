@@ -1,4 +1,5 @@
 'use client';
+import { isEarlyOut } from '@/lib/attendance-rules';
 import { applyPortalTheme } from '@/lib/portal-theme';
 import MobileBottomNav from '@/components/employee/MobileBottomNav';
 import EmployeeSummaryCard from '@/components/employee/EmployeeSummaryCard';
@@ -606,7 +607,7 @@ export default function EmployeeDashboard() {
       supabase.from('leave_requests').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'Pending'),
       supabase.from('attendance_disputes').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'Pending'),
       supabase.from('payslips').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('published', true).is('acknowledged_at', null),
-      supabase.from('employee_support_requests').select('id', { count: 'exact', head: true }).eq('user_id', user.id).neq('status', 'Resolved'),
+      supabase.from('employee_support_requests').select('id', { count: 'exact', head: true }).eq('user_id', user.id).not('status', 'in', '(Resolved,Cancelled)'),
       supabase.from('leave_credits').select('total_credits, used_credits').eq('user_id', user.id).eq('year', year).maybeSingle(),
     ]);
 
@@ -914,7 +915,7 @@ export default function EmployeeDashboard() {
     category: string;
     subject: string;
     description: string;
-    status: 'Submitted' | 'In Progress' | 'Resolved';
+    status: 'Open' | 'In Progress' | 'Resolved' | 'Cancelled';
     hr_notes: string | null;
     created_at: string;
     updated_at: string;
@@ -936,7 +937,7 @@ export default function EmployeeDashboard() {
       .order('created_at', { ascending: false });
     if (error) console.error('Error fetching support requests:', error);
     setSupportRequests((data || []) as SupportRequest[]);
-    setOpenSupportCount((data || []).filter((request) => request.status !== 'Resolved').length);
+    setOpenSupportCount((data || []).filter((request) => !['Resolved', 'Cancelled'].includes(request.status)).length);
     setSupportLoading(false);
   };
 
@@ -971,6 +972,22 @@ export default function EmployeeDashboard() {
       await fetchSupportRequests();
     }
     setSupportSaving(false);
+  };
+
+  const cancelSupportRequest = async (requestId: string) => {
+    if (!currentUserId || supportSaving) return;
+    setSupportSaving(true);
+    setSupportMessage(null);
+    try {
+      const { data, error } = await supabase.from('employee_support_requests')
+        .update({ status: 'Cancelled' }).eq('id', requestId).eq('user_id', currentUserId)
+        .not('status', 'in', '(Resolved,Cancelled)').select('id').maybeSingle();
+      if (error || !data) throw new Error(error?.message || 'Request is already closed or unavailable.');
+      setSupportMessage({ type: 'success', text: 'Request cancelled and moved to History.' });
+      await fetchSupportRequests();
+    } catch (error) {
+      setSupportMessage({ type: 'error', text: error instanceof Error ? error.message : 'Unable to cancel request.' });
+    } finally { setSupportSaving(false); }
   };
 
   // --- Employee Documents ---
@@ -2329,7 +2346,7 @@ export default function EmployeeDashboard() {
             {/* Clock + Time buttons */}
             {!attendanceRecordingEnabled ? <div role="status" className="rounded-2xl border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:!text-white">Attendance recording is temporarily unavailable.</div> : null}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <EmployeeWorkClock todayLog={todayLog} />
+              <EmployeeWorkClock todayLog={todayLog} endHour={timeOutReminderHour} />
               <div className="flex flex-col justify-center gap-2 sm:min-h-40">
                 {!todayLog ? (
                   <button onClick={handleTimeIn} disabled={!attendanceRecordingEnabled || loading || initLoading || checkingNetwork || officeNetworkAllowed === false} className="btn-primary !py-3">
@@ -2517,7 +2534,7 @@ export default function EmployeeDashboard() {
                           <div className="font-medium text-slate-900 text-xs">{new Date(log.log_date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</div>
                           <div className="text-slate-400 text-[10px]">{log.log_date}</div>
                         </div>
-                        <span className={`${statusTagClass(log.status)} inline-flex w-[76px] items-center justify-center justify-self-center whitespace-nowrap`}>{log.status}</span>
+                        <div className="flex flex-col items-center justify-self-center gap-1"><span className={`${statusTagClass(log.status)} inline-flex w-[76px] items-center justify-center justify-self-center whitespace-nowrap`}>{log.status}</span>{isEarlyOut(log.log_date, log.time_out, timeOutReminderHour) && <span className="inline-flex whitespace-nowrap rounded-full bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-200">Early Out</span>}</div>
                           <div className="min-w-0 text-right">
                             <div className="whitespace-nowrap font-semibold text-slate-700 text-xs">
                               {log.time_in ? new Date(log.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }) : '--:--'}
@@ -2785,7 +2802,7 @@ export default function EmployeeDashboard() {
       {attendanceCalendarOpen && <AttendanceCalendarModal open={attendanceCalendarOpen} onClose={() => setAttendanceCalendarOpen(false)} month={attendanceCalendarMonth} onMonthChange={(value) => { setAttendanceCalendarMonth(value); setSelectedAttendanceCalendarDate(null); }} availableMonths={availableMonths} formatMonth={formatMonthOnly} days={attendanceCalendarDays} selectedDate={selectedAttendanceCalendarDate} onSelectDate={setSelectedAttendanceCalendarDate} selectedDay={selectedAttendanceCalendarDay} />}
 
       {/* Help Desk / HR Request Modal */}
-      {supportModalOpen && <HelpDeskModal open={supportModalOpen} onClose={() => setSupportModalOpen(false)} saving={supportSaving} loading={supportLoading} message={supportMessage} form={supportForm} setForm={setSupportForm} requests={supportRequests} onSubmit={submitSupportRequest} />}
+      {supportModalOpen && <HelpDeskModal open={supportModalOpen} onClose={() => setSupportModalOpen(false)} saving={supportSaving} loading={supportLoading} message={supportMessage} form={supportForm} setForm={setSupportForm} requests={supportRequests} onSubmit={submitSupportRequest} onCancel={cancelSupportRequest} />}
 
       {/* Employee Documents Modal */}
       {documentsModalOpen && <EmployeeDocumentsModal open={documentsModalOpen} onClose={() => setDocumentsModalOpen(false)} loading={documentsLoading} documents={employeeDocuments} downloadingId={downloadingDocumentId} onDownload={downloadEmployeeDocument} />}

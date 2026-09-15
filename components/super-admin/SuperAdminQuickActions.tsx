@@ -1,6 +1,7 @@
-import { Activity, ClipboardList, DatabaseBackup, KeyRound, ScrollText, Settings, UserPlus, Users } from 'lucide-react';
+import { Activity, Headphones, DatabaseBackup, KeyRound, ScrollText, Settings, UserPlus, Users } from 'lucide-react';
 
 type Props = {
+  onHelpdesk: () => void;
   onCreateAccount: () => void;
   onAccounts: () => void;
   onAttendance: () => void;
@@ -15,7 +16,7 @@ export default function SuperAdminQuickActions(props: Props) {
   const actions = [
     { label: 'Create Account', icon: UserPlus, action: props.onCreateAccount },
     { label: 'User Accounts', icon: Users, action: props.onAccounts },
-    { label: 'Attendance Records', icon: ClipboardList, action: props.onAttendance },
+    { label: 'IT Help Desk', icon: Headphones, action: props.onHelpdesk },
     { label: 'App Settings', icon: Settings, action: props.onSettings },
     { label: 'Reset Password', icon: KeyRound, action: props.onResetPassword },
     { label: 'Audit Log', icon: ScrollText, action: props.onAuditLog },

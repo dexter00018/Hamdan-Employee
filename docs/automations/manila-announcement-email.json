@@ -1,0 +1,225 @@
+{
+  "name": "MANILA - Published Announcement Email",
+  "nodes": [
+    {
+      "name": "Announcement Webhook",
+      "id": "announcement-1",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "announcement-published-manila",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {}
+      }
+    },
+    {
+      "name": "Validate Announcement",
+      "id": "announcement-2",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "jsCode": "function validateEvent(body) {\r\n  if (!body || body.schema !== 'public' || body.table !== 'announcements' || !['INSERT', 'UPDATE'].includes(body.type)) return null;\r\n  const record = body.record;\r\n  if (!record || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(record.id ?? '') ||\r\n      typeof record.content !== 'string' || !record.content.trim() || !Number.isFinite(Date.parse(record.updated_at))) {\r\n    throw new Error('Invalid announcement event');\r\n  }\r\n  if (body.type === 'UPDATE' && body.old_record?.content === record.content &&\r\n      (body.old_record?.image_url ?? null) === (record.image_url ?? null)) return null;\r\n  return { announcement: { id: record.id, content: record.content, image_url: record.image_url, updated_at: record.updated_at } };\r\n}\nconst event = validateEvent($input.first().json.body);\nreturn event ? [{json: event}] : [];"
+      }
+    },
+    {
+      "name": "Config",
+      "id": "announcement-3",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "jsCode": "return [{json: {\n  ...$input.first().json,\n  supabaseUrl: 'https://msoomcjzzudibiyezclj.supabase.co',\n  portalUrl: 'https://YOUR-MANILA-PORTAL.example/employee',\n  fromEmail: '',\n  testMode: true,\n  testEmail: '' // Set your own address first. Set testMode false only after testing.\n}}];"
+      }
+    },
+    {
+      "name": "Get Profiles",
+      "id": "announcement-4",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        720,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "getAll",
+        "tableId": "profiles",
+        "returnAll": true,
+        "filterType": "none",
+        "orderBy": "id.asc"
+      }
+    },
+    {
+      "name": "Select Employees",
+      "id": "announcement-5",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        0
+      ],
+      "parameters": {
+        "jsCode": "function employeeProfiles(items) {\r\n  const seen = new Set();\r\n  return items.flatMap((item, index) => {\r\n    const p = item.json;\r\n    if (p.role !== 'employee' || !/^[0-9a-f-]{36}$/i.test(p.id ?? '') || seen.has(p.id)) return [];\r\n    seen.add(p.id);\r\n    return [{ json: { id: p.id }, pairedItem: { item: index } }];\r\n  });\r\n}\nreturn employeeProfiles($input.all());"
+      }
+    },
+    {
+      "name": "Get Employee Email",
+      "id": "announcement-6",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        0
+      ],
+      "parameters": {
+        "url": "={{ $('Config').first().json.supabaseUrl + '/auth/v1/admin/users/' + encodeURIComponent($json.id) }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {
+          "timeout": 30000,
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 150
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Build Emails",
+      "id": "announcement-7",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        0
+      ],
+      "parameters": {
+        "jsCode": "function buildEmails(items, config) {\r\n  const esc = (s) => String(s ?? '').replace(/[&<>\"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;' })[c]);\r\n  const emailValid = (s) => typeof s === 'string' && /^[^\\s@,;<>]+@[^\\s@,;<>]+\\.[^\\s@,;<>]+$/.test(s);\r\n  if (typeof config.testMode !== 'boolean') throw new Error('Set testMode to true or false');\r\n  if (!emailValid(config.fromEmail)) throw new Error('Configure a valid SMTP sender');\r\n  if (config.testMode && !emailValid(config.testEmail)) throw new Error('Set Config.testEmail to your own email before testing');\r\n  if (!config.portalUrl || !/^https:\\/\\/[^/]+\\/employee$/.test(config.portalUrl) || config.portalUrl.includes('.example')) throw new Error('Verify the Manila portal URL before changing this workflow');\r\n  const a = config.announcement;\r\n  const seen = new Set();\r\n  const recipients = [];\r\n  for (const [index, item] of items.entries()) {\r\n    const user = item.json.user ?? item.json;\r\n    if (user.deleted_at || (user.banned_until && Date.parse(user.banned_until) > Date.now()) || !emailValid(user.email)) continue;\r\n    const email = user.email.toLowerCase();\r\n    if (seen.has(email)) continue;\r\n    seen.add(email);\r\n    recipients.push({ email: user.email, index });\r\n  }\r\n  if (config.testMode) {\r\n    recipients.splice(0, recipients.length, { email: config.testEmail, index: 0 });\r\n  }\r\n  let image = '';\r\n  // Only render images from this project's public announcement bucket.\r\n  if (typeof a.image_url === 'string' && a.image_url.startsWith('https://msoomcjzzudibiyezclj.supabase.co/storage/v1/object/public/announcements/')) {\r\n    image = `<p><img src=\"${esc(a.image_url)}\" alt=\"Announcement image\" width=\"536\" style=\"max-width:100%;height:auto;border-radius:8px;\"></p>`;\r\n  }\r\n  const timestamp = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short', hour12: true }).format(new Date(a.updated_at));\r\n  const html = `<!DOCTYPE html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"></head><body style=\"margin:0;background:#f4f4f5;font-family:Arial,sans-serif\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\"><tr><td align=\"center\" style=\"padding:24px 12px\"><table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"width:100%;max-width:600px;background:#fff;border-radius:12px;overflow:hidden\"><tr><td style=\"padding:28px 32px;background:#0f172a;color:#fff;font-size:22px;font-weight:bold\">Hamdan Studio</td></tr><tr><td style=\"padding:32px;color:#0f172a\"><h1 style=\"font-size:22px;margin:0 0 12px\">New announcement</h1><p style=\"color:#64748b;font-size:12px\">${esc(timestamp)} · Manila time</p><div dir=\"auto\" style=\"font-size:15px;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere\">${esc(a.content)}</div>${image}<p style=\"margin-top:28px\"><a href=\"${esc(config.portalUrl)}\" style=\"display:inline-block;padding:12px 24px;border-radius:8px;background:#0f172a;color:#fff;text-decoration:none;font-weight:bold\">View announcement in portal →</a></p></td></tr></table></td></tr></table></body></html>`;\r\n  return recipients.map(({ email, index }) => ({ json: {\r\n    toEmail: email, fromEmail: config.fromEmail,\r\n    subject: `${config.testMode ? '[TEST] ' : ''}Hamdan Studio — New announcement`, html,\r\n    announcementId: a.id, announcementVersion: a.updated_at,\r\n  }, pairedItem: { item: index } }));\r\n}\nreturn buildEmails($input.all(), $('Config').first().json);"
+      }
+    },
+    {
+      "name": "Send Announcement Email",
+      "id": "announcement-8",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1680,
+        0
+      ],
+      "parameters": {
+        "fromEmail": "={{ $json.fromEmail }}",
+        "toEmail": "={{ $json.toEmail }}",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "html",
+        "html": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "retryOnFail": false
+    }
+  ],
+  "connections": {
+    "Announcement Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Announcement",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Announcement": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Get Profiles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Profiles": {
+      "main": [
+        [
+          {
+            "node": "Select Employees",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select Employees": {
+      "main": [
+        [
+          {
+            "node": "Get Employee Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Employee Email": {
+      "main": [
+        [
+          {
+            "node": "Build Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Emails": {
+      "main": [
+        [
+          {
+            "node": "Send Announcement Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Manila",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all"
+  },
+  "pinData": {},
+  "tags": []
+}

@@ -6,6 +6,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase, supabaseAuthActions } from '@/lib/supabase';
 import dynamic from 'next/dynamic';
 import { Activity, AlertTriangle, ChevronRight, Clock3, Moon, ShieldCheck, Sun, UserRound, Users } from 'lucide-react';
+import ITHelpdesk from '@/components/super-admin/ITHelpdesk';
 import SuperAdminQuickActions from '@/components/super-admin/SuperAdminQuickActions';
 import SuperAdminMobileBottomNav from '@/components/super-admin/SuperAdminMobileBottomNav';
 import SuperAdminMobileToolsSheet from '@/components/super-admin/SuperAdminMobileToolsSheet';
@@ -28,6 +29,7 @@ const AdminAttentionModal = dynamic(() => import('@/components/super-admin/modal
 const PAGE_SIZE = 5;
 
 export default function SuperAdminDashboard() {
+  const [itHelpdeskOpen, setItHelpdeskOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
   const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
   const [employees, setEmployees] = useState<any[]>([]);
@@ -1134,7 +1136,8 @@ export default function SuperAdminDashboard() {
 
         {attentionItems.length > 0 ? <button type="button" onClick={() => setAttentionModalOpen(true)} className="flex w-full items-center gap-3 rounded-[22px] border border-orange-200 bg-white p-4 text-left shadow-[0_8px_24px_rgba(15,23,42,0.05)] dark:border-orange-900 dark:bg-[#202521]"><span className="grid h-10 w-10 flex-none place-items-center rounded-xl bg-orange-50 text-orange-700 dark:bg-orange-950/50 dark:text-orange-300"><AlertTriangle size={18}/></span><span className="min-w-0 flex-1"><span className="flex items-center justify-between gap-2"><span className="text-sm font-bold text-slate-950 dark:text-white">Needs Attention</span><span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-black text-orange-800 dark:bg-orange-950 dark:text-orange-200">{attentionItems.length}</span></span><span className="mt-1 block truncate text-xs font-semibold text-slate-700 dark:!text-[#e3ece4]">{attentionItems[0].title}</span><span className="mt-0.5 block truncate text-[10px] text-slate-500 dark:!text-[#aab8ad]">{attentionItems[0].description}</span>{attentionItems.length > 1 ? <span className="mt-1 block text-[10px] font-bold text-orange-700 dark:text-orange-300">+{attentionItems.length - 1} more</span> : null}</span><ChevronRight size={18} className="flex-none text-slate-400"/></button> : null}
 
-        <SuperAdminQuickActions
+        <ITHelpdesk open={itHelpdeskOpen} onClose={() => setItHelpdeskOpen(false)} />
+        <SuperAdminQuickActions onHelpdesk={() => setItHelpdeskOpen(true)}
           onCreateAccount={openCreateAccountModal}
           onAccounts={openUserAccountsModal}
           onAttendance={openAttendanceRecordsModal}
@@ -1151,7 +1154,7 @@ export default function SuperAdminDashboard() {
       </div>
 
       <SuperAdminMobileBottomNav onHome={() => document.getElementById('super-admin-dashboard-top')?.scrollIntoView({ behavior: 'smooth' })} onAccounts={openUserAccountsModal} onSettings={openAppSettingsModal} onHealth={openHealthModal} onMore={() => setMobileToolsOpen(true)} />
-      <SuperAdminMobileToolsSheet open={mobileToolsOpen} darkMode={darkMode} email={currentAdminEmail} onClose={() => setMobileToolsOpen(false)} onToggleTheme={toggleTheme} onLogout={handleLogout} onCreate={openCreateAccountModal} onAccounts={openUserAccountsModal} onAttendance={openAttendanceRecordsModal} onSettings={openAppSettingsModal} onReset={openResetPasswordModal} onAudit={openAuditLogModal} onHealth={openHealthModal} onBackup={() => setBackupModalOpen(true)} onArchive={() => setArchivalModalOpen(true)} />
+      <SuperAdminMobileToolsSheet onHelpdesk={() => setItHelpdeskOpen(true)} open={mobileToolsOpen} darkMode={darkMode} email={currentAdminEmail} onClose={() => setMobileToolsOpen(false)} onToggleTheme={toggleTheme} onLogout={handleLogout} onCreate={openCreateAccountModal} onAccounts={openUserAccountsModal} onAttendance={openAttendanceRecordsModal} onSettings={openAppSettingsModal} onReset={openResetPasswordModal} onAudit={openAuditLogModal} onHealth={openHealthModal} onBackup={() => setBackupModalOpen(true)} onArchive={() => setArchivalModalOpen(true)} />
 
       {createAccountModalOpen && <AccountFormModal open={createAccountModalOpen} onClose={() => setCreateAccountModalOpen(false)} confirmPassword={confirmPassword} deactivating={deactivating} designation={designation} editingId={editingId} email={email} emailChecking={emailChecking} emailConflict={emailConflict} employeeId={employeeId} employeeIdConflict={employeeIdConflict} employees={employees} fullName={fullName} fullNameConflict={fullNameConflict} handleSave={handleSave} loading={loading} password={password} passwordMismatch={passwordMismatch} resetForm={resetForm} role={role} setConfirmPassword={setConfirmPassword} setDesignation={setDesignation} setEmail={setEmail} setEmployeeId={setEmployeeId} setFullName={setFullName} setPassword={setPassword} setRole={setRole} toggleAccountActive={toggleAccountActive} />}
 

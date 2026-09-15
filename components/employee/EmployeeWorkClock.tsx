@@ -1,6 +1,7 @@
 'use client';
 
 import { memo, useEffect, useState } from 'react';
+import { isEarlyOut } from '@/lib/attendance-rules';
 import { Clock3 } from 'lucide-react';
 
 type TodayLog = {
@@ -11,6 +12,7 @@ type TodayLog = {
 function getManilaClock() {
   const now = new Date();
   return {
+    dateKey: new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now),
     time: now.toLocaleTimeString('en-GB', {
       timeZone: 'Asia/Manila',
       hour12: false,
@@ -25,8 +27,8 @@ function getManilaClock() {
   };
 }
 
-function EmployeeWorkClock({ todayLog }: { todayLog: TodayLog }) {
-  const [clock, setClock] = useState(() => ({ time: '--:--:--', date: '' }));
+function EmployeeWorkClock({ todayLog, endHour }: { todayLog: TodayLog; endHour: number }) {
+  const [clock, setClock] = useState(() => ({ time: '--:--:--', date: '', dateKey: '' }));
 
   useEffect(() => {
     const updateClock = () => setClock(getManilaClock());
@@ -38,6 +40,8 @@ function EmployeeWorkClock({ todayLog }: { todayLog: TodayLog }) {
   const isTodayLate = todayLog?.status?.toLowerCase() === 'late';
   const todayWorkStatus = !todayLog
     ? { label: 'No Time In', color: 'bg-red-100 text-red-700' }
+    : isEarlyOut(clock.dateKey, todayLog.time_out, endHour)
+      ? { label: isTodayLate ? 'Late / Early Out' : 'Early Out', color: 'bg-amber-100 text-amber-800' }
     : isTodayLate
       ? { label: todayLog.time_out ? 'Completed · Late' : 'Working · Late', color: 'bg-orange-100 text-orange-700' }
       : { label: todayLog.time_out ? 'Completed' : 'Working', color: 'bg-green-100 text-green-700' };
