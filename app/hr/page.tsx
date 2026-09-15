@@ -561,6 +561,11 @@ export default function HRDashboard() {
   const [announcementLoading, setAnnouncementLoading] = useState(true);
   const [announcementSaving, setAnnouncementSaving] = useState(false);
   const announcementWriteLock = useRef(false);
+  const [publishedAnnouncement, setPublishedAnnouncement] = useState<{ content: string; imageUrl: string | null } | null>(null);
+  const announcementAlreadyPublished = publishedAnnouncement !== null
+    && publishedAnnouncement.content === announcementContent
+    && !announcementImageFile
+    && publishedAnnouncement.imageUrl === (announcementRemoveImage ? null : announcementImageUrl);
   const [announcementMsg, setAnnouncementMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Payslip upload states
@@ -898,7 +903,7 @@ export default function HRDashboard() {
 
   // Save updates the portal; only Publish changes the email event marker.
   const saveAnnouncement = async (sendEmail = false) => {
-    if (announcementWriteLock.current || !announcementContent.trim()) return;
+    if (announcementWriteLock.current || !announcementContent.trim() || (sendEmail && announcementAlreadyPublished)) return;
     announcementWriteLock.current = true;
     setAnnouncementSaving(true);
     setAnnouncementMsg(null);
@@ -959,7 +964,15 @@ export default function HRDashboard() {
         setAnnouncementId(data.id);
       }
 
-      setAnnouncementMsg({ type: 'success', text: sendEmail ? 'Announcement published. Email delivery depends on the connected notification workflow.' : 'Announcement saved. No email notification requested.' });
+      if (sendEmail) {
+        const publishedImageUrl = nextImageUrl === undefined ? announcementImageUrl : nextImageUrl;
+        setPublishedAnnouncement({ content: announcementContent, imageUrl: publishedImageUrl });
+        setAnnouncementImageUrl(publishedImageUrl);
+        setAnnouncementImageFile(null);
+        setAnnouncementImagePreview(null);
+        setAnnouncementRemoveImage(false);
+      }
+      setAnnouncementMsg({ type: 'success', text: sendEmail ? 'Announcement published. Email notification requested; delivery is not yet confirmed.' : 'Announcement saved. No email notification requested.' });
       await fetchAnnouncement();
     } catch (err: any) {
       console.error('Error publishing announcement:', err);
@@ -2087,7 +2100,7 @@ export default function HRDashboard() {
 
         <TeamLeaveCalendarModal open={leaveCalendarOpen} onClose={() => setLeaveCalendarOpen(false)} calendarData={calendarData} leaveCalendarMonth={leaveCalendarMonth} selectedCalendarDate={selectedCalendarDate} selectedCalendarDay={selectedCalendarDay} setLeaveCalendarMonth={setLeaveCalendarMonth} setSelectedCalendarDate={setSelectedCalendarDate} todayManila={todayManila} />
 
-        <AnnouncementsModal open={announcementOpen} onClose={() => setAnnouncementOpen(false)} announcementContent={announcementContent} announcementId={announcementId} announcementImageInputRef={announcementImageInputRef} announcementImagePreview={announcementImagePreview} announcementImageUrl={announcementImageUrl} announcementLoading={announcementLoading} announcementMsg={announcementMsg} announcementRemoveImage={announcementRemoveImage} announcementSaving={announcementSaving} announcementUpdatedAt={announcementUpdatedAt} clearAnnouncementImage={clearAnnouncementImage} handleAnnouncementImageChange={handleAnnouncementImageChange} publishAnnouncement={() => saveAnnouncement(true)} saveAnnouncement={() => saveAnnouncement(false)} setAnnouncementContent={setAnnouncementContent} />
+        <AnnouncementsModal announcementAlreadyPublished={announcementAlreadyPublished} open={announcementOpen} onClose={() => setAnnouncementOpen(false)} announcementContent={announcementContent} announcementId={announcementId} announcementImageInputRef={announcementImageInputRef} announcementImagePreview={announcementImagePreview} announcementImageUrl={announcementImageUrl} announcementLoading={announcementLoading} announcementMsg={announcementMsg} announcementRemoveImage={announcementRemoveImage} announcementSaving={announcementSaving} announcementUpdatedAt={announcementUpdatedAt} clearAnnouncementImage={clearAnnouncementImage} handleAnnouncementImageChange={handleAnnouncementImageChange} publishAnnouncement={() => saveAnnouncement(true)} saveAnnouncement={() => saveAnnouncement(false)} setAnnouncementContent={setAnnouncementContent} />
 
         <HolidaysModal open={holidaysOpen} onClose={() => setHolidaysOpen(false)} addHoliday={addHoliday} deleteHoliday={deleteHoliday} holidayMsg={holidayMsg} holidaySaving={holidaySaving} holidays={holidays} holidaysLoading={holidaysLoading} newHolidayDate={newHolidayDate} newHolidayName={newHolidayName} setNewHolidayDate={setNewHolidayDate} setNewHolidayName={setNewHolidayName} />
 
