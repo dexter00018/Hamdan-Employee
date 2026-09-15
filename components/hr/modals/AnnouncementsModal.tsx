@@ -5,9 +5,9 @@ import { Megaphone } from 'lucide-react';
 import Spinner, { LoadingRow } from '@/components/Spinner';
 import ModalShell from '@/components/shared/ModalShell';
 
-type Props = { open: boolean; onClose: () => void; announcementContent: string; announcementId: string | null; announcementImageInputRef: RefObject<HTMLInputElement | null>; announcementImagePreview: string | null; announcementImageUrl: string | null; announcementLoading: boolean; announcementMsg: { type: 'success' | 'error'; text: string } | null; announcementRemoveImage: boolean; announcementSaving: boolean; announcementUpdatedAt: string | null; clearAnnouncementImage: () => void; handleAnnouncementImageChange: (file: File | null) => void; publishAnnouncement: () => void | Promise<void>; setAnnouncementContent: Dispatch<SetStateAction<string>> };
+type Props = { open: boolean; onClose: () => void; announcementContent: string; announcementId: string | null; announcementImageInputRef: RefObject<HTMLInputElement | null>; announcementImagePreview: string | null; announcementImageUrl: string | null; announcementLoading: boolean; announcementMsg: { type: 'success' | 'error'; text: string } | null; announcementRemoveImage: boolean; announcementSaving: boolean; announcementUpdatedAt: string | null; clearAnnouncementImage: () => void; handleAnnouncementImageChange: (file: File | null) => void; saveAnnouncement: () => void | Promise<void>; publishAnnouncement: () => void | Promise<void>; setAnnouncementContent: Dispatch<SetStateAction<string>> };
 
-export default function AnnouncementsModal({ open, onClose, announcementContent, announcementId, announcementImageInputRef, announcementImagePreview, announcementImageUrl, announcementLoading, announcementMsg, announcementRemoveImage, announcementSaving, announcementUpdatedAt, clearAnnouncementImage, handleAnnouncementImageChange, publishAnnouncement, setAnnouncementContent }: Props) {
+export default function AnnouncementsModal({ open, onClose, announcementContent, announcementId, announcementImageInputRef, announcementImagePreview, announcementImageUrl, announcementLoading, announcementMsg, announcementRemoveImage, announcementSaving, announcementUpdatedAt, clearAnnouncementImage, handleAnnouncementImageChange, saveAnnouncement, publishAnnouncement, setAnnouncementContent }: Props) {
   return (
     <ModalShell open={open} onClose={onClose} title="Announcements" description={announcementUpdatedAt ? `Last: ${new Date(announcementUpdatedAt).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : undefined} icon={<Megaphone size={17} strokeWidth={2.4}/>} size="lg" closeDisabled={announcementSaving}>
           <div className="overflow-y-auto flex-1 pr-1">
@@ -15,7 +15,7 @@ export default function AnnouncementsModal({ open, onClose, announcementContent,
           <div className="min-h-[137px]">
           {announcementLoading ? <LoadingRow label="Loading..." /> : (
             <>
-              <textarea className="input-field w-full min-h-[80px] resize-y text-sm" placeholder="Type the announcement that all employees will see..." value={announcementContent} onChange={(e) => setAnnouncementContent(e.target.value)} />
+              <textarea disabled={announcementSaving} className="input-field w-full min-h-[80px] resize-y text-sm" placeholder="Type the announcement that all employees will see..." value={announcementContent} onChange={(e) => setAnnouncementContent(e.target.value)} />
 
               <div className="mt-3">
                 {(announcementImagePreview || (announcementImageUrl && !announcementRemoveImage)) ? (
@@ -29,6 +29,7 @@ export default function AnnouncementsModal({ open, onClose, announcementContent,
                     <button
                       type="button"
                       onClick={clearAnnouncementImage}
+                      disabled={announcementSaving}
                       className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-white shadow border border-slate-200 flex items-center justify-center text-slate-500 hover:text-red-600 transition"
                       aria-label="Remove image"
                     >
@@ -42,6 +43,7 @@ export default function AnnouncementsModal({ open, onClose, announcementContent,
                     <input
                       ref={announcementImageInputRef}
                       type="file"
+                      disabled={announcementSaving}
                       accept="image/*"
                       className="hidden"
                       onChange={(e) => handleAnnouncementImageChange(e.target.files?.[0] ?? null)}
@@ -50,9 +52,11 @@ export default function AnnouncementsModal({ open, onClose, announcementContent,
                 )}
               </div>
 
-              <button onClick={publishAnnouncement} disabled={announcementSaving || !announcementContent.trim()} className="btn-primary mt-3 !py-2.5 !text-xs disabled:opacity-50">
-                {announcementSaving ? <span className="flex items-center justify-center gap-2"><Spinner size="sm"/>Publishing...</span> : announcementId ? 'Update Announcement' : 'Publish Announcement'}
-              </button>
+              <p className="mt-3 text-xs text-slate-500">Save updates the portal only. Publish &amp; Email also requests an employee email notification. Publishing again sends another notification.</p>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button type="button" onClick={saveAnnouncement} disabled={announcementSaving || !announcementContent.trim()} className="min-h-11 rounded-full border border-slate-200 px-3 text-xs font-bold disabled:opacity-50">{announcementId ? 'Update Announcement' : 'Save Announcement'}</button>
+                <button type="button" onClick={publishAnnouncement} disabled={announcementSaving || !announcementContent.trim()} className="btn-primary !py-2.5 !text-xs disabled:opacity-50">{announcementSaving ? <span className="flex items-center justify-center gap-2"><Spinner size="sm"/>Saving...</span> : 'Publish & Email'}</button>
+              </div>
             </>
           )}
           </div>

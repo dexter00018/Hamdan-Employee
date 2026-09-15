@@ -560,6 +560,7 @@ export default function HRDashboard() {
   const [announcementUpdatedAt, setAnnouncementUpdatedAt] = useState<string | null>(null);
   const [announcementLoading, setAnnouncementLoading] = useState(true);
   const [announcementSaving, setAnnouncementSaving] = useState(false);
+  const announcementWriteLock = useRef(false);
   const [announcementMsg, setAnnouncementMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Payslip upload states
@@ -895,16 +896,18 @@ export default function HRDashboard() {
     if (announcementImageInputRef.current) announcementImageInputRef.current.value = '';
   };
 
-  // Publishes the announcement. If one already exists we UPDATE it (so
-  // there's always a single "current" announcement employees see);
-  // otherwise we INSERT the first one. RLS only allows admin/super_admin
-  // roles to write to this table.
-  const publishAnnouncement = async () => {
+  // Save updates the portal; only Publish changes the email event marker.
+  const saveAnnouncement = async (sendEmail = false) => {
+    if (announcementWriteLock.current || !announcementContent.trim()) return;
+    announcementWriteLock.current = true;
     setAnnouncementSaving(true);
     setAnnouncementMsg(null);
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
+
+      if (!user) throw new Error('Please sign in again.');
+      const publication = sendEmail ? { email_publication_id: crypto.randomUUID() } : {};
 
       // Resolve what image_url should end up as: a freshly-uploaded
       // image, explicitly removed (null), or left untouched.
@@ -926,22 +929,25 @@ export default function HRDashboard() {
 
       if (announcementId) {
         const updatePayload: Record<string, any> = {
+          ...publication,
           content: announcementContent,
           updated_at: new Date().toISOString(),
           updated_by: user?.id ?? null,
         };
         if (nextImageUrl !== undefined) updatePayload.image_url = nextImageUrl;
 
-        const { error } = await supabase
+        const { data: saved, error } = await supabase
           .from('announcements')
           .update(updatePayload)
-          .eq('id', announcementId);
+          .eq('id', announcementId).select('id').maybeSingle();
 
         if (error) throw error;
+        if (!saved) throw new Error('Announcement was not saved. Check your access and reload.');
       } else {
         const { data, error } = await supabase
           .from('announcements')
           .insert([{
+            ...publication,
             content: announcementContent,
             image_url: nextImageUrl ?? null,
             updated_by: user?.id ?? null,
@@ -953,12 +959,13 @@ export default function HRDashboard() {
         setAnnouncementId(data.id);
       }
 
-      setAnnouncementMsg({ type: 'success', text: 'Announcement published successfully.' });
+      setAnnouncementMsg({ type: 'success', text: sendEmail ? 'Announcement published. Email delivery depends on the connected notification workflow.' : 'Announcement saved. No email notification requested.' });
       await fetchAnnouncement();
     } catch (err: any) {
       console.error('Error publishing announcement:', err);
-      setAnnouncementMsg({ type: 'error', text: err?.message ?? 'Failed to publish announcement.' });
+      setAnnouncementMsg({ type: 'error', text: err?.message ?? 'Failed to save announcement.' });
     } finally {
+      announcementWriteLock.current = false;
       setAnnouncementSaving(false);
     }
   };
@@ -2080,7 +2087,7 @@ export default function HRDashboard() {
 
         <TeamLeaveCalendarModal open={leaveCalendarOpen} onClose={() => setLeaveCalendarOpen(false)} calendarData={calendarData} leaveCalendarMonth={leaveCalendarMonth} selectedCalendarDate={selectedCalendarDate} selectedCalendarDay={selectedCalendarDay} setLeaveCalendarMonth={setLeaveCalendarMonth} setSelectedCalendarDate={setSelectedCalendarDate} todayManila={todayManila} />
 
-        <AnnouncementsModal open={announcementOpen} onClose={() => setAnnouncementOpen(false)} announcementContent={announcementContent} announcementId={announcementId} announcementImageInputRef={announcementImageInputRef} announcementImagePreview={announcementImagePreview} announcementImageUrl={announcementImageUrl} announcementLoading={announcementLoading} announcementMsg={announcementMsg} announcementRemoveImage={announcementRemoveImage} announcementSaving={announcementSaving} announcementUpdatedAt={announcementUpdatedAt} clearAnnouncementImage={clearAnnouncementImage} handleAnnouncementImageChange={handleAnnouncementImageChange} publishAnnouncement={publishAnnouncement} setAnnouncementContent={setAnnouncementContent} />
+        <AnnouncementsModal open={announcementOpen} onClose={() => setAnnouncementOpen(false)} announcementContent={announcementContent} announcementId={announcementId} announcementImageInputRef={announcementImageInputRef} announcementImagePreview={announcementImagePreview} announcementImageUrl={announcementImageUrl} announcementLoading={announcementLoading} announcementMsg={announcementMsg} announcementRemoveImage={announcementRemoveImage} announcementSaving={announcementSaving} announcementUpdatedAt={announcementUpdatedAt} clearAnnouncementImage={clearAnnouncementImage} handleAnnouncementImageChange={handleAnnouncementImageChange} publishAnnouncement={() => saveAnnouncement(true)} saveAnnouncement={() => saveAnnouncement(false)} setAnnouncementContent={setAnnouncementContent} />
 
         <HolidaysModal open={holidaysOpen} onClose={() => setHolidaysOpen(false)} addHoliday={addHoliday} deleteHoliday={deleteHoliday} holidayMsg={holidayMsg} holidaySaving={holidaySaving} holidays={holidays} holidaysLoading={holidaysLoading} newHolidayDate={newHolidayDate} newHolidayName={newHolidayName} setNewHolidayDate={setNewHolidayDate} setNewHolidayName={setNewHolidayName} />
 
