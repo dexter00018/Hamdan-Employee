@@ -1,0 +1,4 @@
+-- Live migration applied to msoomcjzzudibiyezclj on 2026-09-28.
+-- Offset requests: completed whole hours after 7:00 PM Asia/Manila, HR approval,
+-- and 9 approved hours -> 1 paid leave credit through HR authorization.
+-- Source is recorded in the Supabase migration history; pull this migration before future schema edits.
