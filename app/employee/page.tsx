@@ -37,6 +37,7 @@ const NotificationsModal = dynamic(() => import('@/components/employee/modals/No
 const PayslipsModal = dynamic(() => import('@/components/employee/modals/PayslipsModal'));
 const EmployeeDirectoryModal = dynamic(() => import('@/components/employee/modals/EmployeeDirectoryModal'));
 const CompanyCalendarModal = dynamic(() => import('@/components/employee/modals/CompanyCalendarModal'));
+const OffsetRequestsModal = dynamic(() => import('@/components/employee/modals/OffsetRequestsModal'));
 
 function EyeIcon() {
   return (
@@ -87,6 +88,7 @@ const FALLBACK_TIME_OUT_REMINDER_HOUR = 19;
 export default function EmployeeDashboard() {
   const { verify, verificationDialog } = useVerificationDialog();
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [offsetModalOpen, setOffsetModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [timeOutLoading, setTimeOutLoading] = useState(false);
   const [todayLog, setTodayLog] = useState<{ id: string; time_in: string | null; time_out: string | null; status: string | null } | null>(null);
@@ -2430,7 +2432,7 @@ export default function EmployeeDashboard() {
               onLeave={() => setLeaveChoiceModalOpen(true)}
               onDisputes={() => { setSelectedMyDisputeDetail(null); setMyDisputesModalOpen(true); fetchMyDisputes(); }}
               onPayslips={() => { setPayslipsModalOpen(true); fetchPayslips(); }}
-              onDocuments={() => { setDocumentsModalOpen(true); fetchEmployeeDocuments(); }}
+              onOffset={() => setOffsetModalOpen(true)}
               onDirectory={() => { setDirectoryModalOpen(true); setDirectorySearch(''); fetchDirectory(); }}
               onCompanyCalendar={() => { setCalendarModalOpen(true); fetchCompanyHolidays(); }}
               onHelpdesk={() => { setSupportModalOpen(true); fetchSupportRequests(); }}
@@ -2806,6 +2808,7 @@ export default function EmployeeDashboard() {
 
       {/* Employee Documents Modal */}
       {documentsModalOpen && <EmployeeDocumentsModal open={documentsModalOpen} onClose={() => setDocumentsModalOpen(false)} loading={documentsLoading} documents={employeeDocuments} downloadingId={downloadingDocumentId} onDownload={downloadEmployeeDocument} />}
+      {offsetModalOpen && <OffsetRequestsModal open={offsetModalOpen} onClose={() => setOffsetModalOpen(false)} userId={currentUserId} />}
 
       {showEarlyTimeOutWarning && <EarlyTimeOutModal open={showEarlyTimeOutWarning} onClose={() => setShowEarlyTimeOutWarning(false)} expectedTimeOutLabel={expectedTimeOutLabel} handleTimeOut={handleTimeOut} timeOutLoading={timeOutLoading} />}
 

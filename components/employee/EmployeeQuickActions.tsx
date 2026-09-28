@@ -2,7 +2,7 @@ import {
   CalendarDays,
   CircleAlert,
   CloudSun,
-  FileText,
+  Clock3,
   HandCoins,
   Headphones,
   IdCard,
@@ -14,7 +14,7 @@ type Props = {
   onLeave: () => void;
   onDisputes: () => void;
   onPayslips: () => void;
-  onDocuments: () => void;
+  onOffset: () => void;
   onDirectory: () => void;
   onCompanyCalendar: () => void;
   onHelpdesk: () => void;
@@ -25,7 +25,7 @@ export default function EmployeeQuickActions({
   onLeave,
   onDisputes,
   onPayslips,
-  onDocuments,
+  onOffset,
   onDirectory,
   onCompanyCalendar,
   onHelpdesk,
@@ -36,7 +36,7 @@ export default function EmployeeQuickActions({
     { label: 'My Leave', icon: Plane, action: onLeave, tone: 'from-teal-500 to-emerald-600 shadow-emerald-500/25' },
     { label: 'Disputes', icon: CircleAlert, action: onDisputes, tone: 'from-orange-500 to-rose-500 shadow-orange-500/25' },
     { label: 'Payslips', icon: HandCoins, action: onPayslips, tone: 'from-amber-400 to-orange-500 shadow-amber-500/25' },
-    { label: 'Documents', icon: FileText, action: onDocuments, tone: 'from-cyan-500 to-teal-600 shadow-cyan-500/25' },
+    { label: 'Offset Request', icon: Clock3, action: onOffset, tone: 'from-cyan-500 to-teal-600 shadow-cyan-500/25' },
     { label: 'Company Calendar', icon: CalendarDays, action: onCompanyCalendar, tone: 'from-indigo-500 to-blue-600 shadow-indigo-500/25' },
     { label: 'Helpdesk', icon: Headphones, action: onHelpdesk, tone: 'from-violet-500 to-purple-600 shadow-violet-500/25' },
   ];
