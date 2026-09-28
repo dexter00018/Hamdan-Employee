@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Clock3, PauseCircle, PlayCircle, RefreshCw, TimerReset } from 'lucide-react';
+import { CheckCircle2, Clock3, LockKeyhole, PauseCircle, PlayCircle, RefreshCw, TimerReset } from 'lucide-react';
 import ModalShell from '@/components/shared/ModalShell';
 import { supabase } from '@/lib/supabase';
 
@@ -17,6 +17,8 @@ type Session = {
   started_at: string;
   ended_at: string | null;
 };
+
+type ShiftStatus = 'not_started' | 'active' | 'completed';
 
 type Props = {
   open: boolean;
@@ -60,6 +62,7 @@ export default function ManpowerTrackerModal({ open, onClose }: Props) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeSession, setActiveSession] = useState<Session | null>(null);
+  const [shiftStatus, setShiftStatus] = useState<ShiftStatus>('not_started');
   const [loading, setLoading] = useState(true);
   const [changingProjectId, setChangingProjectId] = useState<string | null>(null);
   const [stopping, setStopping] = useState(false);
@@ -81,7 +84,7 @@ export default function ManpowerTrackerModal({ open, onClose }: Props) {
     const startIso = start.toISOString();
     const endIso = end.toISOString();
 
-    const [projectRes, activeRes, sessionRes] = await Promise.all([
+    const [projectRes, activeRes, sessionRes, attendanceRes] = await Promise.all([
       supabase
         .from('manpower_projects')
         .select('id,name,project_code')
@@ -102,15 +105,30 @@ export default function ManpowerTrackerModal({ open, onClose }: Props) {
         .lt('started_at', endIso)
         .or(`ended_at.is.null,ended_at.gte.${startIso}`)
         .order('started_at', { ascending: true }),
+      supabase
+        .from('attendance_logs')
+        .select('time_in,time_out')
+        .eq('user_id', user.id)
+        .eq('log_date', date)
+        .maybeSingle(),
     ]);
 
     if (projectRes.error) console.error('Error fetching manpower projects:', projectRes.error);
     if (activeRes.error) console.error('Error fetching active manpower session:', activeRes.error);
     if (sessionRes.error) console.error('Error fetching manpower sessions:', sessionRes.error);
+    if (attendanceRes.error) console.error('Error fetching attendance shift:', attendanceRes.error);
+
+    const attendance = attendanceRes.data;
+    const nextShiftStatus: ShiftStatus = !attendance?.time_in
+      ? 'not_started'
+      : attendance.time_out
+        ? 'completed'
+        : 'active';
 
     setProjects((projectRes.data || []) as Project[]);
     setActiveSession((activeRes.data || null) as Session | null);
     setSessions((sessionRes.data || []) as Session[]);
+    setShiftStatus(nextShiftStatus);
     setNow(new Date());
     setLoading(false);
   }, []);
@@ -130,6 +148,7 @@ export default function ManpowerTrackerModal({ open, onClose }: Props) {
   const currentProject = activeSession ? projectMap.get(activeSession.project_id) : null;
   const today = todayManilaDate();
   const bounds = dayBounds(today);
+  const shiftActive = shiftStatus === 'active';
 
   const projectTotals = useMemo(() => {
     const totals = new Map<string, number>();
@@ -146,6 +165,10 @@ export default function ManpowerTrackerModal({ open, onClose }: Props) {
   const activeElapsed = activeSession ? Math.max(0, now.getTime() - new Date(activeSession.started_at).getTime()) : 0;
 
   const switchProject = async (projectId: string) => {
+    if (!shiftActive) {
+      setMessage({ type: 'error', text: shiftStatus === 'completed' ? 'Your shift is already complete. Manpower tracking is locked after Time Out.' : 'Time In first before starting the Manpower Tracker.' });
+      return;
+    }
     if (activeSession?.project_id === projectId) return;
     setChangingProjectId(projectId);
     setMessage(null);
@@ -153,6 +176,7 @@ export default function ManpowerTrackerModal({ open, onClose }: Props) {
     if (error) {
       setMessage({ type: 'error', text: error.message || 'Unable to start this project timer.' });
       setChangingProjectId(null);
+      await fetchData();
       return;
     }
     setMessage({ type: 'success', text: activeSession ? 'Previous project stopped and the selected project timer started.' : 'Project timer started.' });
@@ -174,12 +198,33 @@ export default function ManpowerTrackerModal({ open, onClose }: Props) {
     await fetchData();
   };
 
+  const shiftMeta = shiftStatus === 'active'
+    ? {
+        title: 'Shift active',
+        text: 'Manpower Tracker is available until you Time Out.',
+        className: 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200',
+        icon: <CheckCircle2 size={18} />,
+      }
+    : shiftStatus === 'completed'
+      ? {
+          title: 'Shift completed',
+          text: 'Tracking is locked for today because you already timed out.',
+          className: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200',
+          icon: <LockKeyhole size={18} />,
+        }
+      : {
+          title: 'Time In required',
+          text: 'Start your attendance shift first before tracking project time.',
+          className: 'bg-amber-50 text-amber-800 dark:bg-amber-950/30 dark:text-amber-200',
+          icon: <Clock3 size={18} />,
+        };
+
   return (
     <ModalShell
       open={open}
       onClose={onClose}
       title="Manpower Tracker"
-      description="Choose the project you are working on. Switching projects automatically stops the previous timer."
+      description="Project time can only run while your attendance shift is active. Time Out automatically closes the running project timer."
       icon={<TimerReset size={20} />}
       size="lg"
     >
@@ -190,7 +235,15 @@ export default function ManpowerTrackerModal({ open, onClose }: Props) {
           </div>
         )}
 
-        <section className={`rounded-2xl p-4 ${activeSession ? 'bg-emerald-50/90 dark:bg-emerald-950/25' : 'bg-slate-50 dark:bg-[#303632]'}`}>
+        <section className={`flex items-start gap-3 rounded-2xl px-4 py-3 ${shiftMeta.className}`}>
+          <span className="mt-0.5 flex-none">{shiftMeta.icon}</span>
+          <div className="min-w-0">
+            <p className="text-sm font-bold">{shiftMeta.title}</p>
+            <p className="mt-0.5 text-[11px] opacity-80">{shiftMeta.text}</p>
+          </div>
+        </section>
+
+        <section className={`rounded-2xl p-4 ${activeSession && shiftActive ? 'bg-emerald-50/90 dark:bg-emerald-950/25' : 'bg-slate-50 dark:bg-[#303632]'}`}>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Currently tracking</p>
@@ -200,10 +253,10 @@ export default function ManpowerTrackerModal({ open, onClose }: Props) {
               {currentProject?.project_code && <p className="mt-0.5 text-xs text-slate-500">{currentProject.project_code}</p>}
             </div>
             <div className="flex items-center gap-2 sm:flex-col sm:items-end">
-              <span className={`font-mono text-xl font-semibold tracking-tight ${activeSession ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-400'}`}>
+              <span className={`font-mono text-xl font-semibold tracking-tight ${activeSession && shiftActive ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-400'}`}>
                 {activeSession ? formatDuration(activeElapsed) : '00:00:00'}
               </span>
-              {activeSession && (
+              {activeSession && shiftActive && (
                 <button
                   type="button"
                   onClick={stopTracking}
@@ -221,7 +274,7 @@ export default function ManpowerTrackerModal({ open, onClose }: Props) {
           <div className="mb-2 flex items-center justify-between gap-2">
             <div>
               <h3 className="text-sm font-bold text-slate-900 dark:text-white">Select project</h3>
-              <p className="text-[11px] text-slate-500">Only projects activated by Super Admin appear here.</p>
+              <p className="text-[11px] text-slate-500">Only active Super Admin projects can be selected during an open shift.</p>
             </div>
             <button type="button" onClick={fetchData} className="grid h-9 w-9 place-items-center rounded-xl bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300" aria-label="Refresh projects">
               <RefreshCw size={15} />
@@ -237,22 +290,25 @@ export default function ManpowerTrackerModal({ open, onClose }: Props) {
               {projects.map((project) => {
                 const active = activeSession?.project_id === project.id;
                 const changing = changingProjectId === project.id;
+                const locked = !shiftActive;
                 return (
                   <button
                     key={project.id}
                     type="button"
                     onClick={() => switchProject(project.id)}
-                    disabled={active || changing}
-                    className={`min-h-20 rounded-2xl px-3 py-3 text-left transition ${active ? 'bg-emerald-600 text-white shadow-md' : 'bg-slate-50 text-slate-800 hover:bg-slate-100 dark:bg-[#303632] dark:text-white dark:hover:bg-slate-800'} disabled:cursor-default`}
+                    disabled={locked || active || changing}
+                    className={`min-h-20 rounded-2xl px-3 py-3 text-left transition ${active && shiftActive ? 'bg-emerald-600 text-white shadow-md' : locked ? 'bg-slate-100 text-slate-400 dark:bg-slate-800/70 dark:text-slate-500' : 'bg-slate-50 text-slate-800 hover:bg-slate-100 dark:bg-[#303632] dark:text-white dark:hover:bg-slate-800'} disabled:cursor-not-allowed`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <span className="min-w-0">
                         <span className="block line-clamp-2 text-xs font-bold leading-tight">{project.name}</span>
-                        {project.project_code && <span className={`mt-1 block text-[10px] ${active ? 'text-emerald-100' : 'text-slate-500'}`}>{project.project_code}</span>}
+                        {project.project_code && <span className={`mt-1 block text-[10px] ${active && shiftActive ? 'text-emerald-100' : 'text-slate-500'}`}>{project.project_code}</span>}
                       </span>
-                      {active ? <Clock3 size={16} className="flex-none" /> : <PlayCircle size={16} className="flex-none text-slate-400" />}
+                      {locked ? <LockKeyhole size={16} className="flex-none" /> : active ? <Clock3 size={16} className="flex-none" /> : <PlayCircle size={16} className="flex-none text-slate-400" />}
                     </div>
-                    <span className={`mt-2 block text-[10px] font-semibold ${active ? 'text-emerald-100' : 'text-slate-500'}`}>{active ? 'Tracking now' : changing ? 'Starting…' : 'Start / Switch'}</span>
+                    <span className={`mt-2 block text-[10px] font-semibold ${active && shiftActive ? 'text-emerald-100' : 'text-slate-500'}`}>
+                      {locked ? (shiftStatus === 'completed' ? 'Shift completed' : 'Time In required') : active ? 'Tracking now' : changing ? 'Starting…' : 'Start / Switch'}
+                    </span>
                   </button>
                 );
               })}
@@ -264,7 +320,7 @@ export default function ManpowerTrackerModal({ open, onClose }: Props) {
           <div className="mb-2 flex items-end justify-between gap-3">
             <div>
               <h3 className="text-sm font-bold text-slate-900 dark:text-white">Today by project</h3>
-              <p className="text-[11px] text-slate-500">September-style project hours are calculated from the actual switch times.</p>
+              <p className="text-[11px] text-slate-500">Project hours are calculated from the actual start, switch, stop, and Time Out timestamps.</p>
             </div>
             <span className="rounded-full bg-cyan-50 px-2.5 py-1 text-[11px] font-bold text-cyan-700 dark:bg-cyan-950/35 dark:text-cyan-300">{formatDuration(todayTotal)}</span>
           </div>
