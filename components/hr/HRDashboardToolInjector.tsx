@@ -37,6 +37,23 @@ export default function HRDashboardToolInjector() {
   }, []);
 
   useEffect(() => {
+    const openHiddenOffset = () => {
+      const button = document.querySelector<HTMLButtonElement>('button[aria-label*="offset action"]');
+      button?.click();
+    };
+    const openHiddenHierarchy = () => {
+      const button = document.querySelector<HTMLButtonElement>('button[aria-label^="Open leave hierarchy"]');
+      button?.click();
+    };
+    window.addEventListener('hr:open-offset', openHiddenOffset);
+    window.addEventListener('hr:open-hierarchy', openHiddenHierarchy);
+    return () => {
+      window.removeEventListener('hr:open-offset', openHiddenOffset);
+      window.removeEventListener('hr:open-hierarchy', openHiddenHierarchy);
+    };
+  }, []);
+
+  useEffect(() => {
     void refreshOffsetCount();
     const interval = window.setInterval(() => void refreshOffsetCount(), 30_000);
     const refreshVisible = () => { if (document.visibilityState === 'visible') void refreshOffsetCount(); };
