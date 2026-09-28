@@ -1,14 +1,19 @@
 'use client';
 
 import { useEffect } from 'react';
-import { CalendarDays, CalendarRange, Coins, FileChartColumn, FolderDown, LifeBuoy, LogOut, Megaphone, Moon, Sun, X } from 'lucide-react';
+import { CalendarDays, CalendarRange, Clock3, Coins, FileChartColumn, FolderDown, LifeBuoy, LogOut, Megaphone, Moon, Network, Sun, X } from 'lucide-react';
 
 type Props = { open: boolean; darkMode: boolean; onClose: () => void; onToggleTheme: () => void; onLogout: () => void; onAnnouncements: () => void; onHolidays: () => void; onLeaveCalendar: () => void; onLeaveCredits: () => void; onReports: () => void; onDocuments: () => void; onHelpdesk: () => void };
+
+const openOffsetManagement = () => window.dispatchEvent(new Event('hr:open-offset'));
+const openLeaveHierarchy = () => window.dispatchEvent(new Event('hr:open-hierarchy'));
 
 export default function HRMobileToolsSheet(props: Props) {
   useEffect(() => { if (!props.open) return; const previous = document.body.style.overflow; document.body.style.overflow = 'hidden'; return () => { document.body.style.overflow = previous; }; }, [props.open]);
   if (!props.open) return null;
   const tools = [
+    { label: 'Offset Management', detail: 'Review offset approvals', icon: Clock3, tone: 'from-cyan-500 to-blue-700', action: openOffsetManagement },
+    { label: 'Leave Hierarchy', detail: 'Set rank and Direct Lead', icon: Network, tone: 'from-violet-500 to-purple-700', action: openLeaveHierarchy },
     { label: 'Announcements', detail: 'Publish company updates', icon: Megaphone, tone: 'from-fuchsia-500 to-purple-700', action: props.onAnnouncements },
     { label: 'Holidays', detail: 'Manage holiday dates', icon: CalendarDays, tone: 'from-rose-500 to-pink-700', action: props.onHolidays },
     { label: 'Leave Calendar', detail: 'View team schedules', icon: CalendarRange, tone: 'from-violet-500 to-indigo-700', action: props.onLeaveCalendar },
