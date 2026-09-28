@@ -1,7 +1,9 @@
 'use client';
 
-import { CalendarClock, CheckCircle2, ChevronRight, Clock3, Headphones } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { CalendarClock, CheckCircle2, ChevronRight, Clock3, Headphones, TimerReset } from 'lucide-react';
 import ModalShell from '@/components/shared/ModalShell';
+import { supabase } from '@/lib/supabase';
 
 type Props = {
   open: boolean;
@@ -15,10 +17,28 @@ type Props = {
 };
 
 export default function HRActionCenterModal({ open, onClose, pendingDisputesCount, pendingLeaveCount, openHrSupportCount, onDisputes, onLeaveRequests, onHelpDesk }: Props) {
-  const total = pendingDisputesCount + pendingLeaveCount + openHrSupportCount;
+  const [pendingOffsetCount, setPendingOffsetCount] = useState(0);
+
+  const fetchOffsetCount = useCallback(async () => {
+    const [earned, usage] = await Promise.all([
+      supabase.from('offset_requests').select('id', { count: 'exact', head: true }).eq('status', 'Pending'),
+      supabase.from('offset_usage_requests').select('id', { count: 'exact', head: true }).eq('status', 'Pending'),
+    ]);
+    setPendingOffsetCount((earned.count || 0) + (usage.count || 0));
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    void fetchOffsetCount();
+    const interval = window.setInterval(() => void fetchOffsetCount(), 30_000);
+    return () => window.clearInterval(interval);
+  }, [open, fetchOffsetCount]);
+
+  const total = pendingDisputesCount + pendingLeaveCount + openHrSupportCount + pendingOffsetCount;
   const items = [
     { label: 'Pending Disputes', description: 'Review attendance corrections', count: pendingDisputesCount, icon: Clock3, tone: 'from-orange-500 to-red-700', action: onDisputes },
     { label: 'Pending Leave Requests', description: 'Approve or reject submitted leave', count: pendingLeaveCount, icon: CalendarClock, tone: 'from-blue-500 to-indigo-700', action: onLeaveRequests },
+    { label: 'Pending Offset Actions', description: 'Review earned offset and use requests', count: pendingOffsetCount, icon: TimerReset, tone: 'from-cyan-500 to-blue-700', action: () => window.dispatchEvent(new Event('hr:open-offset')) },
     { label: 'Open Help Desk Requests', description: 'Respond to employee concerns', count: openHrSupportCount, icon: Headphones, tone: 'from-sky-500 to-cyan-700', action: onHelpDesk },
   ];
 
