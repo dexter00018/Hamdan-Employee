@@ -1,13 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, Clock3, Eraser, XCircle } from 'lucide-react';
+import { Clock3, Eraser } from 'lucide-react';
 import ModalShell from '@/components/shared/ModalShell';
 import { supabase } from '@/lib/supabase';
 
 type Props = { open: boolean; onClose: () => void; userId: string | null };
 type Request = { id: string; eligible_hours: number; status: string; time_out_at: string; created_at: string };
-type Transaction = { kind: 'earned' | 'used' | 'converted'; hours: number };
+type Transaction = { kind: 'earned' | 'used' | 'converted'; hours: number; minutes: number };
 type LateRecord = { id: string; log_date: string; time_in: string | null };
 type UsageRequest = { id: string; attendance_log_id: string; hours: number; status: string; created_at: string; reviewed_at: string | null; hr_notes: string | null };
 
@@ -16,6 +16,15 @@ const statusClass = (status: string) => {
   if (status === 'Rejected') return 'bg-rose-50 text-rose-700 dark:bg-rose-950/35 dark:text-rose-300';
   return 'bg-amber-50 text-amber-700 dark:bg-amber-950/35 dark:text-amber-300';
 };
+
+function formatOffsetMinutes(totalMinutes: number) {
+  const safe = Math.max(0, Math.round(totalMinutes));
+  const hours = Math.floor(safe / 60);
+  const minutes = safe % 60;
+  if (hours && minutes) return `${hours}h ${minutes}m`;
+  if (hours) return `${hours}h`;
+  return `${minutes}m`;
+}
 
 export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
   const [requests, setRequests] = useState<Request[]>([]);
@@ -33,7 +42,7 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
 
     const [requestRes, transactionRes, lateRes, usageRes] = await Promise.all([
       supabase.from('offset_requests').select('id,eligible_hours,status,time_out_at,created_at').eq('user_id', userId).order('created_at', { ascending: false }),
-      supabase.from('offset_transactions').select('kind,hours').eq('user_id', userId),
+      supabase.from('offset_transactions').select('kind,hours,minutes').eq('user_id', userId),
       supabase.from('attendance_logs').select('id,log_date,time_in').eq('user_id', userId).eq('status', 'Late').order('log_date', { ascending: false }).limit(100),
       supabase.from('offset_usage_requests').select('id,attendance_log_id,hours,status,created_at,reviewed_at,hr_notes').eq('user_id', userId).order('created_at', { ascending: false }),
     ]);
@@ -55,17 +64,20 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
     fetchOffsetData();
   }, [open, userId, fetchOffsetData]);
 
-  const approvedBalance = useMemo(
-    () => transactions.reduce((total, transaction) => total + (transaction.kind === 'earned' ? transaction.hours : -transaction.hours), 0),
+  const approvedBalanceMinutes = useMemo(
+    () => transactions.reduce((total, transaction) => {
+      const amount = transaction.hours * 60 + (transaction.minutes || 0);
+      return total + (transaction.kind === 'earned' ? amount : -amount);
+    }, 0),
     [transactions]
   );
 
-  const pendingUseHours = useMemo(
-    () => usageRequests.filter((request) => request.status === 'Pending').reduce((total, request) => total + request.hours, 0),
+  const pendingUseMinutes = useMemo(
+    () => usageRequests.filter((request) => request.status === 'Pending').reduce((total, request) => total + request.hours * 60, 0),
     [usageRequests]
   );
 
-  const availableToRequest = Math.max(0, approvedBalance - pendingUseHours);
+  const availableToRequestMinutes = Math.max(0, approvedBalanceMinutes - pendingUseMinutes);
   const pendingLogIds = new Set(usageRequests.filter((request) => request.status === 'Pending').map((request) => request.attendance_log_id));
   const eligibleLateRecords = lateRecords.filter((record) => !pendingLogIds.has(record.id));
   const usageDate = new Map(lateRecords.map((record) => [record.id, record.log_date]));
@@ -94,7 +106,7 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
       open={open}
       onClose={onClose}
       title="Offset Request"
-      description="Earn approved offset hours after 7:00 PM, then request to use them for a Late attendance record."
+      description="Earn approved offset time after 7:00 PM, then request to use it for a Late attendance record."
       icon={<Clock3 size={20} />}
       size="lg"
     >
@@ -109,22 +121,22 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-700/80 dark:text-cyan-300/80">Approved offset balance</p>
-              <p className="mt-1 text-3xl font-semibold tracking-tight text-cyan-800 dark:text-cyan-200">{approvedBalance} hrs</p>
+              <p className="mt-1 text-3xl font-semibold tracking-tight text-cyan-800 dark:text-cyan-200">{formatOffsetMinutes(approvedBalanceMinutes)}</p>
               <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                {pendingUseHours > 0 ? `${pendingUseHours} hr${pendingUseHours === 1 ? '' : 's'} reserved in pending use request${pendingUseHours === 1 ? '' : 's'}. ` : ''}
-                {availableToRequest} hr{availableToRequest === 1 ? '' : 's'} available to request.
+                {pendingUseMinutes > 0 ? `${formatOffsetMinutes(pendingUseMinutes)} reserved in pending use requests. ` : ''}
+                {formatOffsetMinutes(availableToRequestMinutes)} available to request.
               </p>
             </div>
             <button
               type="button"
               onClick={() => setUseOpen((value) => !value)}
-              disabled={availableToRequest < 1 || eligibleLateRecords.length === 0}
+              disabled={availableToRequestMinutes < 60 || eligibleLateRecords.length === 0}
               className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-cyan-700 px-4 text-xs font-bold text-white shadow-sm transition hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-45"
             >
               <Eraser size={15} /> Use Offset Hours
             </button>
           </div>
-          <p className="mt-3 text-[11px] text-slate-500 dark:text-slate-400">9 approved hours can still be converted to one paid leave day through HR. Using an hour for Late reduces your remaining balance.</p>
+          <p className="mt-3 text-[11px] text-slate-500 dark:text-slate-400">9 approved hours can still be converted to one paid leave day through HR. Scrubbing one Late record uses 1 full approved hour.</p>
         </section>
 
         {useOpen && (
@@ -144,7 +156,7 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
                   </div>
                   <button
                     type="button"
-                    disabled={submittingId === record.id || availableToRequest < 1}
+                    disabled={submittingId === record.id || availableToRequestMinutes < 60}
                     onClick={() => submitUseRequest(record.id)}
                     className="min-h-9 rounded-xl bg-slate-900 px-3 text-xs font-bold text-white transition hover:bg-slate-800 disabled:opacity-45 dark:bg-white dark:text-slate-900"
                   >
