@@ -1,10 +1,27 @@
-import { CalendarClock, CalendarRange, CircleAlert, FileDown, FileText, HandCoins, Headphones, LayoutDashboard, LogOut, Megaphone, Moon, Plane, Sun, UsersRound } from 'lucide-react';
+import { CalendarClock, CalendarRange, CircleAlert, Clock3, FileDown, FileText, HandCoins, Headphones, LayoutDashboard, LogOut, Megaphone, Moon, Network, Plane, Sun, UsersRound } from 'lucide-react';
 
 type Props = { darkMode: boolean; leaveRequestCount: number; disputeCount: number; onDashboard: () => void; onAttendance: () => void; onEmployees: () => void; onLeave: () => void; onDisputes: () => void; onPayslips: () => void; onDocuments: () => void; onAnnouncements: () => void; onHolidays: () => void; onReports: () => void; onHelpdesk: () => void; onToggleTheme: () => void; onLogout: () => void };
+
+const openOffsetManagement = () => window.dispatchEvent(new Event('hr:open-offset'));
+const openLeaveHierarchy = () => window.dispatchEvent(new Event('hr:open-hierarchy'));
+
 export default function HRDesktopSidebar(props: Props) {
   const items = [
-    ['Dashboard', LayoutDashboard, props.onDashboard], ['Attendance', CalendarClock, props.onAttendance], ['Employees', UsersRound, props.onEmployees], ['Leave Requests', Plane, props.onLeave], ['Attendance Disputes', CircleAlert, props.onDisputes], ['Payslips', HandCoins, props.onPayslips], ['Employee Documents', FileText, props.onDocuments], ['Announcements', Megaphone, props.onAnnouncements], ['Holidays', CalendarRange, props.onHolidays], ['Reports', FileDown, props.onReports], ['Helpdesk / HR', Headphones, props.onHelpdesk],
+    ['Dashboard', LayoutDashboard, props.onDashboard],
+    ['Attendance', CalendarClock, props.onAttendance],
+    ['Employees', UsersRound, props.onEmployees],
+    ['Leave Requests', Plane, props.onLeave],
+    ['Offset Management', Clock3, openOffsetManagement],
+    ['Leave Hierarchy', Network, openLeaveHierarchy],
+    ['Attendance Disputes', CircleAlert, props.onDisputes],
+    ['Payslips', HandCoins, props.onPayslips],
+    ['Employee Documents', FileText, props.onDocuments],
+    ['Announcements', Megaphone, props.onAnnouncements],
+    ['Holidays', CalendarRange, props.onHolidays],
+    ['Reports', FileDown, props.onReports],
+    ['Helpdesk / HR', Headphones, props.onHelpdesk],
   ] as const;
+
   return <aside className="dashboard-sidebar dashboard-sidebar-fixed fixed bottom-6 left-6 top-6 z-40 hidden w-56 flex-col rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_30px_rgba(15,23,42,0.06)] dark:border-slate-700 dark:bg-[#292f2b] lg:flex">
     <div className="border-b border-slate-100 px-2 pb-4 dark:border-slate-700"><p className="text-base font-extrabold text-slate-950 dark:text-white">HAMDAN</p><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-green-700 dark:text-green-300">HR Portal</p></div>
     <nav aria-label="HR desktop navigation" className="mt-3 flex-1 space-y-1 overflow-y-auto">{items.map(([label, Icon, action], index) => { const badgeCount = label === 'Leave Requests' ? props.leaveRequestCount : label === 'Attendance Disputes' ? props.disputeCount : 0; return <button key={label} type="button" onClick={action} className={`flex min-h-10 w-full items-center gap-3 rounded-xl px-3 text-left text-xs font-medium transition ${index === 0 ? 'bg-green-50 text-green-700 dark:bg-green-950/40 dark:!text-white' : 'text-slate-700 hover:bg-slate-50 dark:!text-[#e3ece4] dark:hover:bg-slate-800'}`}><Icon size={17} className="shrink-0"/><span className="flex-1">{label}</span>{badgeCount > 0 ? <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[9px] font-bold text-white">{badgeCount > 99 ? '99+' : badgeCount}</span> : null}</button>; })}</nav>
