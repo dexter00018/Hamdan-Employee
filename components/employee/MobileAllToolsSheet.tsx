@@ -109,7 +109,7 @@ export default function MobileAllToolsSheet(props: Props) {
             <X size={19} />
           </button>
         </div>
-        <section className="mb-5 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-left dark:bg-[#343b36]">
+        <section className="mb-5 rounded-2xl bg-slate-50 p-3 text-left dark:bg-[#343b36]">
           <div className="flex min-h-14 items-center gap-3">
             <span className="grid h-12 w-12 flex-none place-items-center overflow-hidden rounded-full bg-white text-slate-500 dark:bg-[#292f2b]">
               {props.avatarUrl ? <Image src={props.avatarUrl} alt="" width={48} height={48} className="h-full w-full object-cover" /> : <UserRound size={20} />}
@@ -123,13 +123,12 @@ export default function MobileAllToolsSheet(props: Props) {
         <h3 className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">All Tools</h3>
         <div className="grid grid-cols-4 gap-2 sm:gap-3">
           {tools.map(({ label, icon: Icon, action, disabled }, index) => (
-            <button key={label} type="button" onClick={() => runTool(action)} disabled={disabled} className="group relative flex min-h-24 min-w-0 flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border border-slate-200 bg-white px-1.5 py-3 text-center shadow-[0_5px_16px_rgba(15,23,42,0.06)] transition duration-200 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 dark:bg-[#303632]">
-              <span className="absolute -right-4 -top-4 h-12 w-12 rounded-full bg-green-100/60 transition-transform group-active:scale-125 dark:bg-green-900/20" aria-hidden="true" />
+            <button key={label} type="button" onClick={() => runTool(action)} disabled={disabled} className="group relative flex min-h-24 min-w-0 flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl bg-white/90 px-1.5 py-3 text-center shadow-[0_5px_16px_rgba(15,23,42,0.05)] transition duration-200 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 dark:bg-[#303632]">
+              <span className="absolute -right-4 -top-4 h-12 w-12 rounded-full bg-green-100/35 transition-transform group-active:scale-125 dark:bg-green-900/15" aria-hidden="true" />
               <span className={`relative grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br text-white shadow-md ${toolTones[index % toolTones.length]}`}>
-                <span className="absolute inset-[3px] rounded-[13px] border border-white/25" aria-hidden="true" />
-                <Icon size={20} strokeWidth={2.2} aria-hidden="true" />
+                <Icon size={20} strokeWidth={2.1} aria-hidden="true" />
               </span>
-              <span className="relative line-clamp-2 min-h-7 w-full text-[10px] font-bold leading-tight text-slate-800 dark:text-slate-100 sm:text-[11px]">{label}</span>
+              <span className="relative line-clamp-2 min-h-7 w-full text-[10px] font-semibold leading-tight text-slate-700 dark:text-slate-100 sm:text-[11px]">{label}</span>
             </button>
           ))}
         </div>
