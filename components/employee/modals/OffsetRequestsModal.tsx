@@ -15,7 +15,6 @@ type OffsetLeave = { id: string; leave_type: string; start_date: string; status:
 type HistoryItem = { id: string; createdAt: string; title: string; detail: string; status: string };
 
 const REQUIRED_LEAVE_MINUTES = 9 * 60;
-const OFFSET_HISTORY_DAYS = 15;
 
 const statusClass = (status: string) => {
   if (status === 'Approved') return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/35 dark:text-emerald-300';
@@ -42,15 +41,33 @@ function submittedLabel(value: string) {
   });
 }
 
-function recentHistoryStart() {
+function timeLabel(value: string | null) {
+  if (!value) return '—';
+  return new Date(value).toLocaleTimeString('en-US', {
+    timeZone: 'Asia/Manila',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function currentPayrollCutoff() {
   const today = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Manila',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
   }).format(new Date());
-  const todayStart = Date.parse(`${today}T00:00:00+08:00`);
-  return todayStart - (OFFSET_HISTORY_DAYS - 1) * 24 * 60 * 60 * 1000;
+  const year = Number(today.slice(0, 4));
+  const month = Number(today.slice(5, 7));
+  const day = Number(today.slice(8, 10));
+  const startDay = day <= 15 ? 1 : 16;
+  const endDay = day <= 15 ? 15 : new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const monthText = new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: 'Asia/Manila' }).format(new Date(`${year}-${String(month).padStart(2, '0')}-01T00:00:00+08:00`));
+  return {
+    start: `${year}-${String(month).padStart(2, '0')}-${String(startDay).padStart(2, '0')}`,
+    end: `${year}-${String(month).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`,
+    label: `${monthText} ${startDay}–${endDay}, ${year}`,
+  };
 }
 
 export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
@@ -64,6 +81,8 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
   const [useOpen, setUseOpen] = useState(false);
   const [submittingId, setSubmittingId] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const cutoff = useMemo(() => currentPayrollCutoff(), []);
 
   const fetchOffsetData = useCallback(async () => {
     if (!userId) return;
@@ -131,8 +150,8 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
   const reservedMinutes = pendingUseMinutes + pendingEarlyOutMinutes + pendingLeaveMinutes;
   const availableToRequestMinutes = Math.max(0, approvedBalanceMinutes - reservedMinutes);
   const pendingLogIds = new Set(usageRequests.filter((request) => request.status === 'Pending').map((request) => request.attendance_log_id));
-  const eligibleLateRecords = lateRecords.filter((record) => !pendingLogIds.has(record.id));
-  const usageDate = new Map(lateRecords.map((record) => [record.id, record.log_date]));
+  const eligibleLateRecords = lateRecords.filter((record) => record.log_date >= cutoff.start && record.log_date <= cutoff.end && !pendingLogIds.has(record.id));
+  const lateRecordMap = new Map(lateRecords.map((record) => [record.id, record]));
   const canFileOffsetLeave = availableToRequestMinutes >= REQUIRED_LEAVE_MINUTES;
 
   const historyItems = useMemo<HistoryItem[]>(() => {
@@ -144,19 +163,23 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
       status: leave.status,
     }));
 
-    const lateItems: HistoryItem[] = usageRequests.map((request) => ({
-      id: `late-${request.id}`,
-      createdAt: request.created_at,
-      title: `Late · ${request.hours}h${usageDate.get(request.attendance_log_id) ? ` · ${usageDate.get(request.attendance_log_id)}` : ''}`,
-      detail: submittedLabel(request.created_at),
-      status: request.status,
-    }));
+    const lateItems: HistoryItem[] = usageRequests.map((request) => {
+      const record = lateRecordMap.get(request.attendance_log_id);
+      const usageText = request.status === 'Approved' ? `Used ${request.hours}h` : request.status === 'Pending' ? `Reserves ${request.hours}h` : 'No deduction';
+      return {
+        id: `late-${request.id}`,
+        createdAt: request.created_at,
+        title: `Late${record?.log_date ? ` · ${record.log_date}` : ''}`,
+        detail: `Original ${timeLabel(record?.time_in || null)} · ${usageText}`,
+        status: request.status,
+      };
+    });
 
     const earlyOutItems: HistoryItem[] = earlyOutRequests.map((request) => ({
       id: `early-out-${request.id}`,
       createdAt: request.created_at,
       title: `Early Out · ${formatOffsetMinutes(request.required_minutes)}`,
-      detail: submittedLabel(request.created_at),
+      detail: request.status === 'Approved' ? `Used ${formatOffsetMinutes(request.required_minutes)}` : request.status === 'Pending' ? `Reserves ${formatOffsetMinutes(request.required_minutes)}` : 'No deduction',
       status: request.status,
     }));
 
@@ -168,14 +191,9 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
       status: request.status,
     }));
 
-    const historyStart = recentHistoryStart();
     return [...leaveItems, ...lateItems, ...earlyOutItems, ...earnedItems]
-      .filter((item) => {
-        const createdAt = new Date(item.createdAt).getTime();
-        return Number.isFinite(createdAt) && createdAt >= historyStart;
-      })
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [offsetLeaves, usageRequests, earlyOutRequests, requests, usageDate]);
+  }, [offsetLeaves, usageRequests, earlyOutRequests, requests, lateRecordMap]);
 
   const submitUseRequest = async (attendanceLogId: string) => {
     setSubmittingId(attendanceLogId);
@@ -258,17 +276,17 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
         {useOpen && (
           <section className="rounded-2xl bg-slate-50 p-3 dark:bg-[#303632]">
             <div className="mb-3">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Choose a Late date</h3>
-              <p className="mt-0.5 text-[11px] text-slate-500">Reserves 1h until HR review.</p>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Late records · Current cutoff</h3>
+              <p className="mt-0.5 text-[11px] text-slate-500">{cutoff.label} · 1h each</p>
             </div>
             <div className="space-y-2">
               {eligibleLateRecords.length === 0 ? (
-                <p className="rounded-xl bg-white px-3 py-4 text-center text-xs text-slate-500 dark:bg-[#292f2b]">No eligible Late records.</p>
+                <p className="rounded-xl bg-white px-3 py-4 text-center text-xs text-slate-500 dark:bg-[#292f2b]">No eligible Late records this cutoff.</p>
               ) : eligibleLateRecords.map((record) => (
                 <div key={record.id} className="flex flex-col gap-2 rounded-xl bg-white p-3 shadow-[0_4px_14px_rgba(15,23,42,0.04)] dark:bg-[#292f2b] sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="text-sm font-semibold text-slate-900 dark:text-white">{new Date(`${record.log_date}T00:00:00+08:00`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
-                    <p className="mt-0.5 text-[11px] text-slate-500">Uses 1h Offset</p>
+                    <p className="mt-0.5 text-[11px] text-slate-500">Original {timeLabel(record.time_in)} · Uses 1h Offset</p>
                   </div>
                   <button
                     type="button"
@@ -287,7 +305,7 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
         <section>
           <div className="mb-2">
             <h3 className="text-sm font-bold text-slate-900 dark:text-white">Offset History</h3>
-            <p className="text-[11px] text-slate-500">Last 15 days</p>
+            <p className="text-[11px] text-slate-500">Earned and used Offset</p>
           </div>
           {loading ? (
             <p className="py-4 text-center text-sm text-slate-500">Loading…</p>
@@ -304,7 +322,7 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
               ))}
             </div>
           ) : (
-            <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-xs text-slate-500 dark:bg-[#303632]">No offset history in the last 15 days.</p>
+            <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-xs text-slate-500 dark:bg-[#303632]">No offset history.</p>
           )}
         </section>
       </div>
