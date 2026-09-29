@@ -8,9 +8,9 @@ type Props = { open: boolean; onClose: () => void; loading: boolean; payslips: a
 
 export default function PayslipsModal({ open, onClose, loading, payslips, downloadingId, acknowledgingId, onDownload, onAcknowledge }: Props) {
   return (
-    <ModalShell open={open} onClose={onClose} title="My Payslips" description="Secure payslip files published by HR" icon="🧾" size="md">
+    <ModalShell open={open} onClose={onClose} title="My Payslips" description="Published payslips" icon="🧾" size="md">
       {loading ? <LoadingRow label="Loading payslips..." /> : payslips.length === 0 ? (
-        <EmptyState icon="📄" title="No payslips yet" description="HR will upload your payslip each cutoff period." />
+        <EmptyState icon="📄" title="No payslips yet" description="Published slips appear here." />
       ) : <div className="space-y-3">
         {payslips.map((payslip) => (
           <article key={payslip.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800 sm:flex sm:items-center sm:justify-between sm:gap-4">
