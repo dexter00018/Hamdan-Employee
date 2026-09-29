@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 import { createSupabaseAdminClient } from '@/lib/server/supabase-admin';
 import { answerEmployeeQuestion, EmployeeAIError } from '@/lib/server/employee-ai';
 import { answerLiveOffsetOrManpower } from '@/lib/server/employee-ai-live';
+import { answerEmployeeProfileQuestion } from '@/lib/server/employee-ai-profile';
 import { PAYSLIP_REAUTH_COOKIE, verifyPayslipReauthToken } from '@/lib/server/employee-ai-reauth';
 import { isRecord, validateHistory } from '@/lib/employee/ask-ai';
 import { answerKnownSystemQuestion } from '@/lib/employee/system-question-answer';
@@ -61,10 +62,16 @@ export async function POST(request: Request) {
     if (allowed !== true) return NextResponse.json({ success: false, error: 'Too many questions. Please wait a minute.' }, { status: 429, headers: { ...headers, 'Retry-After': '60' } });
     const requestId = crypto.randomUUID();
     const language = String(body.language ?? 'auto') as 'auto' | 'tl' | 'en';
+    const question = body.question.trim();
+
+    // Self-profile and hierarchy questions are answered directly from the verified employee session.
+    // This handles varied English/Tagalog wording without exposing another employee's private data.
+    const profileAnswer = await answerEmployeeProfileQuestion({ client: auth.client, userId: auth.userId, question, language });
+    if (profileAnswer) return json({ success: true, ...profileAnswer, request_id: requestId });
 
     // Fast path for known portal/workflow questions. This keeps system help current and
     // avoids an n8n/Gemini round-trip when no private/live employee data is needed.
-    const localSystemAnswer = answerKnownSystemQuestion(body.question.trim(), language);
+    const localSystemAnswer = answerKnownSystemQuestion(question, language);
     if (localSystemAnswer) return json({ success: true, answer: localSystemAnswer, request_id: requestId, source: 'system_knowledge' });
 
     // Live Offset and Manpower questions use the updated n8n classifier, while private
@@ -72,7 +79,7 @@ export async function POST(request: Request) {
     const liveAnswer = await answerLiveOffsetOrManpower({
       client: auth.client,
       userId: auth.userId,
-      question: body.question.trim(),
+      question,
       history,
       language,
       requestId,
@@ -80,7 +87,7 @@ export async function POST(request: Request) {
     if (liveAnswer) return json({ success: true, ...liveAnswer, request_id: requestId });
 
     const payslipUnlocked = verifyPayslipReauthToken(cookieValue(await cookies(), PAYSLIP_REAUTH_COOKIE), auth.userId);
-    const answer = await answerEmployeeQuestion({ ...auth, history, question: body.question.trim(), language, payslipId: body.payslip_id as string | undefined, payslipUnlocked, requestId });
+    const answer = await answerEmployeeQuestion({ ...auth, history, question, language, payslipId: body.payslip_id as string | undefined, payslipUnlocked, requestId });
     return json({ success: true, ...answer, request_id: requestId });
   } catch (error) { return failure(error); }
 }
