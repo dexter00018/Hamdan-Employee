@@ -11,11 +11,12 @@ export default function HRDashboardToolInjector() {
   const [offsetCount, setOffsetCount] = useState(0);
 
   const refreshOffsetCount = useCallback(async () => {
-    const [earned, usage] = await Promise.all([
+    const [earned, usage, earlyOut] = await Promise.all([
       supabase.from('offset_requests').select('id', { count: 'exact', head: true }).eq('status', 'Pending'),
       supabase.from('offset_usage_requests').select('id', { count: 'exact', head: true }).eq('status', 'Pending'),
+      supabase.from('early_out_offset_requests').select('id', { count: 'exact', head: true }).eq('status', 'Pending'),
     ]);
-    setOffsetCount((earned.count || 0) + (usage.count || 0));
+    setOffsetCount((earned.count || 0) + (usage.count || 0) + (earlyOut.count || 0));
   }, []);
 
   useEffect(() => {
