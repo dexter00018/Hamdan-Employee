@@ -15,6 +15,7 @@ type OffsetLeave = { id: string; leave_type: string; start_date: string; status:
 type HistoryItem = { id: string; createdAt: string; title: string; detail: string; status: string };
 
 const REQUIRED_LEAVE_MINUTES = 9 * 60;
+const OFFSET_HISTORY_DAYS = 15;
 
 const statusClass = (status: string) => {
   if (status === 'Approved') return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/35 dark:text-emerald-300';
@@ -39,6 +40,17 @@ function submittedLabel(value: string) {
     hour: 'numeric',
     minute: '2-digit',
   });
+}
+
+function recentHistoryStart() {
+  const today = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+  const todayStart = Date.parse(`${today}T00:00:00+08:00`);
+  return todayStart - (OFFSET_HISTORY_DAYS - 1) * 24 * 60 * 60 * 1000;
 }
 
 export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
@@ -156,9 +168,13 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
       status: request.status,
     }));
 
-    return [...leaveItems, ...lateItems, ...earlyOutItems, ...earnedItems].sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
+    const historyStart = recentHistoryStart();
+    return [...leaveItems, ...lateItems, ...earlyOutItems, ...earnedItems]
+      .filter((item) => {
+        const createdAt = new Date(item.createdAt).getTime();
+        return Number.isFinite(createdAt) && createdAt >= historyStart;
+      })
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [offsetLeaves, usageRequests, earlyOutRequests, requests, usageDate]);
 
   const submitUseRequest = async (attendanceLogId: string) => {
@@ -271,7 +287,7 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
         <section>
           <div className="mb-2">
             <h3 className="text-sm font-bold text-slate-900 dark:text-white">Offset History</h3>
-            <p className="text-[11px] text-slate-500">Earned and used Offset</p>
+            <p className="text-[11px] text-slate-500">Last 15 days</p>
           </div>
           {loading ? (
             <p className="py-4 text-center text-sm text-slate-500">Loading…</p>
@@ -288,7 +304,7 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
               ))}
             </div>
           ) : (
-            <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-xs text-slate-500 dark:bg-[#303632]">No offset history.</p>
+            <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-xs text-slate-500 dark:bg-[#303632]">No offset history in the last 15 days.</p>
           )}
         </section>
       </div>
