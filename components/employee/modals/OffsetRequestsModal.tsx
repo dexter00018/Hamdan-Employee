@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Clock3, Eraser } from 'lucide-react';
+import { CalendarPlus, Clock3, Eraser } from 'lucide-react';
 import ModalShell from '@/components/shared/ModalShell';
 import { supabase } from '@/lib/supabase';
 
@@ -10,10 +10,13 @@ type Request = { id: string; eligible_hours: number; status: string; time_out_at
 type Transaction = { kind: 'earned' | 'used' | 'converted'; hours: number; minutes: number };
 type LateRecord = { id: string; log_date: string; time_in: string | null };
 type UsageRequest = { id: string; attendance_log_id: string; hours: number; status: string; created_at: string; reviewed_at: string | null; hr_notes: string | null };
+type OffsetLeave = { id: string; leave_type: string; start_date: string; status: string; offset_minutes_required: number; offset_charged_at: string | null; offset_refunded_at: string | null; created_at: string };
+
+const REQUIRED_LEAVE_MINUTES = 9 * 60;
 
 const statusClass = (status: string) => {
   if (status === 'Approved') return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/35 dark:text-emerald-300';
-  if (status === 'Rejected') return 'bg-rose-50 text-rose-700 dark:bg-rose-950/35 dark:text-rose-300';
+  if (status === 'Rejected' || status === 'Cancelled') return 'bg-rose-50 text-rose-700 dark:bg-rose-950/35 dark:text-rose-300';
   return 'bg-amber-50 text-amber-700 dark:bg-amber-950/35 dark:text-amber-300';
 };
 
@@ -31,6 +34,7 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [lateRecords, setLateRecords] = useState<LateRecord[]>([]);
   const [usageRequests, setUsageRequests] = useState<UsageRequest[]>([]);
+  const [offsetLeaves, setOffsetLeaves] = useState<OffsetLeave[]>([]);
   const [loading, setLoading] = useState(true);
   const [useOpen, setUseOpen] = useState(false);
   const [submittingId, setSubmittingId] = useState<string | null>(null);
@@ -40,29 +44,38 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
     if (!userId) return;
     setLoading(true);
 
-    const [requestRes, transactionRes, lateRes, usageRes] = await Promise.all([
+    const [requestRes, transactionRes, lateRes, usageRes, leaveRes] = await Promise.all([
       supabase.from('offset_requests').select('id,eligible_hours,status,time_out_at,created_at').eq('user_id', userId).order('created_at', { ascending: false }),
       supabase.from('offset_transactions').select('kind,hours,minutes').eq('user_id', userId),
       supabase.from('attendance_logs').select('id,log_date,time_in').eq('user_id', userId).eq('status', 'Late').order('log_date', { ascending: false }).limit(100),
       supabase.from('offset_usage_requests').select('id,attendance_log_id,hours,status,created_at,reviewed_at,hr_notes').eq('user_id', userId).order('created_at', { ascending: false }),
+      supabase.from('leave_requests').select('id,leave_type,start_date,status,offset_minutes_required,offset_charged_at,offset_refunded_at,created_at').eq('user_id', userId).eq('funding_source', 'offset').order('created_at', { ascending: false }),
     ]);
 
     if (requestRes.error) console.error('Error fetching offset requests:', requestRes.error);
     if (transactionRes.error) console.error('Error fetching offset balance:', transactionRes.error);
     if (lateRes.error) console.error('Error fetching Late records:', lateRes.error);
     if (usageRes.error) console.error('Error fetching offset usage requests:', usageRes.error);
+    if (leaveRes.error) console.error('Error fetching offset leave requests:', leaveRes.error);
 
     setRequests((requestRes.data || []) as Request[]);
     setTransactions((transactionRes.data || []) as Transaction[]);
     setLateRecords(((lateRes.data || []) as any[]).map((row) => ({ ...row, id: String(row.id) })) as LateRecord[]);
     setUsageRequests(((usageRes.data || []) as any[]).map((row) => ({ ...row, attendance_log_id: String(row.attendance_log_id) })) as UsageRequest[]);
+    setOffsetLeaves((leaveRes.data || []) as OffsetLeave[]);
     setLoading(false);
   }, [userId]);
 
   useEffect(() => {
     if (!open || !userId) return;
-    fetchOffsetData();
+    void fetchOffsetData();
   }, [open, userId, fetchOffsetData]);
+
+  useEffect(() => {
+    const refresh = () => { if (open) void fetchOffsetData(); };
+    window.addEventListener('employee:offset-data-changed', refresh);
+    return () => window.removeEventListener('employee:offset-data-changed', refresh);
+  }, [open, fetchOffsetData]);
 
   const approvedBalanceMinutes = useMemo(
     () => transactions.reduce((total, transaction) => {
@@ -77,10 +90,17 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
     [usageRequests]
   );
 
-  const availableToRequestMinutes = Math.max(0, approvedBalanceMinutes - pendingUseMinutes);
+  const pendingLeaveMinutes = useMemo(
+    () => offsetLeaves.filter((request) => request.status === 'Pending').reduce((total, request) => total + Number(request.offset_minutes_required || 0), 0),
+    [offsetLeaves]
+  );
+
+  const reservedMinutes = pendingUseMinutes + pendingLeaveMinutes;
+  const availableToRequestMinutes = Math.max(0, approvedBalanceMinutes - reservedMinutes);
   const pendingLogIds = new Set(usageRequests.filter((request) => request.status === 'Pending').map((request) => request.attendance_log_id));
   const eligibleLateRecords = lateRecords.filter((record) => !pendingLogIds.has(record.id));
   const usageDate = new Map(lateRecords.map((record) => [record.id, record.log_date]));
+  const canFileOffsetLeave = availableToRequestMinutes >= REQUIRED_LEAVE_MINUTES;
 
   const submitUseRequest = async (attendanceLogId: string) => {
     setSubmittingId(attendanceLogId);
@@ -92,6 +112,7 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
     if (error) {
       setMessage({ type: 'error', text: error.message || 'Unable to submit offset usage request.' });
       setSubmittingId(null);
+      await fetchOffsetData();
       return;
     }
 
@@ -101,12 +122,18 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
     await fetchOffsetData();
   };
 
+  const openOffsetLeave = () => {
+    if (!canFileOffsetLeave) return;
+    onClose();
+    window.dispatchEvent(new Event('employee:open-offset-leave'));
+  };
+
   return (
     <ModalShell
       open={open}
       onClose={onClose}
       title="Offset Request"
-      description="Earn approved offset time after 7:00 PM, then request to use it for a Late attendance record."
+      description="Use approved offset time for Late attendance or file a one-day leave using 9 approved hours."
       icon={<Clock3 size={20} />}
       size="lg"
     >
@@ -123,21 +150,35 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
               <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-700/80 dark:text-cyan-300/80">Approved offset balance</p>
               <p className="mt-1 text-3xl font-semibold tracking-tight text-cyan-800 dark:text-cyan-200">{formatOffsetMinutes(approvedBalanceMinutes)}</p>
               <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                {pendingUseMinutes > 0 ? `${formatOffsetMinutes(pendingUseMinutes)} reserved in pending use requests. ` : ''}
-                {formatOffsetMinutes(availableToRequestMinutes)} available to request.
+                {reservedMinutes > 0 ? `${formatOffsetMinutes(reservedMinutes)} reserved in pending requests. ` : ''}
+                {formatOffsetMinutes(availableToRequestMinutes)} available.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => setUseOpen((value) => !value)}
-              disabled={availableToRequestMinutes < 60 || eligibleLateRecords.length === 0}
-              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-cyan-700 px-4 text-xs font-bold text-white shadow-sm transition hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              <Eraser size={15} /> Use Offset Hours
-            </button>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <button
+                type="button"
+                onClick={openOffsetLeave}
+                disabled={!canFileOffsetLeave}
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 text-xs font-bold text-white shadow-sm transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                <CalendarPlus size={15} /> Leave Using Offset
+              </button>
+              <button
+                type="button"
+                onClick={() => setUseOpen((value) => !value)}
+                disabled={availableToRequestMinutes < 60 || eligibleLateRecords.length === 0}
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-cyan-700 px-4 text-xs font-bold text-white shadow-sm transition hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                <Eraser size={15} /> Use for Late
+              </button>
+            </div>
           </div>
-          <p className="mt-3 text-[11px] text-slate-500 dark:text-slate-400">9 approved hours can still be converted to one paid leave day through HR. Scrubbing one Late record uses 1 full approved hour.</p>
+          <p className="mt-3 text-[11px] text-slate-500 dark:text-slate-400">Leave Using Offset requires 9 unreserved approved hours. The 9 hours are deducted only after final HR approval. Using offset for one Late record consumes 1 approved hour after HR approval.</p>
         </section>
+
+        {!canFileOffsetLeave && !loading && (
+          <div className="rounded-xl bg-amber-50 px-3 py-2 text-[11px] font-medium text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">Leave Using Offset is disabled until your unreserved approved balance reaches 9 hours.</div>
+        )}
 
         {useOpen && (
           <section className="rounded-2xl bg-slate-50 p-3 dark:bg-[#303632]">
@@ -169,11 +210,29 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
         )}
 
         <section>
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Use offset history</h3>
-              <p className="text-[11px] text-slate-500">Your requests to apply approved offset to Late attendance.</p>
+          <div className="mb-2">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Offset leave history</h3>
+            <p className="text-[11px] text-slate-500">One-day leave requests funded by 9 approved offset hours.</p>
+          </div>
+          {loading ? <p className="py-4 text-center text-sm text-slate-500">Loading…</p> : offsetLeaves.length ? (
+            <div className="space-y-2">
+              {offsetLeaves.map((leave) => (
+                <div key={leave.id} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-[#303632]">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-slate-900 dark:text-white">{leave.leave_type} Leave · {leave.start_date}</p>
+                    <p className="mt-0.5 text-[10px] text-slate-500">{leave.offset_refunded_at ? '9h refunded after cancellation' : leave.offset_charged_at ? '9h deducted on final approval' : '9h reserved while pending'}</p>
+                  </div>
+                  <span className={`flex-none rounded-full px-2.5 py-1 text-[10px] font-bold ${statusClass(leave.status)}`}>{leave.status}</span>
+                </div>
+              ))}
             </div>
+          ) : <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-xs text-slate-500 dark:bg-[#303632]">No offset-funded leave requests yet.</p>}
+        </section>
+
+        <section>
+          <div className="mb-2">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Use offset history</h3>
+            <p className="text-[11px] text-slate-500">Your requests to apply approved offset to Late attendance.</p>
           </div>
           {loading ? <p className="py-4 text-center text-sm text-slate-500">Loading…</p> : usageRequests.length ? (
             <div className="space-y-2">
