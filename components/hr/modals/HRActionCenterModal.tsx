@@ -36,18 +36,18 @@ export default function HRActionCenterModal({ open, onClose, pendingDisputesCoun
 
   const total = pendingDisputesCount + pendingLeaveCount + openHrSupportCount + pendingOffsetCount;
   const items = [
-    { label: 'Pending Disputes', description: 'Review attendance corrections', count: pendingDisputesCount, icon: Clock3, tone: 'from-orange-500 to-red-700', action: onDisputes },
-    { label: 'Pending Leave Requests', description: 'Approve or reject submitted leave', count: pendingLeaveCount, icon: CalendarClock, tone: 'from-blue-500 to-indigo-700', action: onLeaveRequests },
-    { label: 'Pending Offset Actions', description: 'Review earned offset and use requests', count: pendingOffsetCount, icon: TimerReset, tone: 'from-cyan-500 to-blue-700', action: () => window.dispatchEvent(new Event('hr:open-offset')) },
-    { label: 'Open Help Desk Requests', description: 'Respond to employee concerns', count: openHrSupportCount, icon: Headphones, tone: 'from-sky-500 to-cyan-700', action: onHelpDesk },
+    { label: 'Pending Disputes', description: 'Attendance corrections', count: pendingDisputesCount, icon: Clock3, tone: 'from-orange-500 to-red-700', action: onDisputes },
+    { label: 'Pending Leave Requests', description: 'Leave approvals', count: pendingLeaveCount, icon: CalendarClock, tone: 'from-blue-500 to-indigo-700', action: onLeaveRequests },
+    { label: 'Pending Offset Actions', description: 'Offset approvals', count: pendingOffsetCount, icon: TimerReset, tone: 'from-cyan-500 to-blue-700', action: () => window.dispatchEvent(new Event('hr:open-offset')) },
+    { label: 'Open Help Desk Requests', description: 'Employee concerns', count: openHrSupportCount, icon: Headphones, tone: 'from-sky-500 to-cyan-700', action: onHelpDesk },
   ];
 
   return (
-    <ModalShell open={open} onClose={onClose} title="Notifications" description={`${total} open HR action${total === 1 ? '' : 's'}`} icon={<span className="relative">🔔{total > 0 ? <i className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-rose-500" /> : null}</span>} size="sm">
+    <ModalShell open={open} onClose={onClose} title="Notifications" description={`${total} open action${total === 1 ? '' : 's'}`} icon={<span className="relative">🔔{total > 0 ? <i className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-rose-500" /> : null}</span>} size="sm">
       {total === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-emerald-200 bg-emerald-50 px-4 py-10 text-center text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
           <CheckCircle2 size={24} />
-          <p className="mt-2 text-xs font-bold">All caught up—no pending HR actions.</p>
+          <p className="mt-2 text-xs font-bold">No pending HR actions.</p>
         </div>
       ) : (
         <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700">
