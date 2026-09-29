@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Check, Clock3, Eraser, LogOut, Search, X } from 'lucide-react';
+import { Check, Clock3, Eraser, LogOut, Search, Sparkles, Users, X } from 'lucide-react';
 import ModalShell from '@/components/shared/ModalShell';
 import { supabase } from '@/lib/supabase';
 
@@ -53,7 +53,9 @@ type EmployeeOffsetBalance = {
   available_minutes: number;
 };
 
-const BALANCE_PAGE_SIZE = 6;
+type TabKey = 'earned' | 'early' | 'late' | 'balances';
+
+const PAGE_SIZE = 6;
 
 function formatMinutes(totalMinutes: number) {
   const safe = Math.max(0, Math.round(totalMinutes));
@@ -73,6 +75,16 @@ function timeLabel(value: string | null) {
   });
 }
 
+function dateTimeLabel(value: string) {
+  return new Date(value).toLocaleString('en-US', {
+    timeZone: 'Asia/Manila',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 export default function HROffsetApprovalNotifier() {
   const [requests, setRequests] = useState<OffsetRequest[]>([]);
   const [usageRequests, setUsageRequests] = useState<OffsetUsageRequest[]>([]);
@@ -84,11 +96,13 @@ export default function HROffsetApprovalNotifier() {
   const [loading, setLoading] = useState(true);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<TabKey>('earned');
+  const [page, setPage] = useState(0);
   const [balanceSearch, setBalanceSearch] = useState('');
-  const [balancePage, setBalancePage] = useState(0);
 
   const fetchOffsetWork = useCallback(async () => {
     setLoading(true);
+
     const [pendingRes, usageRes, earlyOutRes, balanceRes] = await Promise.all([
       supabase
         .from('offset_requests')
@@ -114,8 +128,15 @@ export default function HROffsetApprovalNotifier() {
     if (balanceRes.error) console.error('Error fetching employee Offset balances:', balanceRes.error);
 
     const pending = (pendingRes.data || []) as OffsetRequest[];
-    const usage = ((usageRes.data || []) as any[]).map((row) => ({ ...row, attendance_log_id: String(row.attendance_log_id) })) as OffsetUsageRequest[];
-    const earlyOut = ((earlyOutRes.data || []) as any[]).map((row) => ({ ...row, attendance_log_id: String(row.attendance_log_id) })) as EarlyOutOffsetRequest[];
+    const usage = ((usageRes.data || []) as any[]).map((row) => ({
+      ...row,
+      attendance_log_id: String(row.attendance_log_id),
+    })) as OffsetUsageRequest[];
+    const earlyOut = ((earlyOutRes.data || []) as any[]).map((row) => ({
+      ...row,
+      attendance_log_id: String(row.attendance_log_id),
+    })) as EarlyOutOffsetRequest[];
+
     setRequests(pending);
     setUsageRequests(usage);
     setEarlyOutRequests(earlyOut);
@@ -131,6 +152,7 @@ export default function HROffsetApprovalNotifier() {
       ...usage.map((request) => request.user_id),
       ...earlyOut.map((request) => request.user_id),
     ])];
+
     const attendanceIds = [...new Set([
       ...usage.map((request) => Number(request.attendance_log_id)),
       ...earlyOut.map((request) => Number(request.attendance_log_id)),
@@ -148,8 +170,13 @@ export default function HROffsetApprovalNotifier() {
     if (profileRes.error) console.error('Error fetching employee profiles:', profileRes.error);
     if (attendanceRes.error) console.error('Error fetching offset attendance records:', attendanceRes.error);
 
-    setProfiles(Object.fromEntries(((profileRes.data || []) as EmployeeProfile[]).map((profile) => [profile.id, profile])));
-    setAttendanceLogs(Object.fromEntries(((attendanceRes.data || []) as any[]).map((row) => [String(row.id), { ...row, id: String(row.id) }])));
+    setProfiles(Object.fromEntries(
+      ((profileRes.data || []) as EmployeeProfile[]).map((profile) => [profile.id, profile])
+    ));
+    setAttendanceLogs(Object.fromEntries(
+      ((attendanceRes.data || []) as any[]).map((row) => [String(row.id), { ...row, id: String(row.id) }])
+    ));
+
     setLoading(false);
     window.dispatchEvent(new Event('hr:offset-updated'));
   }, []);
@@ -164,8 +191,10 @@ export default function HROffsetApprovalNotifier() {
       setOpen(true);
       void fetchOffsetWork();
     };
+
     document.addEventListener('visibilitychange', refreshOnVisible);
     window.addEventListener('hr:open-offset', openOffset);
+
     return () => {
       window.clearInterval(interval);
       document.removeEventListener('visibilitychange', refreshOnVisible);
@@ -173,7 +202,9 @@ export default function HROffsetApprovalNotifier() {
     };
   }, [fetchOffsetWork]);
 
-  useEffect(() => setBalancePage(0), [balanceSearch]);
+  useEffect(() => {
+    setPage(0);
+  }, [activeTab, balanceSearch]);
 
   const totalHours = useMemo(
     () => requests.reduce((sum, request) => sum + Number(request.eligible_hours || 0), 0),
@@ -183,16 +214,15 @@ export default function HROffsetApprovalNotifier() {
   const filteredBalances = useMemo(() => {
     const q = balanceSearch.trim().toLowerCase();
     if (!q) return balances;
-    return balances.filter((row) => `${row.full_name} ${row.employee_id || ''}`.toLowerCase().includes(q));
+    return balances.filter((row) =>
+      `${row.full_name} ${row.employee_id || ''}`.toLowerCase().includes(q)
+    );
   }, [balances, balanceSearch]);
-
-  const balancePageCount = Math.max(1, Math.ceil(filteredBalances.length / BALANCE_PAGE_SIZE));
-  const safeBalancePage = Math.min(balancePage, balancePageCount - 1);
-  const visibleBalances = filteredBalances.slice(safeBalancePage * BALANCE_PAGE_SIZE, (safeBalancePage + 1) * BALANCE_PAGE_SIZE);
 
   const reviewEarned = async (requestId: string, approve: boolean) => {
     setReviewingId(requestId);
     setMessage(null);
+
     const { error } = await supabase.rpc('review_offset_request', {
       p_request_id: requestId,
       p_approve: approve,
@@ -205,7 +235,7 @@ export default function HROffsetApprovalNotifier() {
       return;
     }
 
-    setMessage(approve ? 'Offset approved.' : 'Offset declined.');
+    setMessage(approve ? 'Earned Offset approved.' : 'Earned Offset declined.');
     setReviewingId(null);
     await fetchOffsetWork();
   };
@@ -213,6 +243,7 @@ export default function HROffsetApprovalNotifier() {
   const reviewUsage = async (requestId: string, approve: boolean) => {
     setReviewingId(requestId);
     setMessage(null);
+
     const { error } = await supabase.rpc('review_offset_usage_request', {
       p_request_id: requestId,
       p_approve: approve,
@@ -220,7 +251,7 @@ export default function HROffsetApprovalNotifier() {
     });
 
     if (error) {
-      setMessage(error.message || 'Unable to review this offset usage request.');
+      setMessage(error.message || 'Unable to review this Late Offset request.');
       setReviewingId(null);
       return;
     }
@@ -233,6 +264,7 @@ export default function HROffsetApprovalNotifier() {
   const reviewEarlyOut = async (requestId: string, approve: boolean) => {
     setReviewingId(requestId);
     setMessage(null);
+
     const { error } = await supabase.rpc('review_early_out_offset_request', {
       p_request_id: requestId,
       p_approve: approve,
@@ -245,194 +277,266 @@ export default function HROffsetApprovalNotifier() {
       return;
     }
 
-    setMessage(approve ? 'Early Out Offset approved and deducted.' : 'Early Out Offset declined. No deduction.');
+    setMessage(approve ? 'Early Out approved.' : 'Early Out declined.');
     setReviewingId(null);
     await fetchOffsetWork();
   };
+
+  const tabs: Array<{ key: TabKey; label: string; count: number; icon: React.ReactNode }> = [
+    { key: 'earned', label: 'Earned', count: requests.length, icon: <Sparkles size={14} /> },
+    { key: 'early', label: 'Early Out', count: earlyOutRequests.length, icon: <LogOut size={14} /> },
+    { key: 'late', label: 'Late', count: usageRequests.length, icon: <Eraser size={14} /> },
+    { key: 'balances', label: 'Balances', count: balances.length, icon: <Users size={14} /> },
+  ];
+
+  const currentLength = activeTab === 'earned'
+    ? requests.length
+    : activeTab === 'early'
+      ? earlyOutRequests.length
+      : activeTab === 'late'
+        ? usageRequests.length
+        : filteredBalances.length;
+
+  const pageCount = Math.max(1, Math.ceil(currentLength / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount - 1);
+  const start = safePage * PAGE_SIZE;
+  const end = start + PAGE_SIZE;
+
+  const visibleEarned = requests.slice(start, end);
+  const visibleEarly = earlyOutRequests.slice(start, end);
+  const visibleLate = usageRequests.slice(start, end);
+  const visibleBalances = filteredBalances.slice(start, end);
+
+  const pagination = pageCount > 1 && (
+    <div className="mt-2 flex items-center justify-between gap-2 border-t border-slate-100 pt-2 dark:border-slate-800">
+      <button
+        type="button"
+        onClick={() => setPage((value) => Math.max(0, value - 1))}
+        disabled={safePage === 0}
+        className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-[10px] font-bold text-slate-600 disabled:opacity-35 dark:bg-slate-800 dark:text-slate-300"
+      >
+        Previous
+      </button>
+      <span className="text-[10px] font-semibold text-slate-400">{safePage + 1}/{pageCount}</span>
+      <button
+        type="button"
+        onClick={() => setPage((value) => Math.min(pageCount - 1, value + 1))}
+        disabled={safePage >= pageCount - 1}
+        className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-[10px] font-bold text-slate-600 disabled:opacity-35 dark:bg-slate-800 dark:text-slate-300"
+      >
+        Next
+      </button>
+    </div>
+  );
 
   return (
     <ModalShell
       open={open}
       onClose={() => setOpen(false)}
       title="Offset Management"
-      description="Balances · Earned · Late · Early Out"
+      description="HR approvals and balances"
       icon={<Clock3 size={20} />}
       size="lg"
     >
-      <div className="space-y-5">
+      <div className="space-y-3">
         {message && (
-          <div className="rounded-xl bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+          <div className="rounded-lg bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
             {message}
           </div>
         )}
 
-        <section>
-          <div className="mb-2 flex items-end justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Employee Balances</h3>
-              <p className="text-[11px] text-slate-500">Approved · Reserved · Available</p>
-            </div>
-            <span className="text-[10px] font-semibold text-slate-400">{filteredBalances.length} employees</span>
-          </div>
-          <div className="relative mb-2">
-            <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              value={balanceSearch}
-              onChange={(event) => setBalanceSearch(event.target.value)}
-              placeholder="Search employee"
-              className="h-9 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-xs text-slate-800 outline-none transition focus:border-cyan-400 dark:border-slate-700 dark:bg-[#292f2b] dark:text-white"
-            />
-          </div>
-          {loading ? (
-            <p className="py-4 text-center text-xs text-slate-500">Loading…</p>
-          ) : visibleBalances.length === 0 ? (
-            <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-xs text-slate-500 dark:bg-[#303632]">No employee found.</p>
-          ) : (
-            <div className="space-y-1.5">
-              {visibleBalances.map((row) => (
-                <div key={row.user_id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-[#303632]">
-                  <div className="min-w-0">
-                    <p className="truncate text-xs font-bold text-slate-900 dark:text-white">{row.full_name || 'Employee'}</p>
-                    <p className="text-[10px] text-slate-500">{row.employee_id || 'No employee ID'}</p>
-                  </div>
-                  <div className="grid grid-cols-3 gap-1 text-center">
-                    <div className="min-w-[54px] rounded-lg bg-white px-2 py-1 dark:bg-[#292f2b]"><p className="text-[8px] font-bold uppercase text-slate-400">Approved</p><p className="text-[11px] font-black text-slate-700 dark:text-slate-200">{formatMinutes(row.approved_minutes)}</p></div>
-                    <div className="min-w-[54px] rounded-lg bg-amber-50 px-2 py-1 dark:bg-amber-950/20"><p className="text-[8px] font-bold uppercase text-amber-500">Reserved</p><p className="text-[11px] font-black text-amber-700 dark:text-amber-300">{formatMinutes(row.reserved_minutes)}</p></div>
-                    <div className="min-w-[54px] rounded-lg bg-emerald-50 px-2 py-1 dark:bg-emerald-950/20"><p className="text-[8px] font-bold uppercase text-emerald-500">Available</p><p className="text-[11px] font-black text-emerald-700 dark:text-emerald-300">{formatMinutes(row.available_minutes)}</p></div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-          {balancePageCount > 1 && (
-            <div className="mt-2 flex items-center justify-between gap-2">
-              <button type="button" onClick={() => setBalancePage((page) => Math.max(0, page - 1))} disabled={safeBalancePage === 0} className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-[10px] font-bold text-slate-600 disabled:opacity-40 dark:bg-slate-800 dark:text-slate-300">Previous</button>
-              <span className="text-[10px] font-semibold text-slate-400">{safeBalancePage + 1}/{balancePageCount}</span>
-              <button type="button" onClick={() => setBalancePage((page) => Math.min(balancePageCount - 1, page + 1))} disabled={safeBalancePage >= balancePageCount - 1} className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-[10px] font-bold text-slate-600 disabled:opacity-40 dark:bg-slate-800 dark:text-slate-300">Next</button>
-            </div>
-          )}
-        </section>
+        <div className="grid grid-cols-2 gap-1.5 rounded-xl bg-slate-100 p-1 sm:grid-cols-4 dark:bg-[#2d332f]">
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setActiveTab(tab.key)}
+              className={`flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-2 text-[11px] font-bold transition ${
+                activeTab === tab.key
+                  ? 'bg-white text-slate-900 shadow-sm dark:bg-[#3a413c] dark:text-white'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
+              }`}
+            >
+              {tab.icon}
+              <span>{tab.label}</span>
+              <span className={`rounded-full px-1.5 py-0.5 text-[9px] ${
+                activeTab === tab.key
+                  ? 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-200'
+                  : 'bg-white/70 text-slate-400 dark:bg-slate-800 dark:text-slate-400'
+              }`}>{tab.count}</span>
+            </button>
+          ))}
+        </div>
 
-        <section className="border-t border-slate-100 pt-4 dark:border-slate-800">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Earned Offset</h3>
-              <p className="text-[11px] text-slate-500">Completed hours after 7 PM</p>
+        {activeTab === 'earned' && (
+          <section>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div>
+                <h3 className="text-xs font-bold text-slate-900 dark:text-white">Earned Hours</h3>
+                <p className="text-[10px] text-slate-500">After 7 PM</p>
+              </div>
+              <span className="rounded-full bg-cyan-50 px-2 py-1 text-[10px] font-bold text-cyan-700 dark:bg-cyan-950/35 dark:text-cyan-300">{requests.length} · {totalHours}h</span>
             </div>
-            <span className="rounded-full bg-cyan-50 px-2.5 py-1 text-[11px] font-bold text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300">{requests.length} · {totalHours}h</span>
-          </div>
 
-          {loading ? (
-            <p className="py-6 text-center text-sm text-slate-500">Loading…</p>
-          ) : requests.length === 0 ? (
-            <div className="rounded-2xl bg-emerald-50 px-4 py-4 text-center dark:bg-emerald-950/30">
-              <Check className="mx-auto text-emerald-600" size={20} />
-              <p className="mt-1 text-xs font-bold text-emerald-800 dark:text-emerald-300">No pending earned Offset.</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {requests.map((request) => {
-                const profile = profiles[request.user_id];
-                const isReviewing = reviewingId === request.id;
-                return (
-                  <div key={request.id} className="rounded-2xl bg-slate-50 p-3 dark:bg-[#303632]">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            {loading ? (
+              <p className="py-6 text-center text-xs text-slate-500">Loading…</p>
+            ) : requests.length === 0 ? (
+              <p className="rounded-xl bg-slate-50 px-3 py-5 text-center text-xs text-slate-500 dark:bg-[#303632]">No pending earned hours.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {visibleEarned.map((request) => {
+                  const profile = profiles[request.user_id];
+                  const busy = reviewingId === request.id;
+                  return (
+                    <div key={request.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 dark:bg-[#303632]">
                       <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="truncate text-sm font-bold text-slate-900 dark:text-white">{profile?.full_name || 'Employee'}</p>
-                          {profile?.employee_id && <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-slate-600 shadow-sm dark:bg-slate-800 dark:text-slate-300">{profile.employee_id}</span>}
+                        <div className="flex items-center gap-2">
+                          <p className="truncate text-xs font-bold text-slate-900 dark:text-white">{profile?.full_name || 'Employee'}</p>
+                          {profile?.employee_id && <span className="shrink-0 text-[9px] font-semibold text-slate-400">{profile.employee_id}</span>}
                         </div>
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-300">{new Date(request.time_out_at).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
-                        <p className="mt-1 text-xs font-semibold text-cyan-700 dark:text-cyan-300">{request.eligible_hours}h eligible</p>
+                        <p className="mt-0.5 text-[10px] text-slate-500">{dateTimeLabel(request.time_out_at)} · <span className="font-bold text-cyan-700 dark:text-cyan-300">+{request.eligible_hours}h</span></p>
                       </div>
-                      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-none">
-                        <button type="button" disabled={isReviewing} onClick={() => reviewEarned(request.id, false)} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl bg-rose-50 px-3 text-xs font-bold text-rose-700 transition hover:bg-rose-100 disabled:opacity-50 dark:bg-rose-950/30 dark:text-rose-300"><X size={15} /> Decline</button>
-                        <button type="button" disabled={isReviewing} onClick={() => reviewEarned(request.id, true)} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3 text-xs font-bold text-white transition hover:bg-emerald-700 disabled:opacity-50"><Check size={15} /> Approve</button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
-
-        <section className="border-t border-slate-100 pt-4 dark:border-slate-800">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <div>
-              <h3 className="flex items-center gap-1.5 text-sm font-bold text-slate-900 dark:text-white"><Eraser size={15} /> Late Offset</h3>
-              <p className="text-[11px] text-slate-500">Current cutoff · 1h each</p>
-            </div>
-            <span className="rounded-full bg-violet-50 px-2.5 py-1 text-[11px] font-bold text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">{usageRequests.length}</span>
-          </div>
-
-          {usageRequests.length === 0 ? (
-            <div className="rounded-2xl bg-slate-50 px-4 py-4 text-center text-xs text-slate-500 dark:bg-[#303632]">No pending Late Offset.</div>
-          ) : (
-            <div className="space-y-2">
-              {usageRequests.map((request) => {
-                const profile = profiles[request.user_id];
-                const attendance = attendanceLogs[request.attendance_log_id];
-                const isReviewing = reviewingId === request.id;
-                return (
-                  <div key={request.id} className="rounded-2xl bg-violet-50/60 p-3 dark:bg-violet-950/20">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-bold text-slate-900 dark:text-white">{profile?.full_name || 'Employee'}</p>
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-300">Late{attendance?.log_date ? ` · ${attendance.log_date}` : ''} · Original {timeLabel(attendance?.time_in || null)}</p>
-                        <p className="mt-1 text-[11px] font-semibold text-violet-700 dark:text-violet-300">Consumes 1h Offset</p>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-none">
-                        <button type="button" disabled={isReviewing} onClick={() => reviewUsage(request.id, false)} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl bg-white px-3 text-xs font-bold text-rose-700 shadow-sm transition hover:bg-rose-50 disabled:opacity-50 dark:bg-[#303632] dark:text-rose-300"><X size={15} /> Decline</button>
-                        <button type="button" disabled={isReviewing} onClick={() => reviewUsage(request.id, true)} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl bg-violet-600 px-3 text-xs font-bold text-white transition hover:bg-violet-700 disabled:opacity-50"><Check size={15} /> Approve</button>
+                      <div className="flex gap-1.5">
+                        <button type="button" disabled={busy} onClick={() => reviewEarned(request.id, false)} className="inline-flex h-8 items-center gap-1 rounded-lg bg-rose-50 px-2.5 text-[10px] font-bold text-rose-700 disabled:opacity-40 dark:bg-rose-950/25 dark:text-rose-300"><X size={13} /> Reject</button>
+                        <button type="button" disabled={busy} onClick={() => reviewEarned(request.id, true)} className="inline-flex h-8 items-center gap-1 rounded-lg bg-emerald-600 px-2.5 text-[10px] font-bold text-white disabled:opacity-40"><Check size={13} /> Approve</button>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
+                  );
+                })}
+              </div>
+            )}
+            {pagination}
+          </section>
+        )}
 
-        <section className="border-t border-slate-100 pt-4 dark:border-slate-800">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <div>
-              <h3 className="flex items-center gap-1.5 text-sm font-bold text-slate-900 dark:text-white"><LogOut size={15} /> Early Out Offset</h3>
-              <p className="text-[11px] text-slate-500">Exact early minutes</p>
+        {activeTab === 'early' && (
+          <section>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div>
+                <h3 className="text-xs font-bold text-slate-900 dark:text-white">Early Out</h3>
+                <p className="text-[10px] text-slate-500">Exact minutes</p>
+              </div>
+              <span className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">{earlyOutRequests.length}</span>
             </div>
-            <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">{earlyOutRequests.length}</span>
-          </div>
 
-          {earlyOutRequests.length === 0 ? (
-            <div className="rounded-2xl bg-slate-50 px-4 py-4 text-center text-xs text-slate-500 dark:bg-[#303632]">No pending Early Out Offset.</div>
-          ) : (
-            <div className="space-y-2">
-              {earlyOutRequests.map((request) => {
-                const profile = profiles[request.user_id];
-                const attendance = attendanceLogs[request.attendance_log_id];
-                const isReviewing = reviewingId === request.id;
-                return (
-                  <div key={request.id} className="rounded-2xl bg-amber-50/70 p-3 dark:bg-amber-950/20">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            {loading ? (
+              <p className="py-6 text-center text-xs text-slate-500">Loading…</p>
+            ) : earlyOutRequests.length === 0 ? (
+              <p className="rounded-xl bg-slate-50 px-3 py-5 text-center text-xs text-slate-500 dark:bg-[#303632]">No pending Early Out.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {visibleEarly.map((request) => {
+                  const profile = profiles[request.user_id];
+                  const attendance = attendanceLogs[request.attendance_log_id];
+                  const busy = reviewingId === request.id;
+                  return (
+                    <div key={request.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-xl bg-amber-50/60 px-3 py-2 dark:bg-amber-950/15">
                       <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="truncate text-sm font-bold text-slate-900 dark:text-white">{profile?.full_name || 'Employee'}</p>
-                          {profile?.employee_id && <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-slate-600 shadow-sm dark:bg-slate-800 dark:text-slate-300">{profile.employee_id}</span>}
+                        <div className="flex items-center gap-2">
+                          <p className="truncate text-xs font-bold text-slate-900 dark:text-white">{profile?.full_name || 'Employee'}</p>
+                          {profile?.employee_id && <span className="shrink-0 text-[9px] font-semibold text-slate-400">{profile.employee_id}</span>}
                         </div>
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-300">Early Out{attendance?.log_date ? ` · ${attendance.log_date}` : ''} · Time Out {timeLabel(attendance?.time_out || null)}</p>
-                        <p className="mt-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300">Consumes {formatMinutes(request.required_minutes)} Offset</p>
+                        <p className="mt-0.5 text-[10px] text-slate-500">{attendance?.log_date || '—'} · Out {timeLabel(attendance?.time_out || null)} · <span className="font-bold text-amber-700 dark:text-amber-300">{formatMinutes(request.required_minutes)}</span></p>
                       </div>
-                      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-none">
-                        <button type="button" disabled={isReviewing} onClick={() => reviewEarlyOut(request.id, false)} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl bg-white px-3 text-xs font-bold text-rose-700 shadow-sm transition hover:bg-rose-50 disabled:opacity-50 dark:bg-[#303632] dark:text-rose-300"><X size={15} /> Decline</button>
-                        <button type="button" disabled={isReviewing} onClick={() => reviewEarlyOut(request.id, true)} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl bg-amber-600 px-3 text-xs font-bold text-white transition hover:bg-amber-700 disabled:opacity-50"><Check size={15} /> Approve</button>
+                      <div className="flex gap-1.5">
+                        <button type="button" disabled={busy} onClick={() => reviewEarlyOut(request.id, false)} className="inline-flex h-8 items-center gap-1 rounded-lg bg-white px-2.5 text-[10px] font-bold text-rose-700 shadow-sm disabled:opacity-40 dark:bg-[#303632] dark:text-rose-300"><X size={13} /> Reject</button>
+                        <button type="button" disabled={busy} onClick={() => reviewEarlyOut(request.id, true)} className="inline-flex h-8 items-center gap-1 rounded-lg bg-amber-600 px-2.5 text-[10px] font-bold text-white disabled:opacity-40"><Check size={13} /> Approve</button>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
+            )}
+            {pagination}
+          </section>
+        )}
+
+        {activeTab === 'late' && (
+          <section>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div>
+                <h3 className="text-xs font-bold text-slate-900 dark:text-white">Late</h3>
+                <p className="text-[10px] text-slate-500">Current cutoff · 1h</p>
+              </div>
+              <span className="rounded-full bg-violet-50 px-2 py-1 text-[10px] font-bold text-violet-700 dark:bg-violet-950/30 dark:text-violet-300">{usageRequests.length}</span>
             </div>
-          )}
-        </section>
+
+            {loading ? (
+              <p className="py-6 text-center text-xs text-slate-500">Loading…</p>
+            ) : usageRequests.length === 0 ? (
+              <p className="rounded-xl bg-slate-50 px-3 py-5 text-center text-xs text-slate-500 dark:bg-[#303632]">No pending Late Offset.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {visibleLate.map((request) => {
+                  const profile = profiles[request.user_id];
+                  const attendance = attendanceLogs[request.attendance_log_id];
+                  const busy = reviewingId === request.id;
+                  return (
+                    <div key={request.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-xl bg-violet-50/60 px-3 py-2 dark:bg-violet-950/15">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="truncate text-xs font-bold text-slate-900 dark:text-white">{profile?.full_name || 'Employee'}</p>
+                          {profile?.employee_id && <span className="shrink-0 text-[9px] font-semibold text-slate-400">{profile.employee_id}</span>}
+                        </div>
+                        <p className="mt-0.5 text-[10px] text-slate-500">{attendance?.log_date || '—'} · In {timeLabel(attendance?.time_in || null)} · <span className="font-bold text-violet-700 dark:text-violet-300">1h</span></p>
+                      </div>
+                      <div className="flex gap-1.5">
+                        <button type="button" disabled={busy} onClick={() => reviewUsage(request.id, false)} className="inline-flex h-8 items-center gap-1 rounded-lg bg-white px-2.5 text-[10px] font-bold text-rose-700 shadow-sm disabled:opacity-40 dark:bg-[#303632] dark:text-rose-300"><X size={13} /> Reject</button>
+                        <button type="button" disabled={busy} onClick={() => reviewUsage(request.id, true)} className="inline-flex h-8 items-center gap-1 rounded-lg bg-violet-600 px-2.5 text-[10px] font-bold text-white disabled:opacity-40"><Check size={13} /> Approve</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {pagination}
+          </section>
+        )}
+
+        {activeTab === 'balances' && (
+          <section>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div>
+                <h3 className="text-xs font-bold text-slate-900 dark:text-white">Employee Balances</h3>
+                <p className="text-[10px] text-slate-500">Approved · Reserved · Available</p>
+              </div>
+              <span className="text-[10px] font-semibold text-slate-400">{filteredBalances.length}</span>
+            </div>
+
+            <div className="relative mb-2">
+              <Search size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                value={balanceSearch}
+                onChange={(event) => setBalanceSearch(event.target.value)}
+                placeholder="Search employee"
+                className="h-8 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-[11px] text-slate-800 outline-none focus:border-cyan-400 dark:border-slate-700 dark:bg-[#292f2b] dark:text-white"
+              />
+            </div>
+
+            {loading ? (
+              <p className="py-6 text-center text-xs text-slate-500">Loading…</p>
+            ) : visibleBalances.length === 0 ? (
+              <p className="rounded-xl bg-slate-50 px-3 py-5 text-center text-xs text-slate-500 dark:bg-[#303632]">No employee found.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {visibleBalances.map((row) => (
+                  <div key={row.user_id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 dark:bg-[#303632]">
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-bold text-slate-900 dark:text-white">{row.full_name || 'Employee'}</p>
+                      <p className="text-[9px] text-slate-500">{row.employee_id || 'No ID'}</p>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1 text-center">
+                      <div className="min-w-[50px] rounded-md bg-white px-1.5 py-1 dark:bg-[#292f2b]"><p className="text-[7px] font-bold uppercase text-slate-400">Approved</p><p className="text-[10px] font-black text-slate-700 dark:text-slate-200">{formatMinutes(row.approved_minutes)}</p></div>
+                      <div className="min-w-[50px] rounded-md bg-amber-50 px-1.5 py-1 dark:bg-amber-950/20"><p className="text-[7px] font-bold uppercase text-amber-500">Reserved</p><p className="text-[10px] font-black text-amber-700 dark:text-amber-300">{formatMinutes(row.reserved_minutes)}</p></div>
+                      <div className="min-w-[50px] rounded-md bg-emerald-50 px-1.5 py-1 dark:bg-emerald-950/20"><p className="text-[7px] font-bold uppercase text-emerald-500">Available</p><p className="text-[10px] font-black text-emerald-700 dark:text-emerald-300">{formatMinutes(row.available_minutes)}</p></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {pagination}
+          </section>
+        )}
       </div>
     </ModalShell>
   );
