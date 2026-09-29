@@ -115,10 +115,10 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
       createdAt: leave.created_at,
       title: `${leave.leave_type} Leave · ${leave.start_date}`,
       detail: leave.offset_refunded_at
-        ? '9h refunded after cancellation'
+        ? '9h refunded'
         : leave.offset_charged_at
-          ? '9h deducted on final HR approval'
-          : '9h reserved while pending',
+          ? '9h deducted'
+          : '9h reserved',
       status: leave.status,
     }));
 
@@ -134,7 +134,7 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
       id: `earned-${request.id}`,
       createdAt: request.created_at,
       title: `Earned ${request.eligible_hours} offset hour${request.eligible_hours !== 1 ? 's' : ''}`,
-      detail: `Timed out ${new Date(request.time_out_at).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`,
+      detail: `Time Out ${new Date(request.time_out_at).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`,
       status: request.status,
     }));
 
@@ -151,13 +151,13 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
     });
 
     if (error) {
-      setMessage({ type: 'error', text: error.message || 'Unable to submit offset usage request.' });
+      setMessage({ type: 'error', text: error.message || 'Unable to submit offset request.' });
       setSubmittingId(null);
       await fetchOffsetData();
       return;
     }
 
-    setMessage({ type: 'success', text: 'Offset usage request submitted to HR. Your hour will only be deducted if HR approves it.' });
+    setMessage({ type: 'success', text: 'Request sent to HR.' });
     setSubmittingId(null);
     setUseOpen(false);
     await fetchOffsetData();
@@ -174,7 +174,7 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
       open={open}
       onClose={onClose}
       title="Offset Request"
-      description="Use approved offset time for Late attendance or file a one-day leave using 9 approved hours."
+      description="Use offset for Late or Leave"
       icon={<Clock3 size={20} />}
       size="lg"
     >
@@ -188,11 +188,11 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
         <section className="rounded-2xl bg-cyan-50/80 p-4 dark:bg-cyan-950/25">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-700/80 dark:text-cyan-300/80">Approved offset balance</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-cyan-700/80 dark:text-cyan-300/80">Approved offset</p>
               <p className="mt-1 text-3xl font-semibold tracking-tight text-cyan-800 dark:text-cyan-200">{formatOffsetMinutes(approvedBalanceMinutes)}</p>
               <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                {reservedMinutes > 0 ? `${formatOffsetMinutes(reservedMinutes)} reserved in pending requests. ` : ''}
-                {formatOffsetMinutes(availableToRequestMinutes)} available.
+                {reservedMinutes > 0 ? `${formatOffsetMinutes(reservedMinutes)} reserved · ` : ''}
+                {formatOffsetMinutes(availableToRequestMinutes)} available
               </p>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row">
@@ -214,27 +214,27 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
               </button>
             </div>
           </div>
-          <p className="mt-3 text-[11px] text-slate-500 dark:text-slate-400">Leave Using Offset requires 9 unreserved approved hours. The 9 hours are deducted only after final HR approval. Using offset for one Late record consumes 1 approved hour after HR approval.</p>
+          <p className="mt-3 text-[11px] text-slate-500 dark:text-slate-400">Leave: 9h · Late: 1h · Deducted after HR approval</p>
         </section>
 
         {!canFileOffsetLeave && !loading && (
-          <div className="rounded-xl bg-amber-50 px-3 py-2 text-[11px] font-medium text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">Leave Using Offset is disabled until your unreserved approved balance reaches 9 hours.</div>
+          <div className="rounded-xl bg-amber-50 px-3 py-2 text-[11px] font-medium text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">Offset Leave needs 9h available.</div>
         )}
 
         {useOpen && (
           <section className="rounded-2xl bg-slate-50 p-3 dark:bg-[#303632]">
             <div className="mb-3">
               <h3 className="text-sm font-bold text-slate-900 dark:text-white">Choose a Late date</h3>
-              <p className="mt-0.5 text-[11px] text-slate-500">Submitting reserves 1 approved hour. HR must approve before the hour is deducted and the tag changes to Offset Applied.</p>
+              <p className="mt-0.5 text-[11px] text-slate-500">Reserves 1h until HR review.</p>
             </div>
             <div className="space-y-2">
               {eligibleLateRecords.length === 0 ? (
-                <p className="rounded-xl bg-white px-3 py-4 text-center text-xs text-slate-500 dark:bg-[#292f2b]">No eligible Late record is available.</p>
+                <p className="rounded-xl bg-white px-3 py-4 text-center text-xs text-slate-500 dark:bg-[#292f2b]">No eligible Late records.</p>
               ) : eligibleLateRecords.map((record) => (
                 <div key={record.id} className="flex flex-col gap-2 rounded-xl bg-white p-3 shadow-[0_4px_14px_rgba(15,23,42,0.04)] dark:bg-[#292f2b] sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="text-sm font-semibold text-slate-900 dark:text-white">{new Date(`${record.log_date}T00:00:00+08:00`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
-                    <p className="mt-0.5 text-[11px] text-slate-500">Late attendance · Uses 1 approved offset hour</p>
+                    <p className="mt-0.5 text-[11px] text-slate-500">Uses 1h offset</p>
                   </div>
                   <button
                     type="button"
@@ -253,7 +253,7 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
         <section>
           <div className="mb-2">
             <h3 className="text-sm font-bold text-slate-900 dark:text-white">Offset History</h3>
-            <p className="text-[11px] text-slate-500">All earned and used offset activity in one place.</p>
+            <p className="text-[11px] text-slate-500">Earned and used offset</p>
           </div>
           {loading ? (
             <p className="py-4 text-center text-sm text-slate-500">Loading…</p>
@@ -270,7 +270,7 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
               ))}
             </div>
           ) : (
-            <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-xs text-slate-500 dark:bg-[#303632]">No offset history yet.</p>
+            <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-xs text-slate-500 dark:bg-[#303632]">No offset history.</p>
           )}
         </section>
       </div>
