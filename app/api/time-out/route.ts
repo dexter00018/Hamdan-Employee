@@ -80,7 +80,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const settingsMap = await readServerAppSettings(supabaseServer, ['attendance_recording_enabled', 'maintenance_mode']);
+    const settingsMap = await readServerAppSettings(supabaseServer, [
+      'attendance_recording_enabled',
+      'maintenance_mode',
+      'time_out_reminder_hour',
+    ]);
     if (isMaintenanceMode(settingsMap)) {
       return NextResponse.json(
         { code: 'MAINTENANCE_MODE', error: 'The employee portal is temporarily unavailable for scheduled maintenance.' },
@@ -95,11 +99,49 @@ export async function POST(request: Request) {
       );
     }
 
+    let useOffset = false;
+    try {
+      const body = await request.json();
+      useOffset = body?.useOffset === true;
+    } catch {
+      // Existing clients send no JSON body. That remains the normal Time Out flow.
+    }
+
+    const supabaseAdmin = createSupabaseAdminClient();
+
+    // Offset-funded Early Out is handled atomically in Postgres so the Time Out
+    // and the pending Offset reservation either both succeed or both roll back.
+    if (useOffset) {
+      const cutoffHour = typeof settingsMap.time_out_reminder_hour === 'number'
+        ? settingsMap.time_out_reminder_hour
+        : 19;
+
+      const { data, error } = await supabaseAdmin.rpc('record_early_out_with_offset', {
+        p_user_id: user.id,
+        p_cutoff_hour: cutoffHour,
+      });
+
+      if (error) {
+        return NextResponse.json(
+          { code: 'EARLY_OUT_OFFSET_FAILED', error: error.message || 'Unable to use Offset for Early Out.' },
+          { status: 400 }
+        );
+      }
+
+      const result = Array.isArray(data) ? data[0] : data;
+      return NextResponse.json({
+        success: true,
+        timeOut: result?.time_out ?? null,
+        offsetRequestId: result?.request_id ?? null,
+        offsetMinutes: Number(result?.required_minutes || 0),
+        offsetPending: true,
+      });
+    }
+
     // --- Step 3: Find today's log (Manila calendar day) for this user. ---
     const now = new Date();
     const logDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(now);
 
-    const supabaseAdmin = createSupabaseAdminClient();
     const { data: todayLog, error: fetchError } = await supabaseAdmin
       .from('attendance_logs')
       .select('id, time_out')
