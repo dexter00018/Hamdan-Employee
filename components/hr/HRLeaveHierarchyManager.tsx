@@ -88,10 +88,10 @@ export default function HRLeaveHierarchyManager() {
     setMessage({
       type: 'success',
       text: rank === 'Associate'
-        ? 'Associate and Direct Lead assignment saved.'
+        ? 'Associate and Direct Lead saved.'
         : rank === 'Lead'
-          ? 'Employee is now ranked as Lead.'
-          : 'Leave ranking cleared.',
+          ? 'Lead rank saved.'
+          : 'Leave rank cleared.',
     });
     await fetchEmployees();
     setSaving(false);
@@ -118,7 +118,7 @@ export default function HRLeaveHierarchyManager() {
         open={open}
         onClose={() => setOpen(false)}
         title="Leave Hierarchy"
-        description="HR/Admin assigns leave rank and Direct Lead. Associates require Lead approval before HR review."
+        description="Ranks, leads & approval route"
         icon={<Network size={20} />}
         size="lg"
       >
@@ -132,7 +132,7 @@ export default function HRLeaveHierarchyManager() {
           <div className="flex items-center justify-between gap-2">
             <div>
               <p className="text-sm font-bold text-slate-900 dark:text-white">Employee ranking</p>
-              <p className="text-[11px] text-slate-500">Set Leads first, then assign Associates to their Direct Lead.</p>
+              <p className="text-[11px] text-slate-500">Set Leads, then assign Associates.</p>
             </div>
             <button type="button" onClick={fetchEmployees} className="grid h-9 w-9 place-items-center rounded-xl bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300" aria-label="Refresh hierarchy"><RefreshCw size={15} /></button>
           </div>
@@ -165,7 +165,7 @@ export default function HRLeaveHierarchyManager() {
 
             <section className="rounded-2xl bg-slate-50 p-4 dark:bg-[#303632]">
               {!selected ? (
-                <div className="grid min-h-56 place-items-center text-center text-sm text-slate-500">Select an employee to set Rank and Direct Lead.</div>
+                <div className="grid min-h-56 place-items-center text-center text-sm text-slate-500">Select an employee.</div>
               ) : (
                 <div className="space-y-4">
                   <div>
@@ -189,12 +189,12 @@ export default function HRLeaveHierarchyManager() {
                         <option value="">Select Direct Lead</option>
                         {leadOptions.map((lead) => <option key={lead.id} value={lead.id}>{lead.full_name || 'Lead'}{lead.employee_id ? ` · ${lead.employee_id}` : ''}</option>)}
                       </select>
-                      {leadOptions.length === 0 && <p className="mt-1.5 text-[11px] text-amber-600">No Lead is configured yet. Rank the Lead employee first.</p>}
+                      {leadOptions.length === 0 && <p className="mt-1.5 text-[11px] text-amber-600">Set a Lead first.</p>}
                     </label>
                   )}
 
                   <div className="rounded-xl bg-white px-3 py-3 text-[11px] text-slate-600 dark:bg-[#292f2b] dark:text-slate-300">
-                    {rank === 'Associate' ? 'Leave route: Associate → Direct Lead → HR final approval.' : rank === 'Lead' ? 'Leads receive leave approvals only for Associates directly assigned to them.' : 'Without Associate rank, leave requests go directly to HR under the current leave flow.'}
+                    {rank === 'Associate' ? 'Route: Associate → Direct Lead → HR' : rank === 'Lead' ? 'Route: Lead → HR' : 'Route: Employee → HR'}
                   </div>
 
                   <button type="button" onClick={saveHierarchy} disabled={saving || (rank === 'Associate' && !directLeadId)} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 text-xs font-bold text-white transition hover:bg-slate-800 disabled:opacity-45 dark:bg-white dark:text-slate-900">
