@@ -16,7 +16,7 @@ type Props = {
 
 export default function EmployeeGovernmentIdsModal({ open, onClose, employeeName, designation, avatarUrl, details }: Props) {
   return (
-    <ModalShell open={open} onClose={onClose} title="Government IDs & Profile" description="Your employee and government information" icon={<IdCard size={20} />} size="sm">
+    <ModalShell open={open} onClose={onClose} title="Government IDs & Profile" description="Employee & ID details" icon={<IdCard size={20} />} size="sm">
       <div className="mb-4 flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:bg-slate-800">
         <span className="grid h-12 w-12 flex-none place-items-center overflow-hidden rounded-full bg-white text-slate-500 dark:bg-slate-900">
           {avatarUrl ? <Image src={avatarUrl} alt="" width={48} height={48} className="h-full w-full object-cover" /> : <UserRound size={20} />}
