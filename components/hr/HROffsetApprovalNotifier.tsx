@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Check, Clock3, Eraser, X } from 'lucide-react';
+import { Check, Clock3, Eraser, LogOut, X } from 'lucide-react';
 import ModalShell from '@/components/shared/ModalShell';
 import { supabase } from '@/lib/supabase';
 
@@ -21,6 +21,15 @@ type OffsetUsageRequest = {
   created_at: string;
 };
 
+type EarlyOutOffsetRequest = {
+  id: string;
+  user_id: string;
+  attendance_log_id: string;
+  required_minutes: number;
+  cutoff_hour: number;
+  created_at: string;
+};
+
 type EmployeeProfile = {
   id: string;
   full_name: string | null;
@@ -31,12 +40,23 @@ type AttendanceLog = {
   id: string;
   log_date: string;
   time_in: string | null;
+  time_out: string | null;
   status: string | null;
 };
+
+function formatMinutes(totalMinutes: number) {
+  const safe = Math.max(0, Math.round(totalMinutes));
+  const hours = Math.floor(safe / 60);
+  const minutes = safe % 60;
+  if (hours && minutes) return `${hours}h ${minutes}m`;
+  if (hours) return `${hours}h`;
+  return `${minutes}m`;
+}
 
 export default function HROffsetApprovalNotifier() {
   const [requests, setRequests] = useState<OffsetRequest[]>([]);
   const [usageRequests, setUsageRequests] = useState<OffsetUsageRequest[]>([]);
+  const [earlyOutRequests, setEarlyOutRequests] = useState<EarlyOutOffsetRequest[]>([]);
   const [profiles, setProfiles] = useState<Record<string, EmployeeProfile>>({});
   const [attendanceLogs, setAttendanceLogs] = useState<Record<string, AttendanceLog>>({});
   const [open, setOpen] = useState(false);
@@ -46,7 +66,7 @@ export default function HROffsetApprovalNotifier() {
 
   const fetchOffsetWork = useCallback(async () => {
     setLoading(true);
-    const [pendingRes, usageRes] = await Promise.all([
+    const [pendingRes, usageRes, earlyOutRes] = await Promise.all([
       supabase
         .from('offset_requests')
         .select('id,user_id,eligible_hours,time_out_at,created_at')
@@ -57,25 +77,40 @@ export default function HROffsetApprovalNotifier() {
         .select('id,user_id,attendance_log_id,hours,created_at')
         .eq('status', 'Pending')
         .order('created_at', { ascending: true }),
+      supabase
+        .from('early_out_offset_requests')
+        .select('id,user_id,attendance_log_id,required_minutes,cutoff_hour,created_at')
+        .eq('status', 'Pending')
+        .order('created_at', { ascending: true }),
     ]);
 
     if (pendingRes.error) console.error('Error fetching pending offset requests:', pendingRes.error);
     if (usageRes.error) console.error('Error fetching offset usage requests:', usageRes.error);
+    if (earlyOutRes.error) console.error('Error fetching Early Out Offset requests:', earlyOutRes.error);
 
     const pending = (pendingRes.data || []) as OffsetRequest[];
     const usage = ((usageRes.data || []) as any[]).map((row) => ({ ...row, attendance_log_id: String(row.attendance_log_id) })) as OffsetUsageRequest[];
+    const earlyOut = ((earlyOutRes.data || []) as any[]).map((row) => ({ ...row, attendance_log_id: String(row.attendance_log_id) })) as EarlyOutOffsetRequest[];
     setRequests(pending);
     setUsageRequests(usage);
+    setEarlyOutRequests(earlyOut);
 
-    const userIds = [...new Set([...pending.map((request) => request.user_id), ...usage.map((request) => request.user_id)])];
-    const attendanceIds = [...new Set(usage.map((request) => Number(request.attendance_log_id)).filter(Number.isFinite))];
+    const userIds = [...new Set([
+      ...pending.map((request) => request.user_id),
+      ...usage.map((request) => request.user_id),
+      ...earlyOut.map((request) => request.user_id),
+    ])];
+    const attendanceIds = [...new Set([
+      ...usage.map((request) => Number(request.attendance_log_id)),
+      ...earlyOut.map((request) => Number(request.attendance_log_id)),
+    ].filter(Number.isFinite))];
 
     const [profileRes, attendanceRes] = await Promise.all([
       userIds.length
         ? supabase.from('profiles').select('id,full_name,employee_id').in('id', userIds)
         : Promise.resolve({ data: [], error: null } as any),
       attendanceIds.length
-        ? supabase.from('attendance_logs').select('id,log_date,time_in,status').in('id', attendanceIds)
+        ? supabase.from('attendance_logs').select('id,log_date,time_in,time_out,status').in('id', attendanceIds)
         : Promise.resolve({ data: [], error: null } as any),
     ]);
 
@@ -127,7 +162,7 @@ export default function HROffsetApprovalNotifier() {
       return;
     }
 
-    setMessage(approve ? 'Offset approved. Eligible hours were added to the employee balance.' : 'Offset declined. No hours were added.');
+    setMessage(approve ? 'Offset approved.' : 'Offset declined.');
     setReviewingId(null);
     await fetchOffsetWork();
   };
@@ -147,7 +182,27 @@ export default function HROffsetApprovalNotifier() {
       return;
     }
 
-    setMessage(approve ? 'Use Offset approved. 1 hour was deducted and the Late tag is now Offset Applied.' : 'Use Offset declined. No hour was deducted and the Late tag remains unchanged.');
+    setMessage(approve ? 'Late Offset approved.' : 'Late Offset declined.');
+    setReviewingId(null);
+    await fetchOffsetWork();
+  };
+
+  const reviewEarlyOut = async (requestId: string, approve: boolean) => {
+    setReviewingId(requestId);
+    setMessage(null);
+    const { error } = await supabase.rpc('review_early_out_offset_request', {
+      p_request_id: requestId,
+      p_approve: approve,
+      p_notes: approve ? 'Approved by HR' : 'Declined by HR',
+    });
+
+    if (error) {
+      setMessage(error.message || 'Unable to review this Early Out Offset request.');
+      setReviewingId(null);
+      return;
+    }
+
+    setMessage(approve ? 'Early Out Offset approved and deducted.' : 'Early Out Offset declined. No deduction.');
     setReviewingId(null);
     await fetchOffsetWork();
   };
@@ -157,7 +212,7 @@ export default function HROffsetApprovalNotifier() {
       open={open}
       onClose={() => setOpen(false)}
       title="Offset Management"
-      description="Approve generated offset hours and employee requests to use approved hours for Late attendance."
+      description="Earned, Late, and Early Out approvals"
       icon={<Clock3 size={20} />}
       size="lg"
     >
@@ -171,18 +226,18 @@ export default function HROffsetApprovalNotifier() {
         <section>
           <div className="mb-2 flex items-center justify-between gap-2">
             <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Earned offset approvals</h3>
-              <p className="text-[11px] text-slate-500">Whole completed hours after 7:00 PM Manila time.</p>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Earned Offset</h3>
+              <p className="text-[11px] text-slate-500">Completed hours after 7 PM</p>
             </div>
-            <span className="rounded-full bg-cyan-50 px-2.5 py-1 text-[11px] font-bold text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300">{requests.length} · {totalHours} hrs</span>
+            <span className="rounded-full bg-cyan-50 px-2.5 py-1 text-[11px] font-bold text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300">{requests.length} · {totalHours}h</span>
           </div>
 
           {loading ? (
-            <p className="py-6 text-center text-sm text-slate-500">Loading offset actions…</p>
+            <p className="py-6 text-center text-sm text-slate-500">Loading…</p>
           ) : requests.length === 0 ? (
-            <div className="rounded-2xl bg-emerald-50 px-4 py-5 text-center dark:bg-emerald-950/30">
+            <div className="rounded-2xl bg-emerald-50 px-4 py-4 text-center dark:bg-emerald-950/30">
               <Check className="mx-auto text-emerald-600" size={20} />
-              <p className="mt-1 text-xs font-bold text-emerald-800 dark:text-emerald-300">No pending earned offset approvals.</p>
+              <p className="mt-1 text-xs font-bold text-emerald-800 dark:text-emerald-300">No pending earned Offset.</p>
             </div>
           ) : (
             <div className="space-y-2">
@@ -197,10 +252,8 @@ export default function HROffsetApprovalNotifier() {
                           <p className="truncate text-sm font-bold text-slate-900 dark:text-white">{profile?.full_name || 'Employee'}</p>
                           {profile?.employee_id && <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-slate-600 shadow-sm dark:bg-slate-800 dark:text-slate-300">{profile.employee_id}</span>}
                         </div>
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-300">
-                          Timed out {new Date(request.time_out_at).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}
-                        </p>
-                        <p className="mt-1 text-xs font-semibold text-cyan-700 dark:text-cyan-300">Eligible: {request.eligible_hours} hour{request.eligible_hours === 1 ? '' : 's'}</p>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-300">{new Date(request.time_out_at).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
+                        <p className="mt-1 text-xs font-semibold text-cyan-700 dark:text-cyan-300">{request.eligible_hours}h eligible</p>
                       </div>
                       <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-none">
                         <button type="button" disabled={isReviewing} onClick={() => reviewEarned(request.id, false)} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl bg-rose-50 px-3 text-xs font-bold text-rose-700 transition hover:bg-rose-100 disabled:opacity-50 dark:bg-rose-950/30 dark:text-rose-300"><X size={15} /> Decline</button>
@@ -217,14 +270,14 @@ export default function HROffsetApprovalNotifier() {
         <section className="border-t border-slate-100 pt-4 dark:border-slate-800">
           <div className="mb-2 flex items-center justify-between gap-2">
             <div>
-              <h3 className="flex items-center gap-1.5 text-sm font-bold text-slate-900 dark:text-white"><Eraser size={15} /> Use Offset requests</h3>
-              <p className="text-[11px] text-slate-500">Employee-selected Late dates. Approve to deduct 1 hour and change the attendance tag to Offset Applied.</p>
+              <h3 className="flex items-center gap-1.5 text-sm font-bold text-slate-900 dark:text-white"><Eraser size={15} /> Late Offset</h3>
+              <p className="text-[11px] text-slate-500">1h per Late record</p>
             </div>
-            <span className="rounded-full bg-violet-50 px-2.5 py-1 text-[11px] font-bold text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">{usageRequests.length} pending</span>
+            <span className="rounded-full bg-violet-50 px-2.5 py-1 text-[11px] font-bold text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">{usageRequests.length}</span>
           </div>
 
           {usageRequests.length === 0 ? (
-            <div className="rounded-2xl bg-slate-50 px-4 py-5 text-center text-xs text-slate-500 dark:bg-[#303632]">No employee offset usage request is waiting for review.</div>
+            <div className="rounded-2xl bg-slate-50 px-4 py-4 text-center text-xs text-slate-500 dark:bg-[#303632]">No pending Late Offset.</div>
           ) : (
             <div className="space-y-2">
               {usageRequests.map((request) => {
@@ -236,12 +289,51 @@ export default function HROffsetApprovalNotifier() {
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div className="min-w-0">
                         <p className="truncate text-sm font-bold text-slate-900 dark:text-white">{profile?.full_name || 'Employee'}</p>
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-300">Request to use {request.hours} hr for Late{attendance?.log_date ? ` on ${new Date(`${attendance.log_date}T00:00:00+08:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}</p>
-                        <p className="mt-1 text-[11px] font-semibold text-violet-700 dark:text-violet-300">Submitted {new Date(request.created_at).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-300">1h · Late{attendance?.log_date ? ` · ${attendance.log_date}` : ''}</p>
                       </div>
                       <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-none">
                         <button type="button" disabled={isReviewing} onClick={() => reviewUsage(request.id, false)} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl bg-white px-3 text-xs font-bold text-rose-700 shadow-sm transition hover:bg-rose-50 disabled:opacity-50 dark:bg-[#303632] dark:text-rose-300"><X size={15} /> Decline</button>
                         <button type="button" disabled={isReviewing} onClick={() => reviewUsage(request.id, true)} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl bg-violet-600 px-3 text-xs font-bold text-white transition hover:bg-violet-700 disabled:opacity-50"><Check size={15} /> Approve</button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        <section className="border-t border-slate-100 pt-4 dark:border-slate-800">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div>
+              <h3 className="flex items-center gap-1.5 text-sm font-bold text-slate-900 dark:text-white"><LogOut size={15} /> Early Out Offset</h3>
+              <p className="text-[11px] text-slate-500">Exact early minutes</p>
+            </div>
+            <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">{earlyOutRequests.length}</span>
+          </div>
+
+          {earlyOutRequests.length === 0 ? (
+            <div className="rounded-2xl bg-slate-50 px-4 py-4 text-center text-xs text-slate-500 dark:bg-[#303632]">No pending Early Out Offset.</div>
+          ) : (
+            <div className="space-y-2">
+              {earlyOutRequests.map((request) => {
+                const profile = profiles[request.user_id];
+                const attendance = attendanceLogs[request.attendance_log_id];
+                const isReviewing = reviewingId === request.id;
+                return (
+                  <div key={request.id} className="rounded-2xl bg-amber-50/70 p-3 dark:bg-amber-950/20">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate text-sm font-bold text-slate-900 dark:text-white">{profile?.full_name || 'Employee'}</p>
+                          {profile?.employee_id && <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-slate-600 shadow-sm dark:bg-slate-800 dark:text-slate-300">{profile.employee_id}</span>}
+                        </div>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-300">{formatMinutes(request.required_minutes)} · Early Out{attendance?.log_date ? ` · ${attendance.log_date}` : ''}</p>
+                        {attendance?.time_out && <p className="mt-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300">Time Out {new Date(attendance.time_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' })}</p>}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-none">
+                        <button type="button" disabled={isReviewing} onClick={() => reviewEarlyOut(request.id, false)} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl bg-white px-3 text-xs font-bold text-rose-700 shadow-sm transition hover:bg-rose-50 disabled:opacity-50 dark:bg-[#303632] dark:text-rose-300"><X size={15} /> Decline</button>
+                        <button type="button" disabled={isReviewing} onClick={() => reviewEarlyOut(request.id, true)} className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl bg-amber-600 px-3 text-xs font-bold text-white transition hover:bg-amber-700 disabled:opacity-50"><Check size={15} /> Approve</button>
                       </div>
                     </div>
                   </div>
