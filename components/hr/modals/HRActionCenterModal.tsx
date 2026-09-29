@@ -20,11 +20,12 @@ export default function HRActionCenterModal({ open, onClose, pendingDisputesCoun
   const [pendingOffsetCount, setPendingOffsetCount] = useState(0);
 
   const fetchOffsetCount = useCallback(async () => {
-    const [earned, usage] = await Promise.all([
+    const [earned, usage, earlyOut] = await Promise.all([
       supabase.from('offset_requests').select('id', { count: 'exact', head: true }).eq('status', 'Pending'),
       supabase.from('offset_usage_requests').select('id', { count: 'exact', head: true }).eq('status', 'Pending'),
+      supabase.from('early_out_offset_requests').select('id', { count: 'exact', head: true }).eq('status', 'Pending'),
     ]);
-    setPendingOffsetCount((earned.count || 0) + (usage.count || 0));
+    setPendingOffsetCount((earned.count || 0) + (usage.count || 0) + (earlyOut.count || 0));
   }, []);
 
   useEffect(() => {
