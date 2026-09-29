@@ -17,7 +17,7 @@ type Props = {
 
 export default function AttendanceCalendarModal({ open, onClose, month, onMonthChange, availableMonths, formatMonth, days, selectedDate, onSelectDate, selectedDay }: Props) {
   return (
-    <ModalShell open={open} onClose={onClose} title="Attendance Calendar" description="Monthly attendance overview" icon="🗓️" size="lg">
+    <ModalShell open={open} onClose={onClose} title="Attendance Calendar" description="Monthly attendance" icon="🗓️" size="lg">
       <select value={month} onChange={(event) => onMonthChange(event.target.value)} className="input-field mb-4 min-h-11 !py-2 !text-xs">
         {availableMonths.map((value) => <option key={value} value={value}>{formatMonth(value)}</option>)}
       </select>
@@ -58,7 +58,7 @@ export default function AttendanceCalendarModal({ open, onClose, month, onMonthC
               <span><strong>Time In:</strong> {selectedDay.log.time_in ? new Date(selectedDay.log.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' }) : '—'}</span>
               <span><strong>Time Out:</strong> {selectedDay.log.time_out ? new Date(selectedDay.log.time_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' }) : '—'}</span>
             </div>
-          ) : <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-300">No attendance record for this date.</p>}
+          ) : <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-300">No record.</p>}
         </div>
       )}
       <div className="mt-4 flex flex-wrap gap-3 text-[9px] font-bold" aria-label="Calendar legend">
