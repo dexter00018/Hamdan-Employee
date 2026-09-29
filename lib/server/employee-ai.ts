@@ -60,30 +60,69 @@ export async function answerEmployeeQuestion(ctx: Context, call = workflowCall) 
   try { c = validateClassification(raw); } catch { throw new EmployeeAIError('I could not safely understand that question. Please rephrase.', 422); }
   const tl = ctx.language === 'tl' || (ctx.language !== 'en' && c.language === 'tl');
   if (c.intent === 'restricted_other_employee') return { answer: tl ? 'Sorry, hindi puwedeng ibahagi ang private information ng ibang employee.' : 'Sorry, we cannot share another employee’s private information.' };
+  if (c.intent === 'own_offset' || c.intent === 'own_manpower') {
+    const { answerValidatedLiveClassification } = await import('@/lib/server/employee-ai-live');
+    return answerValidatedLiveClassification({
+      client,
+      userId,
+      classification: c as unknown as Record<string, unknown>,
+      language: ctx.language as 'auto' | 'tl' | 'en',
+    });
+  }
   if (c.intent === 'how_to') {
     const entry = SYSTEM_KNOWLEDGE[c.metric as SystemKnowledgeMetric];
     return { answer: entry ? (tl ? entry.tl : entry.en) : (tl ? 'Hindi ko mahanap ang system guide para dito.' : 'I could not find a system guide for that.') };
   }
   if (c.intent === 'own_profile') {
-    const { data, error } = await client.from('profiles').select('full_name, designation, employee_email').eq('id', userId).maybeSingle();
+    const { data, error } = await client.from('profiles').select('full_name, designation, employee_email, employee_id, employee_rank, direct_lead_id').eq('id', userId).maybeSingle();
     if (error || !data) throw new EmployeeAIError('Unable to read your profile.');
-    const missing = tl ? 'Hindi nakalista' : 'Not listed';
+    const missing = tl ? 'Hindi naka-configure' : 'Not configured';
+    let leadName = missing;
+    let leadDesignation = '';
+    if (data.direct_lead_id) {
+      const { data: lead } = await client.from('profiles').select('full_name, designation').eq('id', data.direct_lead_id).eq('role', 'employee').eq('is_active', true).maybeSingle();
+      if (lead?.full_name) {
+        leadName = lead.full_name;
+        leadDesignation = lead.designation || '';
+      }
+    }
+    const leaveRoute = data.employee_rank === 'Associate'
+      ? (data.direct_lead_id && leadName !== missing
+        ? (tl ? `${leadName} (Direct Lead) muna, pagkatapos HR para sa final approval.` : `${leadName} (Direct Lead) first, then HR for final approval.`)
+        : (tl ? 'Associate ang rank mo pero wala pang active Direct Lead na naka-configure. Kontakin ang HR/Admin.' : 'Your rank is Associate, but no active Direct Lead is configured. Contact HR/Admin.'))
+      : data.employee_rank === 'Lead'
+        ? (tl ? 'Diretso sa HR ang leave request mo.' : 'Your leave request goes directly to HR.')
+        : (tl ? 'Hindi pa naka-configure ang leave rank mo. Kontakin ang HR/Admin.' : 'Your leave rank is not configured yet. Contact HR/Admin.');
     const values: Record<string, string> = {
       full_name: `${tl ? 'Ang pangalan mo ay' : 'Your name is'} ${data.full_name || missing}.`,
       designation: `${tl ? 'Ang designation mo ay' : 'Your designation is'} ${data.designation || missing}.`,
       company_email: `${tl ? 'Ang work email mo ay' : 'Your work email is'} ${data.employee_email || missing}.`,
+      employee_id: `${tl ? 'Ang Employee ID mo ay' : 'Your Employee ID is'} ${data.employee_id || missing}.`,
+      employee_rank: `${tl ? 'Ang leave rank mo ay' : 'Your leave rank is'} ${data.employee_rank || missing}.`,
+      direct_lead: data.employee_rank === 'Lead' && !data.direct_lead_id
+        ? (tl ? 'Lead ang rank mo, kaya walang Direct Lead approval stage ang sarili mong leave.' : 'Your rank is Lead, so your own leave has no Direct Lead approval stage.')
+        : `${tl ? 'Ang Direct Lead mo ay' : 'Your Direct Lead is'} ${leadName}${leadDesignation ? ` (${leadDesignation})` : ''}.`,
+      leave_approval_route: `${tl ? 'Ang leave approval route mo:' : 'Your leave approval route:'} ${leaveRoute}`,
       profile_info: `${tl ? 'Ang pangalan mo ay' : 'Your name is'} ${data.full_name || missing}, ${tl ? 'at ang designation mo ay' : 'and your designation is'} ${data.designation || missing}.`,
+      profile_details: [
+        `${tl ? 'Pangalan' : 'Name'}: ${data.full_name || missing}`,
+        `Employee ID: ${data.employee_id || missing}`,
+        `Designation: ${data.designation || missing}`,
+        `${tl ? 'Leave Rank' : 'Leave Rank'}: ${data.employee_rank || missing}`,
+        `${tl ? 'Direct Lead' : 'Direct Lead'}: ${leadName}`,
+        `${tl ? 'Work email' : 'Work email'}: ${data.employee_email || missing}`,
+      ].join('\n'),
     };
-    return { answer: c.metric === 'profile_summary' ? [values.full_name, values.designation, values.company_email].join('\n') : values[c.metric] };
+    return { answer: c.metric === 'profile_summary' ? [values.full_name, values.employee_id, values.designation, values.employee_rank, values.direct_lead, values.company_email].join('\n') : values[c.metric] };
   }
   if (c.intent === 'clarification') {
     const prompts: Record<string, string> = tl
-      ? { period: 'Anong buwan o taon ang tinutukoy mo? Maaari ring magbigay ng eksaktong date range.', topic: 'Ano ang gusto mong malaman sa period na iyon: attendance, leave requests, o payslip?', payroll_cutoff: 'Unang cutoff (1?15) o pangalawang cutoff (16?end of month)? Isama ang buwan at taon.', designation: 'Anong designation o team ang hinahanap mo, halimbawa IT, HR, o Architect?' }
-      : { period: 'Which month or year do you mean? You can also give an exact date range.', topic: 'What would you like to check for that period: attendance, leave requests, or payslip?', payroll_cutoff: 'First cutoff (1?15) or second cutoff (16?end of month)? Include the month and year.', designation: 'Which designation or team do you mean, such as IT, HR, or Architect?' };
+      ? { period: 'Anong buwan o taon ang tinutukoy mo? Maaari ring magbigay ng eksaktong date range.', topic: 'Ano ang gusto mong malaman: profile/Employee ID/Lead, attendance, leave, Offset, Manpower Tracker, payslip, o work directory?', payroll_cutoff: 'Unang cutoff (1–15) o pangalawang cutoff (16–end of month)? Isama ang buwan at taon.', designation: 'Anong designation o team ang hinahanap mo, halimbawa IT, HR, o Architect?' }
+      : { period: 'Which month or year do you mean? You can also give an exact date range.', topic: 'What would you like to check: profile/Employee ID/Lead, attendance, leave, Offset, Manpower Tracker, payslip, or the work directory?', payroll_cutoff: 'First cutoff (1–15) or second cutoff (16–end of month)? Include the month and year.', designation: 'Which designation or team do you mean, such as IT, HR, or Architect?' };
     return { answer: prompts[c.metric] };
   }
-  if (c.intent === 'unsupported') return { answer: tl ? 'Hindi ko matukoy ang supported na request sa tanong mo. Pakilinaw kung profile, attendance, leave, payslip, o work directory ang tinutukoy mo.' : 'I could not identify a supported request in your question. Please clarify whether you mean your profile, attendance, leave, payslip, or the work directory.' };
-  if (c.intent === 'help') return { answer: tl ? 'Puwede kitang tulungan sa sarili mong attendance, leave, at payslip, o work email ng employee o mga employee ayon sa designation. Itanong lang, halimbawa: “Ano ang deductions ko sa August 16–31, 2026?”' : 'I can help with your attendance, leave, and payslip, or an employee’s work email. Just ask, for example: “What are my deductions for August 16–31, 2026?”' };
+  if (c.intent === 'unsupported') return { answer: tl ? 'Hindi ko pa matukoy ang eksaktong request. Puwede akong tumulong sa profile/Employee ID/Direct Lead, attendance, leave, Offset, Manpower Tracker, payslip, directory, at portal workflows. Pakilinaw nang kaunti ang gusto mong malaman.' : 'I could not identify the exact request yet. I can help with your profile/Employee ID/Direct Lead, attendance, leave, Offset, Manpower Tracker, payslip, directory, and portal workflows. Please clarify what you want to check.' };
+  if (c.intent === 'help') return { answer: tl ? 'Puwede mo akong tanungin tungkol sa sarili mong Employee ID, Rank, Direct Lead, attendance, leave, Offset, Manpower Tracker, payslip, at portal workflows. Puwede rin akong maghanap ng approved work email/designation sa employee directory.' : 'You can ask me about your Employee ID, Rank, Direct Lead, attendance, leave, Offset, Manpower Tracker, payslip, and portal workflows. I can also look up approved work email/designation information in the employee directory.' };
   if (c.intent === 'own_payslip') {
     if (ctx.payslipUnlocked !== true) throw new EmployeeAIError(tl ? 'Kailangan munang i-confirm ang password bago ko basahin ang payslip details mo.' : 'Please confirm your password before I read your payslip details.', 403, 'payslip_reauth_required');
     let cutoff: string | null;
@@ -156,11 +195,11 @@ export async function answerEmployeeQuestion(ctx: Context, call = workflowCall) 
     if (['absence_dates', 'late_dates', 'attendance_history'].includes(c.metric)) {
       const matching = rows.filter(r => c.metric === 'attendance_history' || r.status?.trim().toLowerCase() === (c.metric === 'absence_dates' ? 'absent' : 'late'));
       const entries = matching.slice(-100).map(r => `${r.log_date}: ${r.status}`).join('\n');
-      return { answer: `${tl ? 'Sarili mong attendance records' : 'Your attendance records'} (${start} ? ${end}):\n${entries || (tl ? 'Walang matching record.' : 'No matching records.')}${matching.length > 100 ? '\nShowing the latest 100 matches.' : ''}` };
+      return { answer: `${tl ? 'Sarili mong attendance records' : 'Your attendance records'} (${start} – ${end}):\n${entries || (tl ? 'Walang matching record.' : 'No matching records.')}${matching.length > 100 ? '\nShowing the latest 100 matches.' : ''}` };
     }
     if (c.metric === 'time_in' || c.metric === 'time_out') {
-      const time = (v: string | null) => v ? new Date(v).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila' }) : 'Not recorded';
-      return { answer: `${tl ? 'Sarili mong attendance' : 'Your attendance'} (${start} – ${end}, Asia/Manila):\n${rows.slice(-31).map(r => `${r.log_date}: ${time(r[c.metric as 'time_in' | 'time_out'])}`).join('\n') || 'No recorded logs.'}${rows.length > 31 ? '\nShowing the latest 31 recorded days.' : ''}` };
+      const time = (v: string | null) => v ? new Date(v).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila' }) : (tl ? 'Walang record' : 'Not recorded');
+      return { answer: `${tl ? 'Sarili mong attendance' : 'Your attendance'} (${start} – ${end}, Asia/Manila):\n${rows.slice(-31).map(r => `${r.log_date}: ${time(r[c.metric as 'time_in' | 'time_out'])}`).join('\n') || (tl ? 'Walang recorded logs.' : 'No recorded logs.')}${rows.length > 31 ? '\nShowing the latest 31 recorded days.' : ''}` };
     }
     const counts = { absent_count: 0, late_count: 0, present_count: 0, leave_day_count: 0 };
     for (const r of rows) {
@@ -190,6 +229,6 @@ export async function answerEmployeeQuestion(ctx: Context, call = workflowCall) 
   const total = c.metric === 'leave_history_summary' ? rows.length : counts[c.metric];
   const heading = tl ? `May ${total} kang ${status ? status.toLowerCase() + ' ' : ''}leave request na nagsisimula sa ${start} hanggang ${end}.` : `You have ${total} ${status ? status.toLowerCase() + ' ' : ''}leave request${total === 1 ? '' : 's'} starting between ${start} and ${end}.`;
   const summary = c.metric === 'leave_history_summary' ? `\nApproved: ${counts.approved_count}; Pending: ${counts.pending_count}; Rejected: ${counts.rejected_count}` : '';
-  const details = matching.slice(0, 20).map(r => `${r.start_date} ? ${r.end_date}: ${r.status}`).join('\n');
+  const details = matching.slice(0, 20).map(r => `${r.start_date} – ${r.end_date}: ${r.status}`).join('\n');
   return { answer: heading + summary + (details ? '\n' + details : '') + (matching.length > 20 ? (tl ? '\nUnang 20 requests ang ipinapakita.' : '\nShowing the first 20 requests.') : '') };
 }
