@@ -10,14 +10,9 @@ type Request = { id: string; eligible_hours: number; status: string; time_out_at
 type Transaction = { kind: 'earned' | 'used' | 'converted'; hours: number; minutes: number };
 type LateRecord = { id: string; log_date: string; time_in: string | null };
 type UsageRequest = { id: string; attendance_log_id: string; hours: number; status: string; created_at: string; reviewed_at: string | null; hr_notes: string | null };
+type EarlyOutRequest = { id: string; attendance_log_id: string; required_minutes: number; status: string; created_at: string; reviewed_at: string | null; hr_notes: string | null };
 type OffsetLeave = { id: string; leave_type: string; start_date: string; status: string; offset_minutes_required: number; offset_charged_at: string | null; offset_refunded_at: string | null; created_at: string };
-type HistoryItem = {
-  id: string;
-  createdAt: string;
-  title: string;
-  detail: string;
-  status: string;
-};
+type HistoryItem = { id: string; createdAt: string; title: string; detail: string; status: string };
 
 const REQUIRED_LEAVE_MINUTES = 9 * 60;
 
@@ -36,11 +31,22 @@ function formatOffsetMinutes(totalMinutes: number) {
   return `${minutes}m`;
 }
 
+function submittedLabel(value: string) {
+  return new Date(value).toLocaleString('en-US', {
+    timeZone: 'Asia/Manila',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
   const [requests, setRequests] = useState<Request[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [lateRecords, setLateRecords] = useState<LateRecord[]>([]);
   const [usageRequests, setUsageRequests] = useState<UsageRequest[]>([]);
+  const [earlyOutRequests, setEarlyOutRequests] = useState<EarlyOutRequest[]>([]);
   const [offsetLeaves, setOffsetLeaves] = useState<OffsetLeave[]>([]);
   const [loading, setLoading] = useState(true);
   const [useOpen, setUseOpen] = useState(false);
@@ -51,24 +57,27 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
     if (!userId) return;
     setLoading(true);
 
-    const [requestRes, transactionRes, lateRes, usageRes, leaveRes] = await Promise.all([
+    const [requestRes, transactionRes, lateRes, usageRes, earlyOutRes, leaveRes] = await Promise.all([
       supabase.from('offset_requests').select('id,eligible_hours,status,time_out_at,created_at').eq('user_id', userId).order('created_at', { ascending: false }),
       supabase.from('offset_transactions').select('kind,hours,minutes').eq('user_id', userId),
       supabase.from('attendance_logs').select('id,log_date,time_in').eq('user_id', userId).eq('status', 'Late').order('log_date', { ascending: false }).limit(100),
       supabase.from('offset_usage_requests').select('id,attendance_log_id,hours,status,created_at,reviewed_at,hr_notes').eq('user_id', userId).order('created_at', { ascending: false }),
+      supabase.from('early_out_offset_requests').select('id,attendance_log_id,required_minutes,status,created_at,reviewed_at,hr_notes').eq('user_id', userId).order('created_at', { ascending: false }),
       supabase.from('leave_requests').select('id,leave_type,start_date,status,offset_minutes_required,offset_charged_at,offset_refunded_at,created_at').eq('user_id', userId).eq('funding_source', 'offset').order('created_at', { ascending: false }),
     ]);
 
     if (requestRes.error) console.error('Error fetching offset requests:', requestRes.error);
     if (transactionRes.error) console.error('Error fetching offset balance:', transactionRes.error);
     if (lateRes.error) console.error('Error fetching Late records:', lateRes.error);
-    if (usageRes.error) console.error('Error fetching offset usage requests:', usageRes.error);
+    if (usageRes.error) console.error('Error fetching Late Offset requests:', usageRes.error);
+    if (earlyOutRes.error) console.error('Error fetching Early Out Offset requests:', earlyOutRes.error);
     if (leaveRes.error) console.error('Error fetching offset leave requests:', leaveRes.error);
 
     setRequests((requestRes.data || []) as Request[]);
     setTransactions((transactionRes.data || []) as Transaction[]);
     setLateRecords(((lateRes.data || []) as any[]).map((row) => ({ ...row, id: String(row.id) })) as LateRecord[]);
     setUsageRequests(((usageRes.data || []) as any[]).map((row) => ({ ...row, attendance_log_id: String(row.attendance_log_id) })) as UsageRequest[]);
+    setEarlyOutRequests(((earlyOutRes.data || []) as any[]).map((row) => ({ ...row, attendance_log_id: String(row.attendance_log_id) })) as EarlyOutRequest[]);
     setOffsetLeaves((leaveRes.data || []) as OffsetLeave[]);
     setLoading(false);
   }, [userId]);
@@ -97,12 +106,17 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
     [usageRequests]
   );
 
+  const pendingEarlyOutMinutes = useMemo(
+    () => earlyOutRequests.filter((request) => request.status === 'Pending').reduce((total, request) => total + Number(request.required_minutes || 0), 0),
+    [earlyOutRequests]
+  );
+
   const pendingLeaveMinutes = useMemo(
     () => offsetLeaves.filter((request) => request.status === 'Pending').reduce((total, request) => total + Number(request.offset_minutes_required || 0), 0),
     [offsetLeaves]
   );
 
-  const reservedMinutes = pendingUseMinutes + pendingLeaveMinutes;
+  const reservedMinutes = pendingUseMinutes + pendingEarlyOutMinutes + pendingLeaveMinutes;
   const availableToRequestMinutes = Math.max(0, approvedBalanceMinutes - reservedMinutes);
   const pendingLogIds = new Set(usageRequests.filter((request) => request.status === 'Pending').map((request) => request.attendance_log_id));
   const eligibleLateRecords = lateRecords.filter((record) => !pendingLogIds.has(record.id));
@@ -114,34 +128,38 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
       id: `leave-${leave.id}`,
       createdAt: leave.created_at,
       title: `${leave.leave_type} Leave · ${leave.start_date}`,
-      detail: leave.offset_refunded_at
-        ? '9h refunded'
-        : leave.offset_charged_at
-          ? '9h deducted'
-          : '9h reserved',
+      detail: leave.offset_refunded_at ? '9h refunded' : leave.offset_charged_at ? '9h deducted' : '9h reserved',
       status: leave.status,
     }));
 
     const lateItems: HistoryItem[] = usageRequests.map((request) => ({
       id: `late-${request.id}`,
       createdAt: request.created_at,
-      title: `Use ${request.hours} hr for Late${usageDate.get(request.attendance_log_id) ? ` · ${usageDate.get(request.attendance_log_id)}` : ''}`,
-      detail: `Submitted ${new Date(request.created_at).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`,
+      title: `Late · ${request.hours}h${usageDate.get(request.attendance_log_id) ? ` · ${usageDate.get(request.attendance_log_id)}` : ''}`,
+      detail: submittedLabel(request.created_at),
+      status: request.status,
+    }));
+
+    const earlyOutItems: HistoryItem[] = earlyOutRequests.map((request) => ({
+      id: `early-out-${request.id}`,
+      createdAt: request.created_at,
+      title: `Early Out · ${formatOffsetMinutes(request.required_minutes)}`,
+      detail: submittedLabel(request.created_at),
       status: request.status,
     }));
 
     const earnedItems: HistoryItem[] = requests.map((request) => ({
       id: `earned-${request.id}`,
       createdAt: request.created_at,
-      title: `Earned ${request.eligible_hours} offset hour${request.eligible_hours !== 1 ? 's' : ''}`,
-      detail: `Time Out ${new Date(request.time_out_at).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`,
+      title: `Earned ${request.eligible_hours}h Offset`,
+      detail: `Time Out ${submittedLabel(request.time_out_at)}`,
       status: request.status,
     }));
 
-    return [...leaveItems, ...lateItems, ...earnedItems].sort(
+    return [...leaveItems, ...lateItems, ...earlyOutItems, ...earnedItems].sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
-  }, [offsetLeaves, usageRequests, requests, usageDate]);
+  }, [offsetLeaves, usageRequests, earlyOutRequests, requests, usageDate]);
 
   const submitUseRequest = async (attendanceLogId: string) => {
     setSubmittingId(attendanceLogId);
@@ -174,7 +192,7 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
       open={open}
       onClose={onClose}
       title="Offset Request"
-      description="Use offset for Late or Leave"
+      description="Late · Early Out · Leave"
       icon={<Clock3 size={20} />}
       size="lg"
     >
@@ -214,7 +232,7 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
               </button>
             </div>
           </div>
-          <p className="mt-3 text-[11px] text-slate-500 dark:text-slate-400">Leave: 9h · Late: 1h · Deducted after HR approval</p>
+          <p className="mt-3 text-[11px] text-slate-500 dark:text-slate-400">Leave 9h · Late 1h · Early Out exact minutes</p>
         </section>
 
         {!canFileOffsetLeave && !loading && (
@@ -234,7 +252,7 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
                 <div key={record.id} className="flex flex-col gap-2 rounded-xl bg-white p-3 shadow-[0_4px_14px_rgba(15,23,42,0.04)] dark:bg-[#292f2b] sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="text-sm font-semibold text-slate-900 dark:text-white">{new Date(`${record.log_date}T00:00:00+08:00`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
-                    <p className="mt-0.5 text-[11px] text-slate-500">Uses 1h offset</p>
+                    <p className="mt-0.5 text-[11px] text-slate-500">Uses 1h Offset</p>
                   </div>
                   <button
                     type="button"
@@ -253,7 +271,7 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
         <section>
           <div className="mb-2">
             <h3 className="text-sm font-bold text-slate-900 dark:text-white">Offset History</h3>
-            <p className="text-[11px] text-slate-500">Earned and used offset</p>
+            <p className="text-[11px] text-slate-500">Earned and used Offset</p>
           </div>
           {loading ? (
             <p className="py-4 text-center text-sm text-slate-500">Loading…</p>
