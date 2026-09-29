@@ -28,9 +28,6 @@ export default function DisputeHistoryModal(p: Props) {
   const resolved = p.disputes.filter((item) => item.status !== 'Pending');
   const close = () => { p.setSelectedDisputeDetail(null); p.onClose(); };
 
-  // Always render the newest copy from the refreshed disputes list. This keeps
-  // an open detail view in sync after HR approves/rejects instead of leaving a
-  // stale Pending object on screen.
   const detail = p.selectedDisputeDetail
     ? p.disputes.find((item) => item.id === p.selectedDisputeDetail?.id) ?? p.selectedDisputeDetail
     : null;
@@ -41,7 +38,7 @@ export default function DisputeHistoryModal(p: Props) {
     {p.message && <div className={`mb-3 rounded-xl p-3 text-xs font-bold ${p.message.type === 'success' ? 'bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300' : 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300'}`}>{p.message.text}</div>}
 
     {detail ? <div className="space-y-3">
-      <button type="button" disabled={isActing} onClick={() => p.setSelectedDisputeDetail(null)} className="flex items-center gap-1 text-xs font-bold text-blue-600 transition hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-40 dark:text-blue-400"><ChevronLeft size={14}/>Back to all disputes</button>
+      <button type="button" disabled={isActing} onClick={() => p.setSelectedDisputeDetail(null)} className="flex items-center gap-1 text-xs font-bold text-blue-600 transition hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-40 dark:text-blue-400"><ChevronLeft size={14}/>All disputes</button>
 
       <div className="flex items-center justify-between gap-2">
         <strong className="text-sm text-slate-900 dark:text-white">{detail.employee?.full_name ?? 'Unknown'}</strong>
@@ -66,19 +63,19 @@ export default function DisputeHistoryModal(p: Props) {
         <button type="button" onClick={() => p.rejectDispute(detail)} className="rounded-full bg-rose-700 px-4 py-2.5 text-xs font-bold !text-white transition hover:bg-rose-800 active:scale-[0.99]">Reject</button>
       </div>}
 
-      {isActing && <div className="flex items-center justify-center gap-2 rounded-xl bg-slate-100 px-4 py-3 text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300"><Loader2 size={15} className="animate-spin"/>Processing dispute. Please wait…</div>}
+      {isActing && <div className="flex items-center justify-center gap-2 rounded-xl bg-slate-100 px-4 py-3 text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300"><Loader2 size={15} className="animate-spin"/>Processing…</div>}
 
       {isResolved && <div className={`flex items-center gap-2 rounded-xl px-4 py-3 text-xs font-bold ${detail.status === 'Approved' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300'}`}>
-        {detail.status === 'Approved' ? <CheckCircle2 size={16}/> : <AlertTriangle size={16}/>}This dispute is {detail.status.toLowerCase()} and is now read-only.
+        {detail.status === 'Approved' ? <CheckCircle2 size={16}/> : <AlertTriangle size={16}/>} {detail.status} · Read-only
       </div>}
     </div> : p.loading ? <p className="py-10 text-center text-sm text-slate-500 dark:text-slate-300">Loading disputes…</p> : <div className="space-y-5">
       <section>
         <div className="mb-2 flex items-center justify-between"><p className="label-branded">Pending review</p><span className="rounded-full bg-orange-50 px-2 py-1 text-[10px] font-black text-orange-700 dark:bg-orange-950/40 dark:text-orange-300">{pending.length}</span></div>
-        {pending.length === 0 ? <Empty text="All caught up — no pending disputes."/> : <div className="space-y-2">{pending.map((item) => <RequestRow key={item.id} item={item} subtitle={`${p.disputeTypeLabel(item)} · ${item.dispute_date}`} pending onClick={() => p.setSelectedDisputeDetail(item)}/>)}</div>}
+        {pending.length === 0 ? <Empty text="No pending disputes"/> : <div className="space-y-2">{pending.map((item) => <RequestRow key={item.id} item={item} subtitle={`${p.disputeTypeLabel(item)} · ${item.dispute_date}`} pending onClick={() => p.setSelectedDisputeDetail(item)}/>)}</div>}
       </section>
       <section>
         <p className="label-branded mb-2">Resolved ({resolved.length})</p>
-        {resolved.length === 0 ? <p className="rounded-xl border-2 border-dashed border-slate-200 py-8 text-center text-xs text-slate-500 dark:border-slate-700 dark:text-slate-300">No resolved disputes yet.</p> : <div className="space-y-2">{resolved.map((item) => <RequestRow key={item.id} item={item} subtitle={item.dispute_date} onClick={() => p.setSelectedDisputeDetail(item)}/>)}</div>}
+        {resolved.length === 0 ? <p className="rounded-xl border-2 border-dashed border-slate-200 py-8 text-center text-xs text-slate-500 dark:border-slate-700 dark:text-slate-300">No resolved disputes</p> : <div className="space-y-2">{resolved.map((item) => <RequestRow key={item.id} item={item} subtitle={item.dispute_date} onClick={() => p.setSelectedDisputeDetail(item)}/>)}</div>}
       </section>
     </div>}
   </div></ModalShell>;
