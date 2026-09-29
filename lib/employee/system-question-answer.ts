@@ -19,8 +19,8 @@ const ENTRIES: Entry[] = [
   },
   {
     terms: ['offset', 'offset hours', 'offset tracker', 'approved offset', 'earn offset'],
-    en: 'Offset is approved time credit from eligible work after 7:00 PM. Earned requests must be approved before becoming usable balance. Approved offset can be used for supported Late correction or for a one-day Leave Using Offset when at least 9 unreserved approved hours are available. Super Admin can make audited manual hour/minute adjustments.',
-    tl: 'Ang Offset ay approved time credit mula sa eligible work pagkatapos ng 7:00 PM. Kailangan munang ma-approve ang earned request bago maging usable balance. Puwede itong gamitin sa supported Late correction o one-day Leave Using Offset kapag may at least 9 unreserved approved hours. Puwede ring gumawa ang Super Admin ng audited manual hour/minute adjustment.',
+    en: 'Offset is approved time credit from eligible work after 7:00 PM. Earned requests must be approved before becoming usable balance. Approved offset can be used for supported Late correction, exact-minute Early Out, or a one-day Leave Using Offset when at least 9 unreserved approved hours are available. Super Admin can make audited manual hour/minute adjustments.',
+    tl: 'Ang Offset ay approved time credit mula sa eligible work pagkatapos ng 7:00 PM. Kailangan munang ma-approve ang earned request bago maging usable balance. Puwede itong gamitin sa supported Late correction, exact-minute Early Out, o one-day Leave Using Offset kapag may at least 9 unreserved approved hours. Puwede ring gumawa ang Super Admin ng audited manual hour/minute adjustment.',
   },
   {
     terms: ['earn offset', 'how offset earned', '7 pm offset', 'after 7 pm', 'paano maka offset', 'paano kumita offset'],
@@ -39,13 +39,13 @@ const ENTRIES: Entry[] = [
   },
   {
     terms: ['offset history', 'history offset', 'earned offset history', 'used offset history', 'offset records'],
-    en: 'The employee Offset module uses one combined Offset History for earned offset, Late usage, Offset Leave charges, and refunds, shown in one chronological list.',
-    tl: 'Isang combined Offset History ang ginagamit para sa earned offset, Late usage, Offset Leave charges, at refunds sa iisang chronological list.',
+    en: 'The employee Offset module uses one combined Offset History for earned offset, Late usage, Early Out usage, Offset Leave charges, and refunds, shown in one chronological list.',
+    tl: 'Isang combined Offset History ang ginagamit para sa earned offset, Late usage, Early Out usage, Offset Leave charges, at refunds sa iisang chronological list.',
   },
   {
-    terms: ['early time out', 'early timeout', 'time out early', 'maagang time out', 'offset early out', 'offset early time out'],
-    en: 'Early Time Out currently uses the normal early-out confirmation flow. Offset is not automatically used for early Time Out under the current rule. Manpower tracking still stops automatically when Time Out is recorded.',
-    tl: 'Ang Early Time Out ay gumagamit pa rin ng normal early-out confirmation flow. Hindi pa automatic na ginagamit ang Offset para sa Early Time Out sa current rule. Automatic pa ring hihinto ang Manpower tracking kapag na-record ang Time Out.',
+    terms: ['early time out', 'early timeout', 'time out early', 'maagang time out', 'offset early out', 'offset early time out', 'use offset early out'],
+    en: 'Before the official Time Out cutoff, the Early Time Out confirmation offers Use Offset. The system reserves the exact early minutes from your unreserved approved Offset balance, records Time Out immediately, and stops Manpower tracking. HR approval deducts the reserved minutes; rejection deducts nothing.',
+    tl: 'Bago ang official Time Out cutoff, may Use Offset option sa Early Time Out confirmation. Ire-reserve ng system ang eksaktong early minutes mula sa unreserved approved Offset balance, mare-record agad ang Time Out, at hihinto ang Manpower tracking. Kapag approved ng HR, mababawas ang reserved minutes; kapag rejected, walang deduction.',
   },
   {
     terms: ['leave approval', 'associate leave', 'lead approval', 'direct lead', 'dual approval', 'leave hierarchy', 'associate lead hr', 'who approves leave', 'sino approve leave'],
