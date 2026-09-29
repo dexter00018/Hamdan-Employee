@@ -2,9 +2,11 @@
 
 import { memo, useEffect, useState } from 'react';
 import { isEarlyOut } from '@/lib/attendance-rules';
+import { supabase } from '@/lib/supabase';
 import { Clock3 } from 'lucide-react';
 
 type TodayLog = {
+  id?: string | number;
   time_out: string | null;
   status: string | null;
 } | null;
@@ -29,6 +31,7 @@ function getManilaClock() {
 
 function EmployeeWorkClock({ todayLog, endHour }: { todayLog: TodayLog; endHour: number }) {
   const [clock, setClock] = useState(() => ({ time: '--:--:--', date: '', dateKey: '' }));
+  const [earlyOutOffsetStatus, setEarlyOutOffsetStatus] = useState<string | null>(null);
 
   useEffect(() => {
     const updateClock = () => setClock(getManilaClock());
@@ -37,11 +40,57 @@ function EmployeeWorkClock({ todayLog, endHour }: { todayLog: TodayLog; endHour:
     return () => window.clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    const attendanceLogId = todayLog?.id;
+    if (!attendanceLogId) {
+      setEarlyOutOffsetStatus(null);
+      return;
+    }
+
+    let active = true;
+    const loadStatus = async () => {
+      const { data, error } = await supabase
+        .from('early_out_offset_requests')
+        .select('status')
+        .eq('attendance_log_id', Number(attendanceLogId))
+        .maybeSingle();
+      if (!active) return;
+      if (error) {
+        console.error('Error fetching Early Out Offset status:', error);
+        setEarlyOutOffsetStatus(null);
+      } else {
+        setEarlyOutOffsetStatus(data?.status || null);
+      }
+    };
+
+    void loadStatus();
+    const channel = supabase
+      .channel(`employee-early-out-offset-${attendanceLogId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'early_out_offset_requests', filter: `attendance_log_id=eq.${attendanceLogId}` },
+        (payload) => setEarlyOutOffsetStatus(String((payload.new as { status?: string }).status || ''))
+      )
+      .subscribe();
+
+    return () => {
+      active = false;
+      void supabase.removeChannel(channel);
+    };
+  }, [todayLog?.id]);
+
   const isTodayLate = todayLog?.status?.toLowerCase() === 'late';
+  const rawEarlyOut = !!todayLog && isEarlyOut(clock.dateKey, todayLog.time_out, endHour);
+  const earlyOutCovered = rawEarlyOut && earlyOutOffsetStatus === 'Approved';
+  const earlyOutPending = rawEarlyOut && earlyOutOffsetStatus === 'Pending';
   const todayWorkStatus = !todayLog
     ? { label: 'No Time In', color: 'bg-red-100 text-red-700' }
-    : isEarlyOut(clock.dateKey, todayLog.time_out, endHour)
+    : earlyOutPending
+      ? { label: isTodayLate ? 'Late · Offset Pending' : 'Offset Pending', color: 'bg-amber-100 text-amber-800' }
+    : rawEarlyOut && !earlyOutCovered
       ? { label: isTodayLate ? 'Late / Early Out' : 'Early Out', color: 'bg-amber-100 text-amber-800' }
+    : earlyOutCovered
+      ? { label: isTodayLate ? 'Completed · Late · Offset' : 'Completed · Offset', color: 'bg-emerald-100 text-emerald-800' }
     : isTodayLate
       ? { label: todayLog.time_out ? 'Completed · Late' : 'Working · Late', color: 'bg-orange-100 text-orange-700' }
       : { label: todayLog.time_out ? 'Completed' : 'Working', color: 'bg-green-100 text-green-700' };
