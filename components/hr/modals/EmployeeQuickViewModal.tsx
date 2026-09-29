@@ -11,8 +11,6 @@ type Credits = { employment_status?: string | null; total_credits?: number | nul
 type ExtraInfo = {
   employeeRank: string | null;
   directLeadName: string | null;
-  approvedMinutes: number;
-  reservedMinutes: number;
   availableMinutes: number;
 };
 type Props = { fallbackLeaveCredits: number; formatPh: (iso: string) => string; initials: (name: string | null) => string; openPayslipsModal: (profile: Profile) => void; openProfileChoice: (profile: Profile) => void; quickViewAttendance: Attendance[]; quickViewCredits: Credits; quickViewProfile: Profile | null; scrollToDashboardSection: (id: string) => void; setAttendanceHistoryOpen: Dispatch<SetStateAction<boolean>>; setCutoffFilter: Dispatch<SetStateAction<string>>; setQuickViewProfile: Dispatch<SetStateAction<Profile | null>>; setSearchTerm: Dispatch<SetStateAction<string>>; setSelectedDate: Dispatch<SetStateAction<string>>; statusTagClass: (status: string | null) => string; todayManila: string };
@@ -75,8 +73,6 @@ export default function EmployeeQuickViewModal({ fallbackLeaveCredits, formatPh,
       setExtraInfo({
         employeeRank: hierarchy?.employee_rank ?? null,
         directLeadName,
-        approvedMinutes: Number(balance?.approved_minutes || 0),
-        reservedMinutes: Number(balance?.reserved_minutes || 0),
         availableMinutes: Number(balance?.available_minutes || 0),
       });
       setExtraLoading(false);
@@ -90,33 +86,25 @@ export default function EmployeeQuickViewModal({ fallbackLeaveCredits, formatPh,
   const todayLog = quickViewAttendance.find((log) => log.log_date === todayManila);
   const isLead = extraInfo?.employeeRank === 'Lead';
   const immediateHead = isLead ? COUNTRY_MANAGER_NAME : extraInfo?.directLeadName || 'Not set';
-  const immediateHeadRole = isLead ? 'Country Manager' : extraInfo?.directLeadName ? 'Lead' : 'Not set';
 
   return (
     <ModalShell open onClose={() => setQuickViewProfile(null)} title={quickViewProfile.full_name || 'Unknown'} description={`${quickViewProfile.employee_id || 'No ID'} · ${quickViewProfile.designation || 'No designation'}`} icon={initials(quickViewProfile.full_name)} size="md" footer={<div className="grid grid-cols-3 gap-2"><button type="button" onClick={() => { const profile = quickViewProfile; setQuickViewProfile(null); openProfileChoice(profile); }} className="rounded-full bg-slate-900 py-2.5 text-[10px] font-bold text-white hover:bg-slate-700">Profile</button><button type="button" onClick={() => { setSearchTerm(quickViewProfile.full_name || ''); setSelectedDate(''); setCutoffFilter(''); setAttendanceHistoryOpen(true); setQuickViewProfile(null); scrollToDashboardSection('attendance-history'); }} className="rounded-full bg-blue-50 py-2.5 text-[10px] font-bold text-blue-600 hover:bg-blue-100">Attendance</button><button type="button" onClick={() => { const profile = quickViewProfile; setQuickViewProfile(null); openPayslipsModal(profile); }} className="rounded-full bg-emerald-50 py-2.5 text-[10px] font-bold text-emerald-600 hover:bg-emerald-100">Payslips</button></div>}>
       <div className="overflow-y-auto flex-1 pr-1 space-y-3">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <div className="p-3 rounded-xl bg-slate-50 border border-slate-100"><p className="label-branded mb-1">Today</p><p className="text-xs font-bold text-slate-800">{todayLog?.status || 'No record'}</p></div>
-          <div className="p-3 rounded-xl bg-slate-50 border border-slate-100"><p className="label-branded mb-1">Time In</p><p className="text-xs font-bold text-slate-800">{todayLog?.time_in ? formatPh(todayLog.time_in) : '-'}</p></div>
-          <div className="p-3 rounded-xl bg-slate-50 border border-slate-100"><p className="label-branded mb-1">Employment</p><p className="text-xs font-bold text-slate-800">{quickViewCredits?.employment_status || 'Not set'}</p></div>
-          <div className="p-3 rounded-xl bg-slate-50 border border-slate-100"><p className="label-branded mb-1">Leave Credits</p><p className="text-xs font-bold text-slate-800">{quickViewCredits?.employment_status === 'Regular' ? `${(quickViewCredits.total_credits ?? fallbackLeaveCredits) - (quickViewCredits.used_credits ?? 0)} remaining` : 'N/A'}</p></div>
+          <div className="rounded-xl border border-emerald-100 bg-emerald-50/75 p-3 dark:border-emerald-900/40 dark:bg-emerald-950/20"><p className="label-branded mb-1">Today</p><p className="text-xs font-bold text-slate-800 dark:text-slate-100">{todayLog?.status || 'No record'}</p></div>
+          <div className="rounded-xl border border-sky-100 bg-sky-50/75 p-3 dark:border-sky-900/40 dark:bg-sky-950/20"><p className="label-branded mb-1">Time In</p><p className="text-xs font-bold text-slate-800 dark:text-slate-100">{todayLog?.time_in ? formatPh(todayLog.time_in) : '-'}</p></div>
+          <div className="rounded-xl border border-violet-100 bg-violet-50/75 p-3 dark:border-violet-900/40 dark:bg-violet-950/20"><p className="label-branded mb-1">Employment</p><p className="text-xs font-bold text-slate-800 dark:text-slate-100">{quickViewCredits?.employment_status || 'Not set'}</p></div>
+          <div className="rounded-xl border border-amber-100 bg-amber-50/75 p-3 dark:border-amber-900/40 dark:bg-amber-950/20"><p className="label-branded mb-1">Leave Credits</p><p className="text-xs font-bold text-slate-800 dark:text-slate-100">{quickViewCredits?.employment_status === 'Regular' ? `${(quickViewCredits.total_credits ?? fallbackLeaveCredits) - (quickViewCredits.used_credits ?? 0)} remaining` : 'N/A'}</p></div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-          <div className="rounded-xl bg-slate-50 px-3 py-2.5 border border-slate-100">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div className="flex min-h-20 flex-col justify-center rounded-xl border border-rose-100 bg-rose-50/70 px-4 py-3 dark:border-rose-900/40 dark:bg-rose-950/20">
             <p className="label-branded mb-1">Immediate Head</p>
-            <p className="truncate text-xs font-bold text-slate-800">{extraLoading ? 'Loading…' : immediateHead}</p>
+            <p className="truncate text-xs font-bold text-slate-800 dark:text-slate-100">{extraLoading ? 'Loading…' : immediateHead}</p>
           </div>
-          <div className="rounded-xl bg-slate-50 px-3 py-2.5 border border-slate-100">
-            <p className="label-branded mb-1">Head Role</p>
-            <p className="truncate text-xs font-bold text-slate-800">{extraLoading ? 'Loading…' : immediateHeadRole}</p>
-          </div>
-          <div className="rounded-xl bg-cyan-50/80 px-3 py-2.5 border border-cyan-100">
+          <div className="flex min-h-20 flex-col items-center justify-center rounded-xl border border-cyan-100 bg-cyan-50/75 px-4 py-3 text-center dark:border-cyan-900/40 dark:bg-cyan-950/20">
             <p className="label-branded mb-1">Offset Available</p>
-            <p className="text-xs font-bold text-cyan-800">{extraLoading ? 'Loading…' : formatMinutes(extraInfo?.availableMinutes || 0)}</p>
-            {!extraLoading && extraInfo && (
-              <p className="mt-0.5 text-[9px] text-slate-500">Approved {formatMinutes(extraInfo.approvedMinutes)} · Reserved {formatMinutes(extraInfo.reservedMinutes)}</p>
-            )}
+            <p className="text-lg font-black leading-none text-cyan-800 dark:text-cyan-200">{extraLoading ? 'Loading…' : formatMinutes(extraInfo?.availableMinutes || 0)}</p>
           </div>
         </div>
 
@@ -127,9 +115,9 @@ export default function EmployeeQuickViewModal({ fallbackLeaveCredits, formatPh,
           ) : (
             <div className="space-y-1.5">
               {quickViewAttendance.map((log) => (
-                <div key={log.id} className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-100">
-                  <span className="text-xs font-medium text-slate-700">{log.log_date}</span>
-                  <span className="text-[10px] text-slate-500">{log.time_in ? formatPh(log.time_in) : '-'} → {log.time_out ? formatPh(log.time_out) : 'No time-out'}</span>
+                <div key={log.id} className="flex items-center justify-between gap-2 rounded-xl border border-emerald-100/80 bg-emerald-50/45 p-2.5 dark:border-emerald-900/30 dark:bg-emerald-950/10">
+                  <span className="text-xs font-medium text-slate-700 dark:text-slate-200">{log.log_date}</span>
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400">{log.time_in ? formatPh(log.time_in) : '-'} → {log.time_out ? formatPh(log.time_out) : 'No time-out'}</span>
                   <span className={statusTagClass(log.status)}>{log.status || '-'}</span>
                 </div>
               ))}
