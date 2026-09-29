@@ -4,7 +4,7 @@ import { EmployeeAIError, workflowCall } from '@/lib/server/employee-ai';
 
 type Language = 'auto' | 'tl' | 'en';
 type LiveIntent = 'own_offset' | 'own_manpower';
-type LiveClassification = {
+export type LiveClassification = {
   intent: LiveIntent;
   metric: string;
   period: 'today' | 'yesterday' | 'current_month' | 'previous_month' | 'current_year' | 'previous_year' | 'custom';
@@ -19,14 +19,14 @@ type LiveClassification = {
 const OFFSET_METRICS = new Set(['approved_balance', 'available_balance', 'reserved_balance', 'pending_offset', 'earned_offset', 'used_offset', 'offset_history', 'offset_summary']);
 const MANPOWER_METRICS = new Set(['current_project', 'tracker_status', 'tracked_time', 'today_tracked_time', 'manpower_history', 'manpower_summary']);
 const PERIODS = new Set(['today', 'yesterday', 'current_month', 'previous_month', 'current_year', 'previous_year', 'custom']);
-const LIVE_HINT = /\b(offset|manpower|tracker|tracking|tracked|track|project\s+(?:hours?|time)|hours?\s+tracked)\b/i;
+const LIVE_HINT = /\b(offset|comp\s*time|compensatory\s*time|time\s*credit|manpower|tracker|tracking|tracked|track|project\s+(?:hours?|time)|hours?\s+tracked)\b/i;
 
-export function mightNeedLiveOffsetOrManpower(question: string) {
-  return LIVE_HINT.test(question);
+export function mightNeedLiveOffsetOrManpower(question: string, history: ChatTurn[] = []) {
+  return LIVE_HINT.test(question) || history.slice(-4).some(turn => LIVE_HINT.test(turn.content));
 }
 
-function parseLiveClassification(raw: unknown, requestId: string): LiveClassification | null {
-  if (!isRecord(raw) || raw.success !== true || raw.request_id !== requestId || !['own_offset', 'own_manpower'].includes(String(raw.intent))) return null;
+function normalizeLiveClassification(raw: Record<string, unknown>): LiveClassification {
+  if (!['own_offset', 'own_manpower'].includes(String(raw.intent))) throw new EmployeeAIError('I could not safely understand that question. Please rephrase.', 422);
   const intent = raw.intent as LiveIntent;
   const metrics = intent === 'own_offset' ? OFFSET_METRICS : MANPOWER_METRICS;
   if (typeof raw.metric !== 'string' || !metrics.has(raw.metric) || typeof raw.period !== 'string' || !PERIODS.has(raw.period) || raw.target_scope !== 'self' || raw.target_name !== '' || !['tl', 'en'].includes(String(raw.language))) {
@@ -48,6 +48,11 @@ function parseLiveClassification(raw: unknown, requestId: string): LiveClassific
     throw new EmployeeAIError('I could not safely understand that question. Please rephrase.', 422);
   }
   return c;
+}
+
+function parseLiveClassification(raw: unknown, requestId: string): LiveClassification | null {
+  if (!isRecord(raw) || raw.success !== true || raw.request_id !== requestId || !['own_offset', 'own_manpower'].includes(String(raw.intent))) return null;
+  return normalizeLiveClassification(raw);
 }
 
 function rangeFor(c: LiveClassification) {
@@ -122,7 +127,7 @@ async function offsetAnswer(client: SupabaseClient, userId: string, c: LiveClass
   if (c.metric === 'used_offset') return tl ? `Mula ${start} hanggang ${end}, ${formatMinutes(usedMinutes)} ang nagamit o na-convert mula sa offset mo.` : `From ${start} to ${end}, ${formatMinutes(usedMinutes)} of your offset was used or converted.`;
   if (c.metric === 'offset_history') {
     const items = txRows.slice(0, 20).map(row => {
-      const label = row.kind === 'earned' ? (tl ? 'Earned' : 'Earned') : row.kind === 'converted' ? (tl ? 'Converted' : 'Converted') : (tl ? 'Used' : 'Used');
+      const label = row.kind === 'earned' ? 'Earned' : row.kind === 'converted' ? 'Converted' : 'Used';
       const date = new Date(row.created_at).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' });
       return `${date}: ${label} ${formatMinutes(transactionMinutes(row))}${row.note ? ` — ${String(row.note).slice(0, 80)}` : ''}`;
     });
@@ -169,9 +174,23 @@ async function manpowerAnswer(client: SupabaseClient, userId: string, c: LiveCla
     durations.set(row.project_id, (durations.get(row.project_id) ?? 0) + duration);
   }
   if (c.metric === 'today_tracked_time' || c.metric === 'tracked_time') return tl ? `Na-track mo ang ${formatDurationMs(totalMs)} mula ${start} hanggang ${end}.` : `You tracked ${formatDurationMs(totalMs)} from ${start} to ${end}.`;
-  const grouped = [...durations.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20).map(([projectId, ms]) => `${projectNames.get(projectId) || (tl ? 'Inactive/unknown project' : 'Inactive/unknown project')}: ${formatDurationMs(ms)}`);
+  const grouped = [...durations.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20).map(([projectId, ms]) => `${projectNames.get(projectId) || 'Inactive/unknown project'}: ${formatDurationMs(ms)}`);
   if (c.metric === 'manpower_history') return `${tl ? 'Manpower history mo' : 'Your Manpower history'} (${start} – ${end}):\n${grouped.join('\n') || (tl ? 'Walang tracked project time sa period na ito.' : 'No tracked project time in this period.')}`;
-  return `${tl ? 'Manpower summary' : 'Manpower summary'} (${start} – ${end}): ${formatDurationMs(totalMs)} ${tl ? 'total tracked' : 'total tracked'}.${grouped.length ? `\n${grouped.join('\n')}` : ''}${active ? `\n${tl ? 'Currently tracking' : 'Currently tracking'}: ${activeProjectName || (tl ? 'active project' : 'active project')}` : ''}`;
+  return `${tl ? 'Manpower summary' : 'Manpower summary'} (${start} – ${end}): ${formatDurationMs(totalMs)} total tracked.${grouped.length ? `\n${grouped.join('\n')}` : ''}${active ? `\nCurrently tracking: ${activeProjectName || 'active project'}` : ''}`;
+}
+
+export async function answerValidatedLiveClassification(params: {
+  client: SupabaseClient;
+  userId: string;
+  classification: Record<string, unknown>;
+  language: Language;
+}) {
+  const c = normalizeLiveClassification(params.classification);
+  const tl = params.language === 'tl' || (params.language !== 'en' && c.language === 'tl');
+  const answer = c.intent === 'own_offset'
+    ? await offsetAnswer(params.client, params.userId, c, tl)
+    : await manpowerAnswer(params.client, params.userId, c, tl);
+  return { answer, source: c.intent };
 }
 
 export async function answerLiveOffsetOrManpower(params: {
@@ -182,7 +201,7 @@ export async function answerLiveOffsetOrManpower(params: {
   language: Language;
   requestId: string;
 }) {
-  if (!mightNeedLiveOffsetOrManpower(params.question)) return null;
+  if (!mightNeedLiveOffsetOrManpower(params.question, params.history)) return null;
   const raw = await workflowCall(process.env.N8N_EMPLOYEE_AI_CLASSIFIER_URL, {
     question: params.question,
     history: params.history,
@@ -192,9 +211,5 @@ export async function answerLiveOffsetOrManpower(params: {
   });
   const c = parseLiveClassification(raw, params.requestId);
   if (!c) return null;
-  const tl = params.language === 'tl' || (params.language !== 'en' && c.language === 'tl');
-  const answer = c.intent === 'own_offset'
-    ? await offsetAnswer(params.client, params.userId, c, tl)
-    : await manpowerAnswer(params.client, params.userId, c, tl);
-  return { answer, source: c.intent };
+  return answerValidatedLiveClassification({ client: params.client, userId: params.userId, classification: c as unknown as Record<string, unknown>, language: params.language });
 }
