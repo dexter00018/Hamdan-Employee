@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { createSupabaseAdminClient } from '@/lib/server/supabase-admin';
 import { answerEmployeeQuestion, EmployeeAIError } from '@/lib/server/employee-ai';
+import { answerLiveOffsetOrManpower } from '@/lib/server/employee-ai-live';
 import { PAYSLIP_REAUTH_COOKIE, verifyPayslipReauthToken } from '@/lib/server/employee-ai-reauth';
 import { isRecord, validateHistory } from '@/lib/employee/ask-ai';
 import { answerKnownSystemQuestion } from '@/lib/employee/system-question-answer';
@@ -59,14 +60,27 @@ export async function POST(request: Request) {
     if (error) throw new EmployeeAIError('Ask AI rate limiting is unavailable. Please try later.');
     if (allowed !== true) return NextResponse.json({ success: false, error: 'Too many questions. Please wait a minute.' }, { status: 429, headers: { ...headers, 'Retry-After': '60' } });
     const requestId = crypto.randomUUID();
+    const language = String(body.language ?? 'auto') as 'auto' | 'tl' | 'en';
 
     // Fast path for known portal/workflow questions. This keeps system help current and
     // avoids an n8n/Gemini round-trip when no private/live employee data is needed.
-    const localSystemAnswer = answerKnownSystemQuestion(body.question.trim(), String(body.language ?? 'auto') as 'auto' | 'tl' | 'en');
+    const localSystemAnswer = answerKnownSystemQuestion(body.question.trim(), language);
     if (localSystemAnswer) return json({ success: true, answer: localSystemAnswer, request_id: requestId, source: 'system_knowledge' });
 
+    // Live Offset and Manpower questions use the updated n8n classifier, while private
+    // values are queried only here with the verified Supabase session and user ID.
+    const liveAnswer = await answerLiveOffsetOrManpower({
+      client: auth.client,
+      userId: auth.userId,
+      question: body.question.trim(),
+      history,
+      language,
+      requestId,
+    });
+    if (liveAnswer) return json({ success: true, ...liveAnswer, request_id: requestId });
+
     const payslipUnlocked = verifyPayslipReauthToken(cookieValue(await cookies(), PAYSLIP_REAUTH_COOKIE), auth.userId);
-    const answer = await answerEmployeeQuestion({ ...auth, history, question: body.question.trim(), language: String(body.language ?? 'auto'), payslipId: body.payslip_id as string | undefined, payslipUnlocked, requestId });
+    const answer = await answerEmployeeQuestion({ ...auth, history, question: body.question.trim(), language, payslipId: body.payslip_id as string | undefined, payslipUnlocked, requestId });
     return json({ success: true, ...answer, request_id: requestId });
   } catch (error) { return failure(error); }
 }
