@@ -11,6 +11,13 @@ type Transaction = { kind: 'earned' | 'used' | 'converted'; hours: number; minut
 type LateRecord = { id: string; log_date: string; time_in: string | null };
 type UsageRequest = { id: string; attendance_log_id: string; hours: number; status: string; created_at: string; reviewed_at: string | null; hr_notes: string | null };
 type OffsetLeave = { id: string; leave_type: string; start_date: string; status: string; offset_minutes_required: number; offset_charged_at: string | null; offset_refunded_at: string | null; created_at: string };
+type HistoryItem = {
+  id: string;
+  createdAt: string;
+  title: string;
+  detail: string;
+  status: string;
+};
 
 const REQUIRED_LEAVE_MINUTES = 9 * 60;
 
@@ -101,6 +108,40 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
   const eligibleLateRecords = lateRecords.filter((record) => !pendingLogIds.has(record.id));
   const usageDate = new Map(lateRecords.map((record) => [record.id, record.log_date]));
   const canFileOffsetLeave = availableToRequestMinutes >= REQUIRED_LEAVE_MINUTES;
+
+  const historyItems = useMemo<HistoryItem[]>(() => {
+    const leaveItems: HistoryItem[] = offsetLeaves.map((leave) => ({
+      id: `leave-${leave.id}`,
+      createdAt: leave.created_at,
+      title: `${leave.leave_type} Leave · ${leave.start_date}`,
+      detail: leave.offset_refunded_at
+        ? '9h refunded after cancellation'
+        : leave.offset_charged_at
+          ? '9h deducted on final HR approval'
+          : '9h reserved while pending',
+      status: leave.status,
+    }));
+
+    const lateItems: HistoryItem[] = usageRequests.map((request) => ({
+      id: `late-${request.id}`,
+      createdAt: request.created_at,
+      title: `Use ${request.hours} hr for Late${usageDate.get(request.attendance_log_id) ? ` · ${usageDate.get(request.attendance_log_id)}` : ''}`,
+      detail: `Submitted ${new Date(request.created_at).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`,
+      status: request.status,
+    }));
+
+    const earnedItems: HistoryItem[] = requests.map((request) => ({
+      id: `earned-${request.id}`,
+      createdAt: request.created_at,
+      title: `Earned ${request.eligible_hours} offset hour${request.eligible_hours !== 1 ? 's' : ''}`,
+      detail: `Timed out ${new Date(request.time_out_at).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`,
+      status: request.status,
+    }));
+
+    return [...leaveItems, ...lateItems, ...earnedItems].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  }, [offsetLeaves, usageRequests, requests, usageDate]);
 
   const submitUseRequest = async (attendanceLogId: string) => {
     setSubmittingId(attendanceLogId);
@@ -211,63 +252,25 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
 
         <section>
           <div className="mb-2">
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Offset leave history</h3>
-            <p className="text-[11px] text-slate-500">One-day leave requests funded by 9 approved offset hours.</p>
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Offset History</h3>
+            <p className="text-[11px] text-slate-500">All earned and used offset activity in one place.</p>
           </div>
-          {loading ? <p className="py-4 text-center text-sm text-slate-500">Loading…</p> : offsetLeaves.length ? (
+          {loading ? (
+            <p className="py-4 text-center text-sm text-slate-500">Loading…</p>
+          ) : historyItems.length ? (
             <div className="space-y-2">
-              {offsetLeaves.map((leave) => (
-                <div key={leave.id} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-[#303632]">
+              {historyItems.map((item) => (
+                <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-[#303632]">
                   <div className="min-w-0">
-                    <p className="text-xs font-semibold text-slate-900 dark:text-white">{leave.leave_type} Leave · {leave.start_date}</p>
-                    <p className="mt-0.5 text-[10px] text-slate-500">{leave.offset_refunded_at ? '9h refunded after cancellation' : leave.offset_charged_at ? '9h deducted on final approval' : '9h reserved while pending'}</p>
+                    <p className="text-xs font-semibold text-slate-900 dark:text-white">{item.title}</p>
+                    <p className="mt-0.5 text-[10px] text-slate-500">{item.detail}</p>
                   </div>
-                  <span className={`flex-none rounded-full px-2.5 py-1 text-[10px] font-bold ${statusClass(leave.status)}`}>{leave.status}</span>
-                </div>
-              ))}
-            </div>
-          ) : <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-xs text-slate-500 dark:bg-[#303632]">No offset-funded leave requests yet.</p>}
-        </section>
-
-        <section>
-          <div className="mb-2">
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Use offset history</h3>
-            <p className="text-[11px] text-slate-500">Your requests to apply approved offset to Late attendance.</p>
-          </div>
-          {loading ? <p className="py-4 text-center text-sm text-slate-500">Loading…</p> : usageRequests.length ? (
-            <div className="space-y-2">
-              {usageRequests.map((request) => (
-                <div key={request.id} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-[#303632]">
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-slate-900 dark:text-white">Use {request.hours} hr for Late{usageDate.get(request.attendance_log_id) ? ` · ${usageDate.get(request.attendance_log_id)}` : ''}</p>
-                    <p className="mt-0.5 text-[10px] text-slate-500">Submitted {new Date(request.created_at).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
-                  </div>
-                  <span className={`flex-none rounded-full px-2.5 py-1 text-[10px] font-bold ${statusClass(request.status)}`}>{request.status}</span>
+                  <span className={`flex-none rounded-full px-2.5 py-1 text-[10px] font-bold ${statusClass(item.status)}`}>{item.status}</span>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-xs text-slate-500 dark:bg-[#303632]">No offset usage requests yet.</p>
-          )}
-        </section>
-
-        <section className="border-t border-slate-100 pt-4 dark:border-slate-800">
-          <h3 className="text-sm font-bold text-slate-900 dark:text-white">Earned offset history</h3>
-          <p className="mb-2 mt-0.5 text-[11px] text-slate-500">Auto-generated whole hours after 7:00 PM, subject to HR approval.</p>
-          {loading ? <p className="py-4 text-center text-sm text-slate-500">Loading…</p> : requests.length ? (
-            <div className="space-y-2">
-              {requests.map((request) => (
-                <div key={request.id} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-[#303632]">
-                  <div>
-                    <p className="text-xs font-semibold text-slate-900 dark:text-white">{request.eligible_hours} hour{request.eligible_hours !== 1 ? 's' : ''}</p>
-                    <p className="mt-0.5 text-[10px] text-slate-500">Timed out {new Date(request.time_out_at).toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
-                  </div>
-                  <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${statusClass(request.status)}`}>{request.status}</span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-xs text-slate-500 dark:bg-[#303632]">No earned offset requests yet.</p>
+            <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-xs text-slate-500 dark:bg-[#303632]">No offset history yet.</p>
           )}
         </section>
       </div>
