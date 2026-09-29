@@ -5,6 +5,7 @@ import { createSupabaseAdminClient } from '@/lib/server/supabase-admin';
 import { answerEmployeeQuestion, EmployeeAIError } from '@/lib/server/employee-ai';
 import { PAYSLIP_REAUTH_COOKIE, verifyPayslipReauthToken } from '@/lib/server/employee-ai-reauth';
 import { isRecord, validateHistory } from '@/lib/employee/ask-ai';
+import { answerKnownSystemQuestion } from '@/lib/employee/system-question-answer';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
@@ -58,6 +59,12 @@ export async function POST(request: Request) {
     if (error) throw new EmployeeAIError('Ask AI rate limiting is unavailable. Please try later.');
     if (allowed !== true) return NextResponse.json({ success: false, error: 'Too many questions. Please wait a minute.' }, { status: 429, headers: { ...headers, 'Retry-After': '60' } });
     const requestId = crypto.randomUUID();
+
+    // Fast path for known portal/workflow questions. This keeps system help current and
+    // avoids an n8n/Gemini round-trip when no private/live employee data is needed.
+    const localSystemAnswer = answerKnownSystemQuestion(body.question.trim(), String(body.language ?? 'auto') as 'auto' | 'tl' | 'en');
+    if (localSystemAnswer) return json({ success: true, answer: localSystemAnswer, request_id: requestId, source: 'system_knowledge' });
+
     const payslipUnlocked = verifyPayslipReauthToken(cookieValue(await cookies(), PAYSLIP_REAUTH_COOKIE), auth.userId);
     const answer = await answerEmployeeQuestion({ ...auth, history, question: body.question.trim(), language: String(body.language ?? 'auto'), payslipId: body.payslip_id as string | undefined, payslipUnlocked, requestId });
     return json({ success: true, ...answer, request_id: requestId });
