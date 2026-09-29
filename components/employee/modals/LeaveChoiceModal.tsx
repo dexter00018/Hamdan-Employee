@@ -74,21 +74,21 @@ export default function LeaveChoiceModal({ open, onClose, fetchMyLeaves, isRegul
     window.dispatchEvent(new Event('employee:open-offset-leave'));
   };
 
-  return <ModalShell open={open} onClose={onClose} title="Leave" description="Choose how you want to file your leave." size="sm">
+  return <ModalShell open={open} onClose={onClose} title="Leave" description="Choose leave type" size="sm">
     <div className="space-y-3">
       <button type="button" onClick={openRegularLeave} className="flex w-full items-center gap-3 rounded-2xl bg-slate-50 p-4 text-left transition hover:bg-slate-100 dark:bg-[#303632] dark:hover:bg-[#343b36]">
         <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-green-50 text-lg dark:bg-green-950/35">📝</div>
-        <div><p className="text-sm font-bold text-slate-900 dark:text-white">Regular Leave</p><p className="mt-0.5 text-xs text-slate-400">{isRegular ? `${remainingCredits} credits left` : 'File a new leave request'}</p></div>
+        <div><p className="text-sm font-bold text-slate-900 dark:text-white">Regular Leave</p><p className="mt-0.5 text-xs text-slate-400">{isRegular ? `${remainingCredits} credits left` : 'New leave request'}</p></div>
       </button>
 
       <button type="button" onClick={openOffsetLeave} disabled={!canUseOffsetLeave || offsetLoading} className="flex w-full items-center gap-3 rounded-2xl bg-cyan-50 p-4 text-left transition hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-45 dark:bg-cyan-950/25 dark:hover:bg-cyan-950/35">
         <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-white text-cyan-700 shadow-sm dark:bg-[#292f2b] dark:text-cyan-300"><Clock3 size={18}/></div>
-        <div className="min-w-0 flex-1"><p className="text-sm font-bold text-slate-900 dark:text-white">Leave Using Offset</p><p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{offsetLoading ? 'Checking offset balance…' : canUseOffsetLeave ? `${formatOffsetMinutes(availableOffsetMinutes)} available · uses 9h after final HR approval` : `${formatOffsetMinutes(availableOffsetMinutes)} available · 9h required`}</p></div>
+        <div className="min-w-0 flex-1"><p className="text-sm font-bold text-slate-900 dark:text-white">Leave Using Offset</p><p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{offsetLoading ? 'Checking balance…' : canUseOffsetLeave ? `${formatOffsetMinutes(availableOffsetMinutes)} available · 9h on HR approval` : `${formatOffsetMinutes(availableOffsetMinutes)} available · 9h required`}</p></div>
       </button>
 
       <button type="button" onClick={() => { onClose(); clearSelectedLeave(); setMyLeavesModalOpen(true); void fetchMyLeaves(); }} className="flex w-full items-center gap-3 rounded-2xl bg-slate-50 p-4 text-left transition hover:bg-slate-100 dark:bg-[#303632] dark:hover:bg-[#343b36]">
         <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-amber-50 text-lg dark:bg-amber-950/35">🗓️</div>
-        <div><p className="text-sm font-bold text-slate-900 dark:text-white">My Leave Requests</p><p className="mt-0.5 text-xs text-slate-400">{myLeavesCount > 0 ? `${myLeavesCount} request${myLeavesCount === 1 ? '' : 's'}` : 'No leave requests yet'}</p></div>
+        <div><p className="text-sm font-bold text-slate-900 dark:text-white">My Leave Requests</p><p className="mt-0.5 text-xs text-slate-400">{myLeavesCount > 0 ? `${myLeavesCount} request${myLeavesCount === 1 ? '' : 's'}` : 'No requests'}</p></div>
       </button>
     </div>
     <button type="button" className="mt-6 w-full rounded-full bg-slate-100 p-3 text-sm font-medium dark:bg-slate-800 dark:text-slate-200" onClick={onClose}>Cancel</button>
