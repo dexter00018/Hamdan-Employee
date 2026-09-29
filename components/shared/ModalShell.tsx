@@ -124,7 +124,7 @@ export default function ModalShell({
               {title}
             </h2>
             {description && (
-              <p id={descriptionId} className="mt-1 text-[11px] leading-relaxed text-slate-500 dark:text-slate-300">
+              <p id={descriptionId} className="mt-1 line-clamp-2 text-[10px] leading-snug text-slate-500 dark:text-slate-300 sm:text-[11px]">
                 {description}
               </p>
             )}
