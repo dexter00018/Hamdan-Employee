@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import HROffsetApprovalNotifier from "@/components/hr/HROffsetApprovalNotifier";
+import HROffsetApprovalNotifier from "@/components/hr/HROffsetApprovalNotifierV2";
 import HRLeaveHierarchyManager from "@/components/hr/HRLeaveHierarchyManager";
 import HRDashboardToolInjector from "@/components/hr/HRDashboardToolInjector";
 
