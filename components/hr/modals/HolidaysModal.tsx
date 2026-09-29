@@ -10,7 +10,7 @@ type Props = { open: boolean; onClose: () => void; addHoliday: () => void | Prom
 
 export default function HolidaysModal({ open, onClose, addHoliday, deleteHoliday, holidayMsg, holidaySaving, holidays, holidaysLoading, newHolidayDate, newHolidayName, setNewHolidayDate, setNewHolidayName }: Props) {
   return (
-    <ModalShell open={open} onClose={onClose} title="Holidays" description="Dates employees won't be auto-marked Absent" icon={<CalendarRange size={17} strokeWidth={2.4}/>} size="lg" closeDisabled={holidaySaving}>
+    <ModalShell open={open} onClose={onClose} title="Holidays" description="Non-working dates" icon={<CalendarRange size={17} strokeWidth={2.4}/>} size="lg" closeDisabled={holidaySaving}>
           <div className="overflow-y-auto flex-1 pr-1">
             {holidayMsg && <div className={`p-2.5 rounded-xl text-xs font-bold mb-3 ${holidayMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>{holidayMsg.text}</div>}
 
@@ -23,7 +23,7 @@ export default function HolidaysModal({ open, onClose, addHoliday, deleteHoliday
               />
               <input
                 type="text"
-                placeholder="Holiday name (e.g. Independence Day)"
+                placeholder="Holiday name"
                 value={newHolidayName}
                 onChange={(e) => setNewHolidayName(e.target.value)}
                 className="input-field !py-1.5 !text-xs !min-h-0 flex-1 min-w-0 !text-slate-900"
@@ -41,7 +41,7 @@ export default function HolidaysModal({ open, onClose, addHoliday, deleteHoliday
             <div className="space-y-1.5 min-h-[80px]">
               {holidaysLoading && <LoadingRow label="Loading holidays..." />}
               {!holidaysLoading && holidays.length === 0 && (
-                <p className="text-slate-400 text-xs">No holidays added yet.</p>
+                <p className="text-slate-400 text-xs">No holidays yet.</p>
               )}
               {!holidaysLoading && holidays.map((h) => (
                 <div key={h.id} className="flex items-center justify-between gap-2 p-2.5 bg-slate-50 rounded-xl border border-slate-100">
