@@ -17,6 +17,8 @@ type ExtraInfo = {
 };
 type Props = { fallbackLeaveCredits: number; formatPh: (iso: string) => string; initials: (name: string | null) => string; openPayslipsModal: (profile: Profile) => void; openProfileChoice: (profile: Profile) => void; quickViewAttendance: Attendance[]; quickViewCredits: Credits; quickViewProfile: Profile | null; scrollToDashboardSection: (id: string) => void; setAttendanceHistoryOpen: Dispatch<SetStateAction<boolean>>; setCutoffFilter: Dispatch<SetStateAction<string>>; setQuickViewProfile: Dispatch<SetStateAction<Profile | null>>; setSearchTerm: Dispatch<SetStateAction<string>>; setSelectedDate: Dispatch<SetStateAction<string>>; statusTagClass: (status: string | null) => string; todayManila: string };
 
+const COUNTRY_MANAGER_NAME = 'Abdulrahman R. Birung';
+
 function formatMinutes(totalMinutes: number) {
   const safe = Math.max(0, Math.round(totalMinutes));
   const hours = Math.floor(safe / 60);
@@ -86,6 +88,9 @@ export default function EmployeeQuickViewModal({ fallbackLeaveCredits, formatPh,
 
   if (!quickViewProfile) return null;
   const todayLog = quickViewAttendance.find((log) => log.log_date === todayManila);
+  const isLead = extraInfo?.employeeRank === 'Lead';
+  const immediateHead = isLead ? COUNTRY_MANAGER_NAME : extraInfo?.directLeadName || 'Not set';
+  const immediateHeadRole = isLead ? 'Country Manager' : extraInfo?.directLeadName ? 'Lead' : 'Not set';
 
   return (
     <ModalShell open onClose={() => setQuickViewProfile(null)} title={quickViewProfile.full_name || 'Unknown'} description={`${quickViewProfile.employee_id || 'No ID'} · ${quickViewProfile.designation || 'No designation'}`} icon={initials(quickViewProfile.full_name)} size="md" footer={<div className="grid grid-cols-3 gap-2"><button type="button" onClick={() => { const profile = quickViewProfile; setQuickViewProfile(null); openProfileChoice(profile); }} className="rounded-full bg-slate-900 py-2.5 text-[10px] font-bold text-white hover:bg-slate-700">Profile</button><button type="button" onClick={() => { setSearchTerm(quickViewProfile.full_name || ''); setSelectedDate(''); setCutoffFilter(''); setAttendanceHistoryOpen(true); setQuickViewProfile(null); scrollToDashboardSection('attendance-history'); }} className="rounded-full bg-blue-50 py-2.5 text-[10px] font-bold text-blue-600 hover:bg-blue-100">Attendance</button><button type="button" onClick={() => { const profile = quickViewProfile; setQuickViewProfile(null); openPayslipsModal(profile); }} className="rounded-full bg-emerald-50 py-2.5 text-[10px] font-bold text-emerald-600 hover:bg-emerald-100">Payslips</button></div>}>
@@ -99,12 +104,12 @@ export default function EmployeeQuickViewModal({ fallbackLeaveCredits, formatPh,
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
           <div className="rounded-xl bg-slate-50 px-3 py-2.5 border border-slate-100">
-            <p className="label-branded mb-1">Rank</p>
-            <p className="text-xs font-bold text-slate-800">{extraLoading ? 'Loading…' : extraInfo?.employeeRank || 'Not set'}</p>
+            <p className="label-branded mb-1">Immediate Head</p>
+            <p className="truncate text-xs font-bold text-slate-800">{extraLoading ? 'Loading…' : immediateHead}</p>
           </div>
           <div className="rounded-xl bg-slate-50 px-3 py-2.5 border border-slate-100">
-            <p className="label-branded mb-1">Direct Lead</p>
-            <p className="truncate text-xs font-bold text-slate-800">{extraLoading ? 'Loading…' : extraInfo?.directLeadName || (extraInfo?.employeeRank === 'Lead' ? 'HR approval' : 'Not set')}</p>
+            <p className="label-branded mb-1">Head Role</p>
+            <p className="truncate text-xs font-bold text-slate-800">{extraLoading ? 'Loading…' : immediateHeadRole}</p>
           </div>
           <div className="rounded-xl bg-cyan-50/80 px-3 py-2.5 border border-cyan-100">
             <p className="label-branded mb-1">Offset Available</p>
