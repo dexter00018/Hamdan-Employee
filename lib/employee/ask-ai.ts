@@ -1,12 +1,14 @@
 import type { SystemKnowledgeMetric } from '@/lib/employee/system-knowledge';
 
 export const intentMetrics = {
-  own_profile: ['full_name', 'designation', 'company_email', 'profile_summary', 'profile_info'],
+  own_profile: ['full_name', 'designation', 'company_email', 'employee_id', 'employee_rank', 'direct_lead', 'leave_approval_route', 'profile_details', 'profile_summary', 'profile_info'],
   how_to: ['dashboard_overview', 'timeinout_location', 'attendance_history', 'attendance_statuses', 'dispute_process', 'missing_log_process', 'leave_request_process', 'leave_credits', 'leave_history', 'payslip_access', 'payslip_ai_security', 'commute_planner', 'profile_update', 'directory_lookup', 'privacy_rules', 'notifications_announcements', 'theme_display', 'hr_workflows_overview', 'admin_workflows_overview', 'general_navigation'] satisfies SystemKnowledgeMetric[],
   own_attendance: ['absent_count', 'absence_dates', 'late_dates', 'attendance_history', 'last_absent_date', 'late_count', 'present_count', 'leave_day_count', 'attendance_summary', 'time_in', 'time_out'],
   own_leave_balance: ['remaining_credits', 'total_credits', 'used_credits', 'leave_balance_summary'],
   own_leave_history: ['leave_request_count', 'approved_count', 'pending_count', 'rejected_count', 'leave_history_summary'],
   own_payslip: ['basic_pay', 'gross_pay', 'net_pay', 'deductions', 'payslip_summary'],
+  own_offset: ['approved_balance', 'available_balance', 'reserved_balance', 'pending_offset', 'earned_offset', 'used_offset', 'offset_history', 'offset_summary'],
+  own_manpower: ['current_project', 'tracker_status', 'tracked_time', 'today_tracked_time', 'manpower_history', 'manpower_summary'],
   directory_lookup: ['company_email', 'designation', 'directory_profile'],
   directory_by_designation: ['company_email', 'directory_profile'],
   clarification: ['period', 'topic', 'payroll_cutoff', 'designation'],
@@ -88,7 +90,7 @@ export function payslipCutoffFromQuestion(question: string, now = new Date()): s
     const month = monthMatches[0].index + 1;
     const lastDay = new Date(Date.UTC(Number(year), month, 0)).getUTCDate();
     const first = /\b1\s*(?:-|to|hanggang)\s*15\b|\b(?:first|1st)\s+(?:half|cutoff)\b|\bh1\b/.test(q);
-    const second = new RegExp(`\\b16\\s*(?:-|to|hanggang)\\s*${lastDay}\\b|\\b(?:second|2nd)\\s+(?:half|cutoff)\\b|\\bh2\\b`).test(q);
+    const second = new RegExp(`\\b16\\s*(?:-|to|hanggang)\\s*${lastDay}\\b|\\b(?:second|2nd)\s+(?:half|cutoff)\\b|\\bh2\\b`).test(q);
     if (first === second) throw new Error('Please specify the cutoff, for example “August 1–15, 2026” or “August 16–31, 2026”.');
     return `${year}-${String(month).padStart(2, '0')}:H${first ? '1' : '2'}`;
   }
