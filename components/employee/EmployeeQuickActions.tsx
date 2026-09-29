@@ -57,7 +57,7 @@ export default function EmployeeQuickActions({
         <div className="mb-3 flex items-end justify-between gap-3">
           <div>
             <h2 id="employee-quick-actions-title" className="text-base font-semibold sm:text-lg">Quick Actions</h2>
-            <p className="mt-0.5 text-xs text-slate-500">Your most-used employee tools</p>
+            <p className="mt-0.5 text-xs text-slate-500">Employee tools</p>
           </div>
         </div>
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 sm:gap-3">
