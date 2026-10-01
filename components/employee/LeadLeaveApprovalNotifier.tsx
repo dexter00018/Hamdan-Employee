@@ -23,35 +23,21 @@ export default function LeadLeaveApprovalNotifier() {
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const fetchRequests = useCallback(async () => {
-    const { data: authData } = await supabase.auth.getUser();
-    const user = authData.user;
-    if (!user) {
-      setIsLead(false);
+  const [leadUserId, setLeadUserId] = useState<string | null>(null);
+
+  const fetchRequests = useCallback(async (userId?: string | null) => {
+    const resolvedUserId = userId ?? leadUserId;
+    if (!resolvedUserId) {
       setRequests([]);
       setLoading(false);
       return;
     }
 
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('employee_rank,is_active')
-      .eq('id', user.id)
-      .maybeSingle();
-
-    if (profileError || !profile || profile.employee_rank !== 'Lead' || profile.is_active === false) {
-      setIsLead(false);
-      setRequests([]);
-      setLoading(false);
-      return;
-    }
-
-    setIsLead(true);
     const { data, error } = await supabase
       .from('leave_requests')
       .select(`id,leave_type,start_date,end_date,reason,created_at,
         employee:profiles!leave_requests_user_id_fkey(full_name,employee_id)`)
-      .eq('lead_approver_id', user.id)
+      .eq('lead_approver_id', resolvedUserId)
       .eq('lead_approval_status', 'Pending')
       .eq('status', 'Pending')
       .order('created_at', { ascending: true });
@@ -63,18 +49,58 @@ export default function LeadLeaveApprovalNotifier() {
       setRequests((data || []) as unknown as LeaveRequest[]);
     }
     setLoading(false);
-  }, []);
+  }, [leadUserId]);
 
   useEffect(() => {
-    void fetchRequests();
-    const interval = window.setInterval(fetchRequests, 60_000);
-    const refreshOnVisible = () => {
-      if (document.visibilityState === 'visible') void fetchRequests();
+    let active = true;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
+    const initialize = async () => {
+      // Resolve auth/profile once. The previous 60-second poll repeated both
+      // /auth/v1/user and /profiles for every employee for as long as the
+      // dashboard stayed open.
+      const { data: sessionData } = await supabase.auth.getSession();
+      const user = sessionData.session?.user;
+      if (!active || !user) {
+        setIsLead(false);
+        setRequests([]);
+        setLoading(false);
+        return;
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('employee_rank,is_active')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (!active) return;
+      if (profileError || !profile || profile.employee_rank !== 'Lead' || profile.is_active === false) {
+        setIsLead(false);
+        setRequests([]);
+        setLoading(false);
+        return;
+      }
+
+      setIsLead(true);
+      setLeadUserId(user.id);
+      await fetchRequests(user.id);
+      if (!active) return;
+
+      channel = supabase
+        .channel(`lead-leave-approvals-${user.id}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'leave_requests', filter: `lead_approver_id=eq.${user.id}` },
+          () => { if (document.visibilityState === 'visible') void fetchRequests(user.id); }
+        )
+        .subscribe();
     };
-    document.addEventListener('visibilitychange', refreshOnVisible);
+
+    void initialize();
     return () => {
-      window.clearInterval(interval);
-      document.removeEventListener('visibilitychange', refreshOnVisible);
+      active = false;
+      if (channel) void supabase.removeChannel(channel);
     };
   }, [fetchRequests]);
 
