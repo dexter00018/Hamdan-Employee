@@ -64,7 +64,7 @@ function EmployeeWorkClock({ todayLog, endHour }: { todayLog: TodayLog; endHour:
     };
 
     void loadStatus();
-    const poll = window.setInterval(() => void loadStatus(), 30_000);
+    // Realtime keeps this status current; avoid a redundant 30-second poll.
     const channel = supabase
       .channel(`employee-early-out-offset-${attendanceLogId}`)
       .on(
@@ -76,7 +76,6 @@ function EmployeeWorkClock({ todayLog, endHour }: { todayLog: TodayLog; endHour:
 
     return () => {
       active = false;
-      window.clearInterval(poll);
       void supabase.removeChannel(channel);
     };
   }, [todayLog?.id]);
