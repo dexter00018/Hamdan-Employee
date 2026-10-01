@@ -54,20 +54,21 @@ function dateLabel(value: string) {
   });
 }
 
-function currentCalendarMonth() {
+function currentAndPreviousCalendarMonths() {
   const today = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
   }).format(new Date());
   const year = Number(today.slice(0, 4));
   const month = Number(today.slice(5, 7));
-  const startDay = 1;
+  const previousMonthStart = new Date(Date.UTC(year, month - 2, 1));
   const endDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
-  const monthText = new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: 'Asia/Manila' })
+  const previousMonthText = new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: 'Asia/Manila' }).format(previousMonthStart);
+  const currentMonthText = new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: 'Asia/Manila' })
     .format(new Date(`${year}-${String(month).padStart(2, '0')}-01T00:00:00+08:00`));
   return {
-    start: `${year}-${String(month).padStart(2, '0')}-${String(startDay).padStart(2, '0')}`,
+    start: `${previousMonthStart.getUTCFullYear()}-${String(previousMonthStart.getUTCMonth() + 1).padStart(2, '0')}-01`,
     end: `${year}-${String(month).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`,
-    label: `${monthText} ${startDay}–${endDay}, ${year}`,
+    label: `${previousMonthText} 1 – ${currentMonthText} ${endDay}, ${year}`,
   };
 }
 
@@ -95,7 +96,7 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
   const [submittingId, setSubmittingId] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const cutoff = useMemo(() => currentCalendarMonth(), []);
+  const cutoff = useMemo(() => currentAndPreviousCalendarMonths(), []);
 
   const fetchOffsetData = useCallback(async () => {
     if (!userId) return;
@@ -243,12 +244,12 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
               <button type="button" onClick={() => setUsePanel((value) => value === 'late' ? null : 'late')} disabled={eligibleLateRecords.length === 0} className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl bg-cyan-700 px-3 text-[11px] font-bold text-white disabled:opacity-40"><Eraser size={14} /> Late</button>
             </div>
           </div>
-          <p className="mt-2 text-[10px] text-slate-500">Current month {cutoff.label}</p>
+          <p className="mt-2 text-[10px] text-slate-500">Current & previous month {cutoff.label}</p>
         </section>
 
         {usePanel === 'early' && (
           <section className="rounded-2xl bg-amber-50/60 p-3 dark:bg-amber-950/15">
-            <div className="mb-2"><h3 className="text-sm font-bold text-slate-900 dark:text-white">Early Out · Current month</h3><p className="text-[10px] text-slate-500">Exact minutes to {cutoffHour}:00</p></div>
+            <div className="mb-2"><h3 className="text-sm font-bold text-slate-900 dark:text-white">Early Out · Current & previous month</h3><p className="text-[10px] text-slate-500">Exact minutes to {cutoffHour}:00</p></div>
             <div className="space-y-2">
               {visibleEarly.map((record) => {
                 const busy = submittingId === `early-${record.id}`;
@@ -265,7 +266,7 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
 
         {usePanel === 'late' && (
           <section className="rounded-2xl bg-slate-50 p-3 dark:bg-[#303632]">
-            <div className="mb-2"><h3 className="text-sm font-bold text-slate-900 dark:text-white">Late · Current month</h3><p className="text-[10px] text-slate-500">1h each</p></div>
+            <div className="mb-2"><h3 className="text-sm font-bold text-slate-900 dark:text-white">Late · Current & previous month</h3><p className="text-[10px] text-slate-500">1h each</p></div>
             <div className="space-y-2">
               {visibleLate.map((record) => {
                 const busy = submittingId === `late-${record.id}`;
