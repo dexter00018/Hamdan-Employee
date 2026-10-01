@@ -4,13 +4,13 @@ type Entry = { terms: string[]; en: string; tl: string };
 const ENTRIES: Entry[] = [
   {
     terms: ['manpower tracker', 'project tracker', 'time tracker', 'project timer', 'track project', 'project hours'],
-    en: 'Manpower Tracker records actual project time only while your attendance shift is open. It is available from 9:00 AM Manila time, pauses automatically from 12:00 PM to 1:00 PM, resumes the same project at 1:00 PM only if the shift is still open, and stops automatically at Time Out. Switching projects stops the previous project and starts the new one.',
-    tl: 'Ang Manpower Tracker ay nagre-record ng actual project time habang open ang attendance shift. Available ito mula 9:00 AM Manila time, automatic na pause 12:00 PM–1:00 PM, resume sa parehong project ng 1:00 PM kung open pa ang shift, at automatic stop sa Time Out. Kapag nag-switch ng project, hihinto ang nauna at magsisimula ang bago.',
+    en: 'After Time In, you can pre-select a Manpower project before 9:00 AM; tracking begins automatically at 9:00 AM Manila time. It pauses automatically from 12:00 PM to 1:00 PM, resumes the same project at 1:00 PM only if the shift is still open, and stops automatically at Time Out. Switching projects stops the previous project and starts the new one.',
+    tl: 'Pagkatapos ng Time In, puwede nang mag-pre-select ng Manpower project bago mag-9:00 AM; automatic magsisimula ang tracking ng 9:00 AM Manila time. Automatic itong magpa-pause ng 12:00 PM–1:00 PM, magre-resume sa parehong project ng 1:00 PM kung open pa ang shift, at hihinto sa Time Out. Kapag nag-switch ng project, hihinto ang nauna at magsisimula ang bago.',
   },
   {
     terms: ['tracker locked', 'tracker disabled', 'cannot start tracker', "can't start tracker", 'di ma start tracker', 'hindi ma start tracker', 'before 9', '9 am tracker', 'active shift tracker'],
-    en: 'The tracker is locked before 9:00 AM, before Time In, during the 12:00 PM–1:00 PM lunch break, and after Time Out. It can run only during an active attendance shift inside the allowed tracking window.',
-    tl: 'Naka-lock ang tracker bago mag-9:00 AM, bago mag-Time In, habang 12:00 PM–1:00 PM lunch break, at pagkatapos mag-Time Out. Puwede lang itong tumakbo habang active ang attendance shift at nasa allowed tracking window.',
+    en: 'Before Time In, during the 12:00 PM–1:00 PM lunch break, and after Time Out, the tracker is locked. Before 9:00 AM you can pre-select a project after Time In, but no time is recorded until 9:00 AM.',
+    tl: 'Naka-lock ang tracker bago mag-Time In, habang 12:00 PM–1:00 PM lunch break, at pagkatapos mag-Time Out. Bago mag-9:00 AM, puwede kang mag-pre-select ng project pagkatapos ng Time In, pero walang mare-record na oras hanggang 9:00 AM.',
   },
   {
     terms: ['manpower project', 'tracker project list', 'project list tracker', 'add tracker project', 'who adds project', 'super admin project'],

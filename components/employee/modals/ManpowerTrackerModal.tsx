@@ -113,6 +113,7 @@ export default function ManpowerTrackerModal({ open, onClose }: Props) {
   const lunchBreak = localHour === 12;
   const shiftActive = shiftStatus === 'active';
   const trackingEnabled = shiftActive && !beforeTrackerStart && !lunchBreak;
+  const canSelectProject = shiftActive && !lunchBreak;
 
   const projectTotals = useMemo(() => {
     const totals = new Map<string, number>();
@@ -129,14 +130,12 @@ export default function ManpowerTrackerModal({ open, onClose }: Props) {
   const activeElapsed = activeSession ? Math.max(0, now.getTime() - new Date(activeSession.started_at).getTime()) : 0;
 
   const switchProject = async (projectId: string) => {
-    if (!trackingEnabled) {
+    if (!canSelectProject) {
       const text = shiftStatus === 'completed'
         ? 'Your shift is complete. Tracking is locked after Time Out.'
         : !shiftActive
           ? 'Time In first before starting the Manpower Tracker.'
-          : beforeTrackerStart
-            ? 'Manpower Tracker starts at 9:00 AM Manila time.'
-            : lunchBreak
+          : lunchBreak
               ? 'Manpower Tracker is on lunch break from 12:00 PM to 1:00 PM.'
               : 'Manpower Tracker is not available right now.';
       setMessage({ type: 'error', text });
@@ -149,7 +148,7 @@ export default function ManpowerTrackerModal({ open, onClose }: Props) {
     if (error) {
       setMessage({ type: 'error', text: error.message || 'Unable to start this project timer.' });
     } else {
-      setMessage({ type: 'success', text: activeSession ? 'Previous project stopped and the selected project started.' : 'Project timer started.' });
+      setMessage({ type: 'success', text: beforeTrackerStart ? 'Project pre-selected. Tracking starts automatically at 9:00 AM Manila time.' : activeSession ? 'Previous project stopped and the selected project started.' : 'Project timer started.' });
     }
     setChangingProjectId(null);
     await fetchData(true);
@@ -167,15 +166,15 @@ export default function ManpowerTrackerModal({ open, onClose }: Props) {
   const shiftMeta = lunchBreak && shiftActive
     ? { title: 'Lunch break', text: `${pausedProject?.name || 'Your active project'} is paused from 12:00 PM to 1:00 PM and will resume automatically if your shift is still open.`, className: 'bg-amber-50 text-amber-800 dark:bg-amber-950/30 dark:text-amber-200', icon: <PauseCircle size={18} /> }
     : shiftActive && beforeTrackerStart
-      ? { title: 'Tracker opens at 9:00 AM', text: 'You are already timed in. Project tracking becomes available at 9:00 AM Manila time.', className: 'bg-cyan-50 text-cyan-800 dark:bg-cyan-950/30 dark:text-cyan-200', icon: <Clock3 size={18} /> }
+      ? { title: activeSession ? 'Project pre-selected' : 'Pre-select a project', text: activeSession ? `${currentProject?.name || 'Your selected project'} will begin tracking automatically at 9:00 AM Manila time.` : 'Choose a project now. Tracking will begin automatically at 9:00 AM Manila time.', className: 'bg-cyan-50 text-cyan-800 dark:bg-cyan-950/30 dark:text-cyan-200', icon: <Clock3 size={18} /> }
       : shiftStatus === 'active'
-        ? { title: 'Shift active', text: 'Tracking is available from 9:00 AM until Time Out. Time Out automatically stops the running project.', className: 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200', icon: <CheckCircle2 size={18} /> }
+        ? { title: 'Shift active', text: 'Tracking runs until Time Out. Time Out automatically stops the running project.', className: 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200', icon: <CheckCircle2 size={18} /> }
         : shiftStatus === 'completed'
           ? { title: 'Shift completed', text: 'Tracking is locked because you already timed out.', className: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200', icon: <LockKeyhole size={18} /> }
-          : { title: 'Time In required', text: 'Start your attendance shift first. Project tracking opens at 9:00 AM Manila time.', className: 'bg-amber-50 text-amber-800 dark:bg-amber-950/30 dark:text-amber-200', icon: <Clock3 size={18} /> };
+          : { title: 'Time In required', text: 'Start your attendance shift first, then you can pre-select a project.', className: 'bg-amber-50 text-amber-800 dark:bg-amber-950/30 dark:text-amber-200', icon: <Clock3 size={18} /> };
 
   return (
-    <ModalShell open={open} onClose={onClose} title="Manpower Tracker" description="Project tracking starts at 9:00 AM, pauses for lunch from 12:00 PM to 1:00 PM, and stops automatically at Time Out." icon={<TimerReset size={20} />} size="lg">
+    <ModalShell open={open} onClose={onClose} title="Manpower Tracker" description="Pre-select a project after Time In; tracking begins at 9:00 AM, pauses for lunch from 12:00 PM to 1:00 PM, and stops automatically at Time Out." icon={<TimerReset size={20} />} size="lg">
       <div className="space-y-4">
         {message && <div className={`rounded-xl px-3 py-2 text-xs font-medium ${message.type === 'success' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/35 dark:text-emerald-300' : 'bg-rose-50 text-rose-700 dark:bg-rose-950/35 dark:text-rose-300'}`}>{message.text}</div>}
 
@@ -194,13 +193,13 @@ export default function ManpowerTrackerModal({ open, onClose }: Props) {
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">{projects.map((project) => {
               const active = activeSession?.project_id === project.id;
               const changing = changingProjectId === project.id;
-              const locked = !trackingEnabled;
-              return <button key={project.id} type="button" onClick={() => switchProject(project.id)} disabled={locked || active || changing} className={`min-h-20 rounded-2xl px-3 py-3 text-left transition ${active && trackingEnabled ? 'bg-emerald-600 text-white shadow-md' : locked ? 'bg-slate-100 text-slate-400 dark:bg-slate-800/70 dark:text-slate-500' : 'bg-slate-50 text-slate-800 hover:bg-slate-100 dark:bg-[#303632] dark:text-white dark:hover:bg-slate-800'} disabled:cursor-not-allowed`}><div className="flex items-start justify-between gap-2"><span className="min-w-0"><span className="block line-clamp-2 text-xs font-bold leading-tight">{project.name}</span>{project.project_code && <span className="mt-1 block text-[10px] opacity-70">{project.project_code}</span>}</span>{locked ? <LockKeyhole size={16}/> : active ? <Clock3 size={16}/> : <PlayCircle size={16} className="text-slate-400"/>}</div><span className="mt-2 block text-[10px] font-semibold opacity-70">{lunchBreak && shiftActive ? 'Lunch break' : !shiftActive ? (shiftStatus === 'completed' ? 'Shift completed' : 'Time In required') : beforeTrackerStart ? 'Starts 9:00 AM' : active ? 'Tracking now' : changing ? 'Starting…' : 'Start / Switch'}</span></button>;
+              const locked = !canSelectProject;
+              return <button key={project.id} type="button" onClick={() => switchProject(project.id)} disabled={locked || active || changing} className={`min-h-20 rounded-2xl px-3 py-3 text-left transition ${active && trackingEnabled ? 'bg-emerald-600 text-white shadow-md' : active && beforeTrackerStart ? 'bg-cyan-600 text-white shadow-md' : locked ? 'bg-slate-100 text-slate-400 dark:bg-slate-800/70 dark:text-slate-500' : 'bg-slate-50 text-slate-800 hover:bg-slate-100 dark:bg-[#303632] dark:text-white dark:hover:bg-slate-800'} disabled:cursor-not-allowed`}><div className="flex items-start justify-between gap-2"><span className="min-w-0"><span className="block line-clamp-2 text-xs font-bold leading-tight">{project.name}</span>{project.project_code && <span className="mt-1 block text-[10px] opacity-70">{project.project_code}</span>}</span>{locked ? <LockKeyhole size={16}/> : active ? <Clock3 size={16}/> : <PlayCircle size={16} className="text-slate-400"/>}</div><span className="mt-2 block text-[10px] font-semibold opacity-70">{lunchBreak && shiftActive ? 'Lunch break' : !shiftActive ? (shiftStatus === 'completed' ? 'Shift completed' : 'Time In required') : beforeTrackerStart ? (active ? 'Pre-selected · starts 9:00 AM' : 'Pre-select for 9:00 AM') : active ? 'Tracking now' : changing ? 'Starting…' : 'Start / Switch'}</span></button>;
             })}</div>
           )}
         </section>
 
-        <section className="border-t border-slate-100 pt-4 dark:border-slate-800"><div className="mb-2 flex items-end justify-between gap-3"><div><h3 className="text-sm font-bold text-slate-900 dark:text-white">Today by project</h3><p className="text-[11px] text-slate-500">Tracking starts at 9:00 AM. Lunch from 12:00 PM to 1:00 PM is excluded automatically.</p></div><span className="rounded-full bg-cyan-50 px-2.5 py-1 text-[11px] font-bold text-cyan-700 dark:bg-cyan-950/35 dark:text-cyan-300">{formatDuration(todayTotal)}</span></div>{projectTotals.length === 0 ? <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-xs text-slate-500 dark:bg-[#303632]">No project time recorded today.</p> : <div className="space-y-2">{projectTotals.map((item) => <div key={item.projectId} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-[#303632]"><div className="min-w-0"><p className="truncate text-xs font-semibold text-slate-900 dark:text-white">{item.project?.name || 'Inactive project'}</p>{item.project?.project_code && <p className="mt-0.5 text-[10px] text-slate-500">{item.project.project_code}</p>}</div><span className="flex-none font-mono text-xs font-bold text-slate-700 dark:text-slate-200">{formatDuration(item.duration)}</span></div>)}</div>}</section>
+        <section className="border-t border-slate-100 pt-4 dark:border-slate-800"><div className="mb-2 flex items-end justify-between gap-3"><div><h3 className="text-sm font-bold text-slate-900 dark:text-white">Today by project</h3><p className="text-[11px] text-slate-500">You can pre-select after Time In. Tracking begins at 9:00 AM; lunch from 12:00 PM to 1:00 PM is excluded automatically.</p></div><span className="rounded-full bg-cyan-50 px-2.5 py-1 text-[11px] font-bold text-cyan-700 dark:bg-cyan-950/35 dark:text-cyan-300">{formatDuration(todayTotal)}</span></div>{projectTotals.length === 0 ? <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-xs text-slate-500 dark:bg-[#303632]">No project time recorded today.</p> : <div className="space-y-2">{projectTotals.map((item) => <div key={item.projectId} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-[#303632]"><div className="min-w-0"><p className="truncate text-xs font-semibold text-slate-900 dark:text-white">{item.project?.name || 'Inactive project'}</p>{item.project?.project_code && <p className="mt-0.5 text-[10px] text-slate-500">{item.project.project_code}</p>}</div><span className="flex-none font-mono text-xs font-bold text-slate-700 dark:text-slate-200">{formatDuration(item.duration)}</span></div>)}</div>}</section>
       </div>
     </ModalShell>
   );

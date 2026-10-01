@@ -2436,6 +2436,7 @@ export default function EmployeeDashboard() {
               onDirectory={() => { setDirectoryModalOpen(true); setDirectorySearch(''); fetchDirectory(); }}
               onCompanyCalendar={() => { setCalendarModalOpen(true); fetchCompanyHolidays(); }}
               onHelpdesk={() => { setSupportModalOpen(true); fetchSupportRequests(); }}
+              designation={profile?.designation}
             />
 
             {/* Attendance History -- collapsed by default; tap the header to expand. */}

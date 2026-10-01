@@ -184,7 +184,7 @@ export default function HROffsetApprovalNotifierV2() {
         </section>}
 
         {activeTab === 'early' && <section className="flex min-h-0 flex-1 flex-col">
-          <div className="mb-2 shrink-0"><h3 className="text-xs font-bold text-slate-900 dark:text-white">Early Out</h3><p className="text-[10px] text-slate-500">Exact minutes · current cutoff</p></div>
+          <div className="mb-2 shrink-0"><h3 className="text-xs font-bold text-slate-900 dark:text-white">Early Out</h3><p className="text-[10px] text-slate-500">Exact minutes · current month</p></div>
           <div className="min-h-0 flex-1 space-y-1.5 overflow-hidden">
             {loading ? <p className="py-8 text-center text-xs text-slate-500">Loading…</p> : visibleEarly.length ? visibleEarly.map((request) => {
               const profile = profiles[request.user_id]; const attendance = attendanceLogs[request.attendance_log_id]; const busy = reviewingId === request.id;
@@ -194,7 +194,7 @@ export default function HROffsetApprovalNotifierV2() {
         </section>}
 
         {activeTab === 'late' && <section className="flex min-h-0 flex-1 flex-col">
-          <div className="mb-2 shrink-0"><h3 className="text-xs font-bold text-slate-900 dark:text-white">Late</h3><p className="text-[10px] text-slate-500">Current cutoff · 1h each</p></div>
+          <div className="mb-2 shrink-0"><h3 className="text-xs font-bold text-slate-900 dark:text-white">Late</h3><p className="text-[10px] text-slate-500">Current month · 1h each</p></div>
           <div className="min-h-0 flex-1 space-y-1.5 overflow-hidden">
             {loading ? <p className="py-8 text-center text-xs text-slate-500">Loading…</p> : visibleLate.length ? visibleLate.map((request) => {
               const profile = profiles[request.user_id]; const attendance = attendanceLogs[request.attendance_log_id]; const busy = reviewingId === request.id;

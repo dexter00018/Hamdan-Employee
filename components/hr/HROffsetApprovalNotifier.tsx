@@ -456,7 +456,7 @@ export default function HROffsetApprovalNotifier() {
             <div className="mb-2 flex items-center justify-between gap-2">
               <div>
                 <h3 className="text-xs font-bold text-slate-900 dark:text-white">Late</h3>
-                <p className="text-[10px] text-slate-500">Current cutoff · 1h</p>
+                <p className="text-[10px] text-slate-500">Current month · 1h</p>
               </div>
               <span className="rounded-full bg-violet-50 px-2 py-1 text-[10px] font-bold text-violet-700 dark:bg-violet-950/30 dark:text-violet-300">{usageRequests.length}</span>
             </div>
