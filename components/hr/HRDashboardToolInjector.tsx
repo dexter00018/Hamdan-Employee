@@ -56,12 +56,17 @@ export default function HRDashboardToolInjector() {
 
   useEffect(() => {
     void refreshOffsetCount();
-    const interval = window.setInterval(() => void refreshOffsetCount(), 30_000);
-    const refreshVisible = () => { if (document.visibilityState === 'visible') void refreshOffsetCount(); };
-    document.addEventListener('visibilitychange', refreshVisible);
+    const refresh = () => { if (document.visibilityState === 'visible') void refreshOffsetCount(); };
+    const channel = supabase
+      .channel('hr-offset-count-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'offset_requests' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'offset_usage_requests' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'early_out_offset_requests' }, refresh)
+      .subscribe();
+    window.addEventListener('hr:offset-updated', refresh);
     return () => {
-      window.clearInterval(interval);
-      document.removeEventListener('visibilitychange', refreshVisible);
+      window.removeEventListener('hr:offset-updated', refresh);
+      void supabase.removeChannel(channel);
     };
   }, [refreshOffsetCount]);
 
