@@ -183,22 +183,25 @@ export default function HROffsetApprovalNotifier() {
 
   useEffect(() => {
     void fetchOffsetWork();
-    const interval = window.setInterval(() => void fetchOffsetWork(), 60_000);
-    const refreshOnVisible = () => {
+    const refresh = () => {
       if (document.visibilityState === 'visible') void fetchOffsetWork();
     };
     const openOffset = () => {
       setOpen(true);
       void fetchOffsetWork();
     };
+    const channel = supabase
+      .channel('hr-offset-work-live-legacy')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'offset_requests' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'offset_usage_requests' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'early_out_offset_requests' }, refresh)
+      .subscribe();
 
-    document.addEventListener('visibilitychange', refreshOnVisible);
     window.addEventListener('hr:open-offset', openOffset);
 
     return () => {
-      window.clearInterval(interval);
-      document.removeEventListener('visibilitychange', refreshOnVisible);
       window.removeEventListener('hr:open-offset', openOffset);
+      void supabase.removeChannel(channel);
     };
   }, [fetchOffsetWork]);
 
