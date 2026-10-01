@@ -1775,14 +1775,29 @@ export default function HRDashboard() {
   );
   const onLeaveTodayCount = onApprovedLeaveToday.size;
 
-  // Light auto-refresh so this list (and the Present/Late header counts)
-  // update on their own through the day as employees time in, without
-  // requiring a manual page reload.
+  // Keep the HR dashboard current without repeatedly refetching every table.
+  // One initial load is already performed above; relevant DB changes trigger
+  // a targeted dashboard refresh while this page is open.
   useEffect(() => {
-    const interval = setInterval(() => {
-      refreshAllData();
-    }, 60000);
-    return () => clearInterval(interval);
+    let refreshTimer: number | null = null;
+    const scheduleRefresh = () => {
+      if (document.visibilityState !== 'visible' || refreshTimer !== null) return;
+      refreshTimer = window.setTimeout(() => {
+        refreshTimer = null;
+        void refreshAllData();
+      }, 350);
+    };
+    const channel = supabase
+      .channel('hr-dashboard-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_logs' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leave_requests' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_disputes' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_support_requests' }, scheduleRefresh)
+      .subscribe();
+    return () => {
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
+      void supabase.removeChannel(channel);
+    };
   }, []);
 
   const initials = (name: string | null) =>
