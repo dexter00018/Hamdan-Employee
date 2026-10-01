@@ -3,7 +3,7 @@
   "nodes": [
     {
       "id": "03c997fb-cccc-468c-b896-acb0e863696d",
-      "name": "Every 10 Minutes",
+      "name": "Every 8 Hours",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
       "position": [0, 0],
