@@ -31,8 +31,9 @@ export default function HRActionCenterModal({ open, onClose, pendingDisputesCoun
   useEffect(() => {
     if (!open) return;
     void fetchOffsetCount();
-    const interval = window.setInterval(() => void fetchOffsetCount(), 30_000);
-    return () => window.clearInterval(interval);
+    const refresh = () => void fetchOffsetCount();
+    window.addEventListener('hr:offset-updated', refresh);
+    return () => window.removeEventListener('hr:offset-updated', refresh);
   }, [open, fetchOffsetCount]);
 
   const total = pendingDisputesCount + pendingLeaveCount + openHrSupportCount + pendingOffsetCount;
