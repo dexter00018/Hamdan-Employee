@@ -94,8 +94,14 @@ export default function ManpowerTrackerModal({ open, onClose }: Props) {
   useEffect(() => {
     if (!open) return;
     fetchData(false);
-    const refresh = window.setInterval(() => fetchData(true), 15_000);
-    return () => window.clearInterval(refresh);
+    const refresh = () => { if (document.visibilityState === 'visible') void fetchData(true); };
+    const channel = supabase
+      .channel('employee-manpower-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'manpower_sessions' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'manpower_lunch_pauses' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_logs' }, refresh)
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
   }, [open, fetchData]);
 
   useEffect(() => {
