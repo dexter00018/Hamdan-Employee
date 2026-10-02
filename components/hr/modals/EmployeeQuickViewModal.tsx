@@ -26,6 +26,10 @@ function formatMinutes(totalMinutes: number) {
   return `${minutes}m`;
 }
 
+function attendanceStatusLabel(status: string | null) {
+  return status?.toLowerCase() === 'offset applied' ? 'Offset' : status || '-';
+}
+
 export default function EmployeeQuickViewModal({ fallbackLeaveCredits, formatPh, initials, openPayslipsModal, openProfileChoice, quickViewAttendance, quickViewCredits, quickViewProfile, scrollToDashboardSection, setAttendanceHistoryOpen, setCutoffFilter, setQuickViewProfile, setSearchTerm, setSelectedDate, statusTagClass, todayManila }: Props) {
   const [extraInfo, setExtraInfo] = useState<ExtraInfo | null>(null);
   const [extraLoading, setExtraLoading] = useState(false);
@@ -118,7 +122,7 @@ export default function EmployeeQuickViewModal({ fallbackLeaveCredits, formatPh,
                 <div key={log.id} className="flex items-center justify-between gap-2 rounded-xl border border-emerald-100/80 bg-emerald-50/45 p-2.5 dark:border-emerald-900/30 dark:bg-emerald-950/10">
                   <span className="text-xs font-medium text-slate-700 dark:text-slate-200">{log.log_date}</span>
                   <span className="text-[10px] text-slate-500 dark:text-slate-400">{log.time_in ? formatPh(log.time_in) : '-'} → {log.time_out ? formatPh(log.time_out) : 'No time-out'}</span>
-                  <span className={statusTagClass(log.status)}>{log.status || '-'}</span>
+                  <span className={statusTagClass(log.status)}>{attendanceStatusLabel(log.status)}</span>
                 </div>
               ))}
             </div>

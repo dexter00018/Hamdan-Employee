@@ -197,6 +197,17 @@
     background: var(--color-purple-50);
     color: var(--color-purple-700);
   }
+
+  .tag-offset {
+    @apply px-3 py-1.5 rounded-full font-bold text-[10px] uppercase tracking-wider;
+    background: #e0f2fe;
+    color: #0369a1;
+  }
+
+  .dark .tag-offset {
+    background: #163a52;
+    color: #a8defd;
+  }
 }
 
 @layer utilities {

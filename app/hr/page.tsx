@@ -82,6 +82,10 @@ function earlyOutOffsetLabel(log: AttendanceLog) {
   return null;
 }
 
+function attendanceStatusLabel(status: string | null) {
+  return status?.toLowerCase() === 'offset applied' ? 'Offset' : status || '-';
+}
+
 export default function HRDashboard() {
   const router = useRouter();
   const { verify, verificationDialog } = useVerificationDialog();
@@ -1609,6 +1613,7 @@ export default function HRDashboard() {
 
   const statusTagClass = (s: string | null) => {
     const v = s?.toLowerCase() ?? '';
+    if (v === 'offset applied') return 'tag-offset';
     if (v === 'late') return 'tag-late';
     if (v === 'excused') return 'tag-excused';
     if (v === 'absent') return 'tag-absent';
@@ -2333,7 +2338,7 @@ export default function HRDashboard() {
                       <td className="px-4 py-3 text-slate-600 text-xs">{log.log_date ? new Date(log.log_date).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}</td>
                       <td className="px-4 py-3 text-slate-600 text-xs">{log.time_in ? new Date(log.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'N/A'}</td>
                       <td className="px-4 py-3 text-slate-600 text-xs">{log.time_out ? new Date(log.time_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}</td>
-                      <td className="px-4 py-3"><div className="flex flex-wrap items-center gap-1.5"><span className={statusTagClass(log.status)}>{log.status}</span>{(() => { const offset = earlyOutOffsetLabel(log); if (!offset) return null; const tone = offset.tone === 'approved' ? 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950/60 dark:text-cyan-200' : offset.tone === 'pending' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-200' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'; return <span className={`inline-flex whitespace-nowrap rounded-full px-2 py-1 text-[10px] font-bold ${tone}`}>{offset.label}</span>; })()}</div></td>
+                      <td className="px-4 py-3"><div className="flex flex-wrap items-center gap-1.5"><span className={statusTagClass(log.status)}>{attendanceStatusLabel(log.status)}</span>{(() => { const offset = earlyOutOffsetLabel(log); if (!offset) return null; const tone = offset.tone === 'approved' ? 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950/60 dark:text-cyan-200' : offset.tone === 'pending' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-200' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'; return <span className={`inline-flex whitespace-nowrap rounded-full px-2 py-1 text-[10px] font-bold ${tone}`}>{offset.label}</span>; })()}</div></td>
                     </tr>
                   ))}
                   {!loadingData && filteredAttendance.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-400 text-xs">No attendance records found.</td></tr>}

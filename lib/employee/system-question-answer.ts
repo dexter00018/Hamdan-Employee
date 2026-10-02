@@ -29,8 +29,8 @@ const ENTRIES: Entry[] = [
   },
   {
     terms: ['offset late', 'use offset for late', 'late using offset', 'scrub late', 'offset applied'],
-    en: 'An eligible Late record can use 1 approved offset hour. The request goes to HR, the hour is deducted only after HR approval, and the attendance tag changes to Offset Applied.',
-    tl: 'Ang eligible Late record ay puwedeng gumamit ng 1 approved offset hour. Pupunta muna ang request sa HR, mababawas lang ang hour kapag approved, at magiging Offset Applied ang attendance tag.',
+    en: 'An eligible Late record can use 1 approved offset hour. The request goes to HR, the hour is deducted only after HR approval, and the attendance tag changes to Offset.',
+    tl: 'Ang eligible Late record ay puwedeng gumamit ng 1 approved offset hour. Pupunta muna ang request sa HR, mababawas lang ang hour kapag approved, at magiging Offset ang attendance tag.',
   },
   {
     terms: ['leave using offset', 'offset leave', 'leave with offset', '9 hours leave', '9 hrs leave', 'offset funded leave'],
@@ -69,8 +69,8 @@ const ENTRIES: Entry[] = [
   },
   {
     terms: ['attendance status', 'present status', 'late status', 'absent status', 'offset applied status', 'attendance meaning'],
-    en: 'Present means recorded present, Late means present but late-tagged, Absent means explicitly marked absent, Leave means covered by approved leave/status, and Offset Applied means an approved offset correction was applied. A missing log is not automatically treated as Absent by Ask AI.',
-    tl: 'Present ay recorded present, Late ay present pero late-tagged, Absent ay explicit na marked absent, Leave ay covered ng approved leave/status, at Offset Applied ay may approved offset correction. Hindi automatic na Absent ang missing log sa Ask AI.',
+    en: 'Present means recorded present, Late means present but late-tagged, Absent means explicitly marked absent, Leave means covered by approved leave/status, and Offset means an approved offset correction was applied. A missing log is not automatically treated as Absent by Ask AI.',
+    tl: 'Present ay recorded present, Late ay present pero late-tagged, Absent ay explicit na marked absent, Leave ay covered ng approved leave/status, at Offset ay may approved offset correction. Hindi automatic na Absent ang missing log sa Ask AI.',
   },
   {
     terms: ['attendance dispute', 'file dispute', 'wrong attendance', 'missing log', 'report missing log', 'incorrect time in', 'incorrect time out'],
