@@ -1,7 +1,7 @@
 'use client';
 
 import { memo, useEffect, useState } from 'react';
-import { isEarlyOut } from '@/lib/attendance-rules';
+import { getAttendanceStatusDisplay } from '@/lib/attendance-status-display';
 import { supabase } from '@/lib/supabase';
 import { Clock3 } from 'lucide-react';
 
@@ -81,20 +81,15 @@ function EmployeeWorkClock({ todayLog, endHour }: { todayLog: TodayLog; endHour:
   }, [todayLog?.id]);
 
   const isTodayLate = todayLog?.status?.toLowerCase() === 'late';
-  const rawEarlyOut = !!todayLog && isEarlyOut(clock.dateKey, todayLog.time_out, endHour);
-  const earlyOutCovered = rawEarlyOut && earlyOutOffsetStatus === 'Approved';
-  const earlyOutPending = rawEarlyOut && earlyOutOffsetStatus === 'Pending';
   const todayWorkStatus = !todayLog
-    ? { label: 'No Time In', color: 'bg-red-100 text-red-700' }
-    : earlyOutPending
-      ? { label: isTodayLate ? 'Late · Offset Pending' : 'Offset Pending', color: 'bg-amber-100 text-amber-800' }
-    : rawEarlyOut && !earlyOutCovered
-      ? { label: isTodayLate ? 'Late / Early Out' : 'Early Out', color: 'bg-amber-100 text-amber-800' }
-    : earlyOutCovered
-      ? { label: isTodayLate ? 'Completed · Late · Offset' : 'Completed · Offset', color: 'bg-emerald-100 text-emerald-800' }
-    : isTodayLate
-      ? { label: todayLog.time_out ? 'Completed · Late' : 'Working · Late', color: 'bg-orange-100 text-orange-700' }
-      : { label: todayLog.time_out ? 'Completed' : 'Working', color: 'bg-green-100 text-green-700' };
+    ? { label: 'No Time In', className: 'bg-red-100 text-red-700' }
+    : getAttendanceStatusDisplay({
+        status: todayLog.status,
+        logDate: clock.dateKey,
+        timeOut: todayLog.time_out,
+        earlyOutOffsetMinutes: earlyOutOffsetStatus === 'Approved' ? 1 : 0,
+        timeOutHour: endHour,
+      });
 
   const workClockTone = !todayLog
     ? {
@@ -122,7 +117,7 @@ function EmployeeWorkClock({ todayLog, endHour }: { todayLog: TodayLog; endHour:
           <Clock3 aria-hidden="true" size={21} strokeWidth={2.2} />
         </span>
         <p className="mt-3 text-[9px] font-black uppercase tracking-[0.18em] text-white/75">Work clock</p>
-        <span className={`mt-2 rounded-full px-2.5 py-1 text-[8px] font-extrabold uppercase tracking-wide shadow-sm ${todayWorkStatus.color}`}>
+        <span className={`mt-2 rounded-full px-2.5 py-1 text-[8px] font-extrabold uppercase tracking-wide shadow-sm ${todayWorkStatus.className}`}>
           {todayWorkStatus.label}
         </span>
       </div>

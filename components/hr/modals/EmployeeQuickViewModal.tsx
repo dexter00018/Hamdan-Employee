@@ -4,16 +4,17 @@ import { useEffect, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import ModalShell from '@/components/shared/ModalShell';
 import { supabase } from '@/lib/supabase';
+import { getAttendanceStatusDisplay } from '@/lib/attendance-status-display';
 
 type Profile = { id: string; full_name: string | null; employee_id: string | null; designation: string | null; avatar_url: string | null; employee_email: string | null };
-type Attendance = { id: string; log_date: string; time_in: string | null; time_out: string | null; status: string | null };
+type Attendance = { id: string; log_date: string; time_in: string | null; time_out: string | null; status: string | null; early_out_offset_minutes?: number | null };
 type Credits = { employment_status?: string | null; total_credits?: number | null; used_credits?: number | null } | null;
 type ExtraInfo = {
   employeeRank: string | null;
   directLeadName: string | null;
   availableMinutes: number;
 };
-type Props = { fallbackLeaveCredits: number; formatPh: (iso: string) => string; initials: (name: string | null) => string; openPayslipsModal: (profile: Profile) => void; openProfileChoice: (profile: Profile) => void; quickViewAttendance: Attendance[]; quickViewCredits: Credits; quickViewProfile: Profile | null; scrollToDashboardSection: (id: string) => void; setAttendanceHistoryOpen: Dispatch<SetStateAction<boolean>>; setCutoffFilter: Dispatch<SetStateAction<string>>; setQuickViewProfile: Dispatch<SetStateAction<Profile | null>>; setSearchTerm: Dispatch<SetStateAction<string>>; setSelectedDate: Dispatch<SetStateAction<string>>; statusTagClass: (status: string | null) => string; todayManila: string };
+type Props = { fallbackLeaveCredits: number; formatPh: (iso: string) => string; initials: (name: string | null) => string; openPayslipsModal: (profile: Profile) => void; openProfileChoice: (profile: Profile) => void; quickViewAttendance: Attendance[]; quickViewCredits: Credits; quickViewProfile: Profile | null; scrollToDashboardSection: (id: string) => void; setAttendanceHistoryOpen: Dispatch<SetStateAction<boolean>>; setCutoffFilter: Dispatch<SetStateAction<string>>; setQuickViewProfile: Dispatch<SetStateAction<Profile | null>>; setSearchTerm: Dispatch<SetStateAction<string>>; setSelectedDate: Dispatch<SetStateAction<string>>; timeOutReminderHour: number; todayManila: string };
 
 const COUNTRY_MANAGER_NAME = 'Abdulrahman R. Birung';
 
@@ -26,11 +27,7 @@ function formatMinutes(totalMinutes: number) {
   return `${minutes}m`;
 }
 
-function attendanceStatusLabel(status: string | null) {
-  return status?.toLowerCase() === 'offset applied' ? 'Offset' : status || '-';
-}
-
-export default function EmployeeQuickViewModal({ fallbackLeaveCredits, formatPh, initials, openPayslipsModal, openProfileChoice, quickViewAttendance, quickViewCredits, quickViewProfile, scrollToDashboardSection, setAttendanceHistoryOpen, setCutoffFilter, setQuickViewProfile, setSearchTerm, setSelectedDate, statusTagClass, todayManila }: Props) {
+export default function EmployeeQuickViewModal({ fallbackLeaveCredits, formatPh, initials, openPayslipsModal, openProfileChoice, quickViewAttendance, quickViewCredits, quickViewProfile, scrollToDashboardSection, setAttendanceHistoryOpen, setCutoffFilter, setQuickViewProfile, setSearchTerm, setSelectedDate, timeOutReminderHour, todayManila }: Props) {
   const [extraInfo, setExtraInfo] = useState<ExtraInfo | null>(null);
   const [extraLoading, setExtraLoading] = useState(false);
 
@@ -122,7 +119,7 @@ export default function EmployeeQuickViewModal({ fallbackLeaveCredits, formatPh,
                 <div key={log.id} className="flex items-center justify-between gap-2 rounded-xl border border-emerald-100/80 bg-emerald-50/45 p-2.5 dark:border-emerald-900/30 dark:bg-emerald-950/10">
                   <span className="text-xs font-medium text-slate-700 dark:text-slate-200">{log.log_date}</span>
                   <span className="text-[10px] text-slate-500 dark:text-slate-400">{log.time_in ? formatPh(log.time_in) : '-'} → {log.time_out ? formatPh(log.time_out) : 'No time-out'}</span>
-                  <span className={statusTagClass(log.status)}>{attendanceStatusLabel(log.status)}</span>
+                  {(() => { const display = getAttendanceStatusDisplay({ status: log.status, logDate: log.log_date, timeOut: log.time_out, earlyOutOffsetMinutes: log.early_out_offset_minutes, timeOutHour: timeOutReminderHour }); return <span className={display.className}>{display.label}</span>; })()}
                 </div>
               ))}
             </div>

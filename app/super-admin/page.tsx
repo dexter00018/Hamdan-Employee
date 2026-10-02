@@ -139,6 +139,9 @@ export default function SuperAdminDashboard() {
   const [currentAdminEmail, setCurrentAdminEmail] = useState<string | null>(null);
   const directoryPageSize = Number(appSettings.directory_page_size || PAGE_SIZE);
   const attendancePageSize = Number(appSettings.attendance_page_size || PAGE_SIZE);
+  const timeOutReminderHour = typeof appSettings.time_out_reminder_hour === 'number'
+    ? appSettings.time_out_reminder_hour
+    : 19;
 
   const applyTheme = useCallback((nextDark: boolean) => {
     applyPortalTheme(nextDark);
@@ -395,7 +398,7 @@ export default function SuperAdminDashboard() {
     setAttendanceLoading(true);
     const { data, error } = await supabase
       .from('attendance_logs')
-      .select('id, time_in, time_out, log_date, status, profiles(full_name)')
+      .select('id, time_in, time_out, log_date, status, early_out_offset_minutes, profiles(full_name)')
       // log_date is always populated (unlike time_in, which is null for
       // 'Absent' rows) -- ordering by it keeps the most recent days first
       // regardless of status. nullsFirst: false on time_in keeps each
@@ -965,18 +968,6 @@ export default function SuperAdminDashboard() {
 
   const roleTagClass = (r: string) => (r === 'admin' ? 'tag-admin' : 'tag-employee');
 
-  // Type-specific leave statuses (e.g. "Sick Leave", "Vacation Leave",
-  // "Emergency Leave") set by settle_leave_day() all get the same tag
-  // styling as the old generic "Leave" status -- match by substring.
-  const statusTagClass = (s: string) => {
-    const v = s?.toLowerCase() ?? '';
-    if (v === 'late') return 'tag-late';
-    if (v === 'excused') return 'tag-excused';
-    if (v === 'absent') return 'tag-absent';
-    if (v.includes('leave')) return 'tag-leave';
-    return 'tag-present';
-  };
-
   const initials = (name: string | null) =>
     (name || '?')
       .split(' ')
@@ -1162,7 +1153,7 @@ export default function SuperAdminDashboard() {
 
       {userAccountsModalOpen && <UserAccountsModal open={userAccountsModalOpen} onClose={() => setUserAccountsModalOpen(false)} pageSize={directoryPageSize} employees={employees} employeesLoading={employeesLoading} employeesPage={employeesPage} employeesTotalPages={employeesTotalPages} initials={initials} paginatedEmployees={paginatedEmployees} roleTagClass={roleTagClass} setEmployeesPage={setEmployeesPage} startEdit={startEdit} totalAccounts={totalAccounts} />}
 
-      {attendanceRecordsModalOpen && <AttendanceRecordsModal open={attendanceRecordsModalOpen} onClose={() => setAttendanceRecordsModalOpen(false)} pageSize={attendancePageSize} attendanceDateFilter={attendanceDateFilter} attendanceLoading={attendanceLoading} attendancePage={attendancePage} attendanceSearch={attendanceSearch} attendanceTotalPages={attendanceTotalPages} filteredAttendanceLogs={filteredAttendanceLogs} handleAttendanceDateChange={handleAttendanceDateChange} handleAttendanceSearchChange={handleAttendanceSearchChange} paginatedAttendanceLogs={paginatedAttendanceLogs} setAttendancePage={setAttendancePage} startEditLog={startEditLog} statusTagClass={statusTagClass} todayManila={todayManila} />}
+      {attendanceRecordsModalOpen && <AttendanceRecordsModal open={attendanceRecordsModalOpen} onClose={() => setAttendanceRecordsModalOpen(false)} pageSize={attendancePageSize} attendanceDateFilter={attendanceDateFilter} attendanceLoading={attendanceLoading} attendancePage={attendancePage} attendanceSearch={attendanceSearch} attendanceTotalPages={attendanceTotalPages} filteredAttendanceLogs={filteredAttendanceLogs} handleAttendanceDateChange={handleAttendanceDateChange} handleAttendanceSearchChange={handleAttendanceSearchChange} paginatedAttendanceLogs={paginatedAttendanceLogs} setAttendancePage={setAttendancePage} startEditLog={startEditLog} timeOutReminderHour={timeOutReminderHour} todayManila={todayManila} />}
 
       {appSettingsModalOpen && <AppSettingsModal open={appSettingsModalOpen} onClose={() => setAppSettingsModalOpen(false)} appSettings={appSettings} savedAppSettings={savedAppSettings} appSettingsLoading={appSettingsLoading} appSettingsMsg={appSettingsMsg} appSettingsSaving={appSettingsSaving} saveAppSettings={saveAppSettings} setAppSettings={setAppSettings} />}
 

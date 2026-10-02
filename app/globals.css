@@ -209,27 +209,33 @@
     color: #fdba74;
   }
 
+  .tag-early-out,
   .tag-offset-early,
-  .tag-offset-combined {
+  .tag-offset-combined,
+  .tag-late-early {
     @apply inline-flex whitespace-nowrap rounded-full px-2 py-1 text-[10px] font-bold;
   }
 
+  .tag-early-out,
   .tag-offset-early {
     background: #fef3c7;
     color: #a16207;
   }
 
-  .tag-offset-combined {
+  .tag-offset-combined,
+  .tag-late-early {
     background: linear-gradient(90deg, #fed7aa 0 50%, #fef3c7 50% 100%);
     color: #92400e;
   }
 
+  .dark .tag-early-out,
   .dark .tag-offset-early {
     background: #4d3a12;
     color: #fde68a;
   }
 
-  .dark .tag-offset-combined {
+  .dark .tag-offset-combined,
+  .dark .tag-late-early {
     background: linear-gradient(90deg, #572b16 0 50%, #4d3a12 50% 100%);
     color: #fde68a;
   }

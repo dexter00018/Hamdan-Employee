@@ -1,5 +1,5 @@
 'use client';
-import { isEarlyOut } from '@/lib/attendance-rules';
+import { getAttendanceStatusDisplay } from '@/lib/attendance-status-display';
 import { applyPortalTheme } from '@/lib/portal-theme';
 import MobileBottomNav from '@/components/employee/MobileBottomNav';
 import EmployeeSummaryCard from '@/components/employee/EmployeeSummaryCard';
@@ -605,7 +605,7 @@ export default function EmployeeDashboard() {
     const [profileRes, govIdRes, historyRes, leavesCountRes, disputesCountRes, payslipsCountRes, supportCountRes, leaveCreditsRes] = await Promise.all([
       supabase.from('profiles').select('full_name, employee_id, designation, role, avatar_url').eq('id', user.id).single(),
       supabase.from('employee_government_ids').select('sss_number, philhealth_number, pagibig_number, tin_number, hired_date, employment_status').eq('user_id', user.id).maybeSingle(),
-      supabase.from('attendance_logs').select('id, log_date, time_in, time_out, status').eq('user_id', user.id).order('log_date', { ascending: false }),
+      supabase.from('attendance_logs').select('id, log_date, time_in, time_out, status, early_out_offset_minutes').eq('user_id', user.id).order('log_date', { ascending: false }),
       supabase.from('leave_requests').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'Pending'),
       supabase.from('attendance_disputes').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'Pending'),
       supabase.from('payslips').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('published', true).is('acknowledged_at', null),
@@ -754,16 +754,8 @@ export default function EmployeeDashboard() {
   // Type-specific leave statuses (e.g. "Sick Leave", "Vacation Leave",
   // "Emergency Leave") all get the same tag styling as the old generic
   // "Leave" status -- match by substring instead of exact equality.
-  const statusTagClass = (s: string | null) => {
-    const v = s?.toLowerCase() ?? '';
-    if (v === 'offset applied') return 'tag-offset';
-    if (v === 'late') return 'tag-late';
-    if (v === 'absent') return 'tag-absent';
-    if (v.includes('leave')) return 'tag-leave';
-    return 'tag-present';
-  };
-
-  const attendanceStatusLabel = (status: string | null) => status?.toLowerCase() === 'offset applied' ? 'Offset' : status || '-';
+  const attendanceStatusDisplay = (log: { status: string | null; log_date: string; time_out: string | null; early_out_offset_minutes?: number | null }) =>
+    getAttendanceStatusDisplay({ status: log.status, logDate: log.log_date, timeOut: log.time_out, earlyOutOffsetMinutes: log.early_out_offset_minutes, timeOutHour: timeOutReminderHour });
 
   // --- Early time-out warning (before 7PM) ---
   const [showEarlyTimeOutWarning, setShowEarlyTimeOutWarning] = useState(false);
@@ -2540,7 +2532,7 @@ export default function EmployeeDashboard() {
                           <div className="font-medium text-slate-900 text-xs">{new Date(log.log_date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</div>
                           <div className="text-slate-400 text-[10px]">{log.log_date}</div>
                         </div>
-                        <div className="flex flex-col items-center justify-self-center gap-1"><span className={`${statusTagClass(log.status)} inline-flex w-[76px] items-center justify-center justify-self-center whitespace-nowrap`}>{attendanceStatusLabel(log.status)}</span>{isEarlyOut(log.log_date, log.time_out, timeOutReminderHour) && <span className="inline-flex whitespace-nowrap rounded-full bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-200">Early Out</span>}</div>
+                        <div className="flex flex-col items-center justify-self-center"><span className={`${attendanceStatusDisplay(log).className} inline-flex min-w-[76px] items-center justify-center whitespace-nowrap`}>{attendanceStatusDisplay(log).label}</span></div>
                           <div className="min-w-0 text-right">
                             <div className="whitespace-nowrap font-semibold text-slate-700 text-xs">
                               {log.time_in ? new Date(log.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }) : '--:--'}
@@ -2597,7 +2589,7 @@ export default function EmployeeDashboard() {
         </div>
       </div>
 
-      {summaryDetailType && <SummaryDetailModal formatMonthLabel={formatMonthLabel} setSummaryDetailType={setSummaryDetailType} statusTagClass={statusTagClass} summaryCutoffKey={summaryCutoffKey} summaryDetailInfo={summaryDetailInfo} summaryDetailType={summaryDetailType} />}
+      {summaryDetailType && <SummaryDetailModal attendanceStatusDisplay={attendanceStatusDisplay} formatMonthLabel={formatMonthLabel} setSummaryDetailType={setSummaryDetailType} summaryCutoffKey={summaryCutoffKey} summaryDetailInfo={summaryDetailInfo} summaryDetailType={summaryDetailType} />}
 
       <MobileBottomNav
         actionCount={employeeActionCount}

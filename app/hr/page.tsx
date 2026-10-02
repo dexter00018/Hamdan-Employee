@@ -14,7 +14,8 @@ import { useVerificationDialog } from '@/components/shared/useVerificationDialog
 import { APP_SETTING_DEFINITIONS, DEFAULT_APP_SETTINGS, normalizeAppSettings, type AppSettingsValues } from '@/lib/app-settings';
 import { resolveSeasonalTheme, SEASONAL_THEME_PRESENTATION } from '@/lib/seasonal-theme';
 import { countChargeableLeaveDays } from '@/lib/leave-rules';
-import { computeAttendanceStatus, isEarlyOut } from '@/lib/attendance-rules';
+import { computeAttendanceStatus } from '@/lib/attendance-rules';
+import { getAttendanceStatusDisplay } from '@/lib/attendance-status-display';
 import { errorMessage, type AttendanceDispute, type LeaveRequest } from '@/lib/types/hr';
 import SeasonalDecor from '@/components/seasonal/SeasonalDecor';
 
@@ -80,10 +81,6 @@ function earlyOutOffsetLabel(log: AttendanceLog) {
   if (request?.status === 'Pending') return { label: `Offset pending · ${formatOffsetMinutes(request.required_minutes)}`, tone: 'pending' as const };
   if (request?.status === 'Rejected') return { label: `Offset rejected · ${formatOffsetMinutes(request.required_minutes)}`, tone: 'rejected' as const };
   return null;
-}
-
-function attendanceStatusLabel(status: string | null) {
-  return status?.toLowerCase() === 'offset applied' ? 'Offset' : status || '-';
 }
 
 export default function HRDashboard() {
@@ -1614,16 +1611,6 @@ export default function HRDashboard() {
     setSaveLoading(false);
   };
 
-  const statusTagClass = (s: string | null) => {
-    const v = s?.toLowerCase() ?? '';
-    if (v === 'offset applied') return 'tag-offset';
-    if (v === 'late') return 'tag-late';
-    if (v === 'excused') return 'tag-excused';
-    if (v === 'absent') return 'tag-absent';
-    if (v.includes('leave')) return 'tag-leave';
-    return 'tag-present';
-  };
-
   // Fetch payslips for the employee currently open in the edit modal.
   const fetchEmployeePayslips = async (userId: string) => {
     setEmployeePayslipsLoading(true);
@@ -2142,7 +2129,7 @@ export default function HRDashboard() {
 
         <DailyOverviewModal modal={dailyOverviewModal} meta={dailyOverviewMeta} records={dailyOverviewRecords} initials={initials} setModal={setDailyOverviewModal} />
 
-        <EmployeeQuickViewModal fallbackLeaveCredits={fallbackLeaveCredits} formatPh={formatPh} initials={initials} openPayslipsModal={openPayslipsModal} openProfileChoice={openProfileChoice} quickViewAttendance={quickViewAttendance} quickViewCredits={quickViewCredits} quickViewProfile={quickViewProfile} scrollToDashboardSection={scrollToDashboardSection} setAttendanceHistoryOpen={setAttendanceHistoryOpen} setCutoffFilter={setCutoffFilter} setQuickViewProfile={setQuickViewProfile} setSearchTerm={setSearchTerm} setSelectedDate={setSelectedDate} statusTagClass={statusTagClass} todayManila={todayManila} />
+        <EmployeeQuickViewModal fallbackLeaveCredits={fallbackLeaveCredits} formatPh={formatPh} initials={initials} openPayslipsModal={openPayslipsModal} openProfileChoice={openProfileChoice} quickViewAttendance={quickViewAttendance} quickViewCredits={quickViewCredits} quickViewProfile={quickViewProfile} scrollToDashboardSection={scrollToDashboardSection} setAttendanceHistoryOpen={setAttendanceHistoryOpen} setCutoffFilter={setCutoffFilter} setQuickViewProfile={setQuickViewProfile} setSearchTerm={setSearchTerm} setSelectedDate={setSelectedDate} timeOutReminderHour={timeOutReminderHour} todayManila={todayManila} />
 
         <TeamLeaveCalendarModal open={leaveCalendarOpen} onClose={() => setLeaveCalendarOpen(false)} calendarData={calendarData} leaveCalendarMonth={leaveCalendarMonth} selectedCalendarDate={selectedCalendarDate} selectedCalendarDay={selectedCalendarDay} setLeaveCalendarMonth={setLeaveCalendarMonth} setSelectedCalendarDate={setSelectedCalendarDate} todayManila={todayManila} />
 
@@ -2341,7 +2328,7 @@ export default function HRDashboard() {
                       <td className="px-4 py-3 text-slate-600 text-xs">{log.log_date ? new Date(log.log_date).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}</td>
                       <td className="px-4 py-3 text-slate-600 text-xs">{log.time_in ? new Date(log.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'N/A'}</td>
                       <td className="px-4 py-3 text-slate-600 text-xs">{log.time_out ? new Date(log.time_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}</td>
-                      <td className="px-4 py-3"><div className="flex flex-wrap items-center gap-1.5">{(() => { const earlyOffset = earlyOutOffsetLabel(log); const lateOffset = log.status?.toLowerCase() === 'offset applied'; const bothOffsetsApproved = lateOffset && earlyOffset?.tone === 'approved'; if (bothOffsetsApproved) return <span className="tag-offset-combined">{earlyOffset.label}</span>; return <>{!lateOffset && <span className={statusTagClass(log.status)}>{attendanceStatusLabel(log.status)}</span>}{lateOffset && <span className="tag-offset">Offset</span>}{earlyOffset && <span className={earlyOffset.tone === 'approved' ? 'tag-offset-early' : earlyOffset.tone === 'pending' ? 'inline-flex whitespace-nowrap rounded-full bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-800 dark:bg-amber-950/60 dark:text-amber-200' : 'inline-flex whitespace-nowrap rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300'}>{earlyOffset.label}</span>}</>; })()}{isEarlyOut(log.log_date, log.time_out, timeOutReminderHour) && <span className="inline-flex whitespace-nowrap rounded-full bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-800 dark:bg-amber-950/60 dark:text-amber-200">Early Out</span>}</div></td>
+                      <td className="px-4 py-3">{(() => { const display = getAttendanceStatusDisplay({ status: log.status, logDate: log.log_date, timeOut: log.time_out, earlyOutOffsetMinutes: log.early_out_offset_minutes, timeOutHour: timeOutReminderHour }); return <span className={display.className}>{display.label}</span>; })()}</td>
                     </tr>
                   ))}
                   {!loadingData && filteredAttendance.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-400 text-xs">No attendance records found.</td></tr>}
