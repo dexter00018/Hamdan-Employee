@@ -44,6 +44,7 @@ type AttendanceLog = {
   time_in: string | null;
   time_out: string | null;
   status: string | null;
+  late_offset_minutes?: number | null;
   early_out_offset_minutes?: number | null;
   early_out_offset_requests?: Array<{ status: 'Pending' | 'Approved' | 'Rejected'; required_minutes: number }>;
   profiles?: { full_name: string | null; employee_id?: string | null };
@@ -475,7 +476,7 @@ export default function HRDashboard() {
     const range = getRawExportRange();
     let query = supabase
       .from('attendance_logs')
-      .select('id, user_id, log_date, time_in, time_out, status, early_out_offset_minutes, profiles!inner(full_name, employee_id, role, is_active), early_out_offset_requests(status, required_minutes)')
+      .select('id, user_id, log_date, time_in, time_out, status, late_offset_minutes, early_out_offset_minutes, profiles!inner(full_name, employee_id, role, is_active), early_out_offset_requests(status, required_minutes)')
       .eq('profiles.role', 'employee')
       .eq('profiles.is_active', true)
       .gte('log_date', range.start)
@@ -2328,7 +2329,7 @@ export default function HRDashboard() {
                       <td className="px-4 py-3 text-slate-600 text-xs">{log.log_date ? new Date(log.log_date).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}</td>
                       <td className="px-4 py-3 text-slate-600 text-xs">{log.time_in ? new Date(log.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'N/A'}</td>
                       <td className="px-4 py-3 text-slate-600 text-xs">{log.time_out ? new Date(log.time_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}</td>
-                      <td className="px-4 py-3">{(() => { const display = getAttendanceStatusDisplay({ status: log.status, logDate: log.log_date, timeOut: log.time_out, earlyOutOffsetMinutes: log.early_out_offset_minutes, timeOutHour: timeOutReminderHour }); return <span className={display.className}>{display.label}</span>; })()}</td>
+                      <td className="px-4 py-3">{(() => { const display = getAttendanceStatusDisplay({ status: log.status, logDate: log.log_date, timeOut: log.time_out, lateOffsetMinutes: log.late_offset_minutes, earlyOutOffsetMinutes: log.early_out_offset_minutes, timeOutHour: timeOutReminderHour }); return <span className={display.className}>{display.label}</span>; })()}</td>
                     </tr>
                   ))}
                   {!loadingData && filteredAttendance.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-400 text-xs">No attendance records found.</td></tr>}

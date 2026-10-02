@@ -4,7 +4,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import ModalShell from '@/components/shared/ModalShell';
 
 type DetailType = 'present' | 'late' | 'leave' | 'absent';
-type Log = { id: string; log_date: string; status: string | null; time_in: string | null; time_out: string | null; early_out_offset_minutes?: number | null };
+type Log = { id: string; log_date: string; status: string | null; time_in: string | null; time_out: string | null; late_offset_minutes?: number | null; early_out_offset_minutes?: number | null };
 type DetailInfo = { title: string; emptyNote: string; logs: Log[] };
 type Props = { attendanceStatusDisplay: (log: Log) => { label: string; className: string }; formatMonthLabel: (key: string) => string; setSummaryDetailType: Dispatch<SetStateAction<DetailType | null>>; summaryCutoffKey: string; summaryDetailInfo: DetailInfo | null; summaryDetailType: DetailType | null };
 

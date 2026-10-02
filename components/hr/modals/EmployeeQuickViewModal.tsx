@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { getAttendanceStatusDisplay } from '@/lib/attendance-status-display';
 
 type Profile = { id: string; full_name: string | null; employee_id: string | null; designation: string | null; avatar_url: string | null; employee_email: string | null };
-type Attendance = { id: string; log_date: string; time_in: string | null; time_out: string | null; status: string | null; early_out_offset_minutes?: number | null };
+type Attendance = { id: string; log_date: string; time_in: string | null; time_out: string | null; status: string | null; late_offset_minutes?: number | null; early_out_offset_minutes?: number | null };
 type Credits = { employment_status?: string | null; total_credits?: number | null; used_credits?: number | null } | null;
 type ExtraInfo = {
   employeeRank: string | null;
@@ -119,7 +119,7 @@ export default function EmployeeQuickViewModal({ fallbackLeaveCredits, formatPh,
                 <div key={log.id} className="flex items-center justify-between gap-2 rounded-xl border border-emerald-100/80 bg-emerald-50/45 p-2.5 dark:border-emerald-900/30 dark:bg-emerald-950/10">
                   <span className="text-xs font-medium text-slate-700 dark:text-slate-200">{log.log_date}</span>
                   <span className="text-[10px] text-slate-500 dark:text-slate-400">{log.time_in ? formatPh(log.time_in) : '-'} → {log.time_out ? formatPh(log.time_out) : 'No time-out'}</span>
-                  {(() => { const display = getAttendanceStatusDisplay({ status: log.status, logDate: log.log_date, timeOut: log.time_out, earlyOutOffsetMinutes: log.early_out_offset_minutes, timeOutHour: timeOutReminderHour }); return <span className={display.className}>{display.label}</span>; })()}
+                  {(() => { const display = getAttendanceStatusDisplay({ status: log.status, logDate: log.log_date, timeOut: log.time_out, lateOffsetMinutes: log.late_offset_minutes, earlyOutOffsetMinutes: log.early_out_offset_minutes, timeOutHour: timeOutReminderHour }); return <span className={display.className}>{display.label}</span>; })()}
                 </div>
               ))}
             </div>

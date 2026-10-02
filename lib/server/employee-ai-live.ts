@@ -96,7 +96,7 @@ async function offsetAnswer(client: SupabaseClient, userId: string, c: LiveClass
   if (!balanceMetric) txQuery = txQuery.gte('created_at', startIso).lt('created_at', endExclusive);
   const [txRes, pendingUseRes, pendingLeaveRes, pendingEarnRes] = await Promise.all([
     txQuery,
-    client.from('offset_usage_requests').select('hours,status,created_at').eq('user_id', userId).eq('status', 'Pending').limit(1000),
+    client.from('offset_usage_requests').select('hours,required_minutes,status,created_at').eq('user_id', userId).eq('status', 'Pending').limit(1000),
     client.from('leave_requests').select('offset_minutes_required,status,created_at').eq('user_id', userId).eq('funding_source', 'offset').eq('status', 'Pending').limit(1000),
     client.from('offset_requests').select('eligible_hours,status,created_at').eq('user_id', userId).eq('status', 'Pending').limit(1000),
   ]);
@@ -108,7 +108,7 @@ async function offsetAnswer(client: SupabaseClient, userId: string, c: LiveClass
   if (balanceMetric) {
     for (const row of txRows) approvedMinutes += row.kind === 'earned' ? transactionMinutes(row) : -transactionMinutes(row);
   }
-  const pendingUseMinutes = (pendingUseRes.data ?? []).reduce((sum, row) => sum + Number(row.hours || 0) * 60, 0);
+  const pendingUseMinutes = (pendingUseRes.data ?? []).reduce((sum, row) => sum + Number(row.required_minutes ?? Number(row.hours || 0) * 60), 0);
   const pendingLeaveMinutes = (pendingLeaveRes.data ?? []).reduce((sum, row) => sum + Number(row.offset_minutes_required || 0), 0);
   const reservedMinutes = pendingUseMinutes + pendingLeaveMinutes;
   const availableMinutes = Math.max(0, approvedMinutes - reservedMinutes);

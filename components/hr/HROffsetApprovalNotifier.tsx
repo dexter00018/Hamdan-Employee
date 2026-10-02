@@ -18,6 +18,7 @@ type OffsetUsageRequest = {
   user_id: string;
   attendance_log_id: string;
   hours: number;
+  required_minutes: number | null;
   created_at: string;
 };
 
@@ -111,7 +112,7 @@ export default function HROffsetApprovalNotifier() {
         .order('created_at', { ascending: true }),
       supabase
         .from('offset_usage_requests')
-        .select('id,user_id,attendance_log_id,hours,created_at')
+        .select('id,user_id,attendance_log_id,hours,required_minutes,created_at')
         .eq('status', 'Pending')
         .order('created_at', { ascending: true }),
       supabase
@@ -459,7 +460,7 @@ export default function HROffsetApprovalNotifier() {
             <div className="mb-2 flex items-center justify-between gap-2">
               <div>
                 <h3 className="text-xs font-bold text-slate-900 dark:text-white">Late</h3>
-                <p className="text-[10px] text-slate-500">Current & previous month · 1h</p>
+                <p className="text-[10px] text-slate-500">Current & previous month · exact late minutes</p>
               </div>
               <span className="rounded-full bg-violet-50 px-2 py-1 text-[10px] font-bold text-violet-700 dark:bg-violet-950/30 dark:text-violet-300">{usageRequests.length}</span>
             </div>
@@ -481,7 +482,7 @@ export default function HROffsetApprovalNotifier() {
                           <p className="truncate text-xs font-bold text-slate-900 dark:text-white">{profile?.full_name || 'Employee'}</p>
                           {profile?.employee_id && <span className="shrink-0 text-[9px] font-semibold text-slate-400">{profile.employee_id}</span>}
                         </div>
-                        <p className="mt-0.5 text-[10px] text-slate-500">{attendance?.log_date || '—'} · In {timeLabel(attendance?.time_in || null)} · <span className="font-bold text-violet-700 dark:text-violet-300">1h</span></p>
+                        <p className="mt-0.5 text-[10px] text-slate-500">{attendance?.log_date || '—'} · In {timeLabel(attendance?.time_in || null)} · <span className="font-bold text-violet-700 dark:text-violet-300">{formatMinutes(Number(request.required_minutes ?? request.hours * 60))}</span></p>
                       </div>
                       <div className="flex gap-1.5">
                         <button type="button" disabled={busy} onClick={() => reviewUsage(request.id, false)} className="inline-flex h-8 items-center gap-1 rounded-lg bg-white px-2.5 text-[10px] font-bold text-rose-700 shadow-sm disabled:opacity-40 dark:bg-[#303632] dark:text-rose-300"><X size={13} /> Reject</button>

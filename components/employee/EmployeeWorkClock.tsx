@@ -9,6 +9,7 @@ type TodayLog = {
   id?: string | number;
   time_out: string | null;
   status: string | null;
+  late_offset_minutes?: number | null;
 } | null;
 
 function getManilaClock() {
@@ -90,6 +91,7 @@ function EmployeeWorkClock({ todayLog, endHour }: { todayLog: TodayLog; endHour:
         status: todayLog.status,
         logDate: clock.dateKey,
         timeOut: todayLog.time_out,
+        lateOffsetMinutes: todayLog.late_offset_minutes,
         earlyOutOffsetMinutes: earlyOutOffset?.status === 'Approved' ? earlyOutOffset.requiredMinutes : 0,
         timeOutHour: endHour,
       });

@@ -18,6 +18,7 @@ type AttendanceStatusDisplayInput = {
   status: string | null | undefined;
   logDate: string | null | undefined;
   timeOut: string | null | undefined;
+  lateOffsetMinutes?: number | null;
   earlyOutOffsetMinutes?: number | null;
   timeOutHour: number;
 };
@@ -31,6 +32,7 @@ export function getAttendanceStatusDisplay({
   status,
   logDate,
   timeOut,
+  lateOffsetMinutes = 0,
   earlyOutOffsetMinutes = 0,
   timeOutHour,
 }: AttendanceStatusDisplayInput): AttendanceStatusDisplay {
@@ -39,8 +41,8 @@ export function getAttendanceStatusDisplay({
   const lateOffsetApplied = normalizedStatus === 'offset applied';
   const earlyOutOffsetAppliedMinutes = earlyOut ? Number(earlyOutOffsetMinutes) : 0;
   const earlyOutOffsetApplied = earlyOutOffsetAppliedMinutes > 0;
-  // Late Offset is intentionally an exact one-hour correction.
-  const lateOffsetAppliedMinutes = lateOffsetApplied ? 60 : 0;
+  // Earning Offset remains whole-hour based; clearing Late is minute-exact.
+  const lateOffsetAppliedMinutes = lateOffsetApplied ? Math.max(1, Number(lateOffsetMinutes) || 60) : 0;
   const offsetLabel = (minutes: number) => `OFFSET · ${formatOffsetMinutes(minutes)}`;
 
   if (lateOffsetApplied && earlyOutOffsetApplied) {

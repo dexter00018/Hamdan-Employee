@@ -6,7 +6,7 @@ import ModalShell from '@/components/shared/ModalShell';
 import { supabase } from '@/lib/supabase';
 
 type Transaction = { kind: 'earned' | 'used' | 'converted'; hours: number; minutes: number };
-type UsageReservation = { hours: number };
+type UsageReservation = { hours: number; required_minutes?: number | null };
 type LeaveReservation = { offset_minutes_required: number };
 
 const REQUIRED_MINUTES = 9 * 60;
@@ -49,7 +49,7 @@ export default function OffsetLeaveRequestBridge() {
 
     const [transactionRes, usageRes, leaveRes] = await Promise.all([
       supabase.from('offset_transactions').select('kind,hours,minutes').eq('user_id', user.id),
-      supabase.from('offset_usage_requests').select('hours').eq('user_id', user.id).eq('status', 'Pending'),
+      supabase.from('offset_usage_requests').select('hours,required_minutes').eq('user_id', user.id).eq('status', 'Pending'),
       supabase.from('leave_requests').select('offset_minutes_required').eq('user_id', user.id).eq('funding_source', 'offset').eq('status', 'Pending'),
     ]);
 
@@ -65,7 +65,7 @@ export default function OffsetLeaveRequestBridge() {
       const amount = Number(transaction.hours || 0) * 60 + Number(transaction.minutes || 0);
       return total + (transaction.kind === 'earned' ? amount : -amount);
     }, 0);
-    const usage = ((usageRes.data || []) as UsageReservation[]).reduce((total, row) => total + Number(row.hours || 0) * 60, 0);
+    const usage = ((usageRes.data || []) as UsageReservation[]).reduce((total, row) => total + Number(row.required_minutes ?? Number(row.hours || 0) * 60), 0);
     const leaves = ((leaveRes.data || []) as LeaveReservation[]).reduce((total, row) => total + Number(row.offset_minutes_required || 0), 0);
 
     setBalanceMinutes(actual);

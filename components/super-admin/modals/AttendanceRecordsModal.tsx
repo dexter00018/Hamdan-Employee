@@ -4,7 +4,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import ModalShell from '@/components/shared/ModalShell';
 import { getAttendanceStatusDisplay } from '@/lib/attendance-status-display';
 
-type AttendanceLog = { id: string; log_date?: string | null; time_in?: string | null; time_out?: string | null; status: string; early_out_offset_minutes?: number | null; profiles?: { full_name?: string | null } | null };
+type AttendanceLog = { id: string; log_date?: string | null; time_in?: string | null; time_out?: string | null; status: string; late_offset_minutes?: number | null; early_out_offset_minutes?: number | null; profiles?: { full_name?: string | null } | null };
 type Props = { open: boolean; onClose: () => void; pageSize: number; attendanceDateFilter: string; attendanceLoading: boolean; attendancePage: number; attendanceSearch: string; attendanceTotalPages: number; filteredAttendanceLogs: AttendanceLog[]; handleAttendanceDateChange: (value: string) => void; handleAttendanceSearchChange: (value: string) => void; paginatedAttendanceLogs: AttendanceLog[]; setAttendancePage: Dispatch<SetStateAction<number>>; startEditLog: (log: AttendanceLog) => void; timeOutReminderHour: number; todayManila: string };
 
 export default function AttendanceRecordsModal({ open, onClose, pageSize, attendanceDateFilter, attendanceLoading, attendancePage, attendanceSearch, attendanceTotalPages, filteredAttendanceLogs, handleAttendanceDateChange, handleAttendanceSearchChange, paginatedAttendanceLogs, setAttendancePage, startEditLog, timeOutReminderHour, todayManila }: Props) {
@@ -69,7 +69,7 @@ export default function AttendanceRecordsModal({ open, onClose, pageSize, attend
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-bold text-slate-900 text-sm truncate">{log.profiles?.full_name ?? '-'}</span>
-                      {(() => { const display = getAttendanceStatusDisplay({ status: log.status, logDate: log.log_date, timeOut: log.time_out, earlyOutOffsetMinutes: log.early_out_offset_minutes, timeOutHour: timeOutReminderHour }); return <span className={display.className}>{display.label}</span>; })()}
+                      {(() => { const display = getAttendanceStatusDisplay({ status: log.status, logDate: log.log_date, timeOut: log.time_out, lateOffsetMinutes: log.late_offset_minutes, earlyOutOffsetMinutes: log.early_out_offset_minutes, timeOutHour: timeOutReminderHour }); return <span className={display.className}>{display.label}</span>; })()}
                     </div>
                     <div className="flex items-center justify-between gap-2 mt-1.5">
                       <span className="text-slate-400 text-xs">

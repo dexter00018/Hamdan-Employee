@@ -6,7 +6,7 @@ import ModalShell from '@/components/shared/ModalShell';
 import { supabase } from '@/lib/supabase';
 
 type OffsetRequest = { id: string; user_id: string; eligible_hours: number; time_out_at: string; created_at: string };
-type OffsetUsageRequest = { id: string; user_id: string; attendance_log_id: string; hours: number; created_at: string };
+type OffsetUsageRequest = { id: string; user_id: string; attendance_log_id: string; hours: number; required_minutes: number | null; created_at: string };
 type EarlyOutOffsetRequest = { id: string; user_id: string; attendance_log_id: string; required_minutes: number; cutoff_hour: number; created_at: string };
 type EmployeeProfile = { id: string; full_name: string | null; employee_id: string | null };
 type AttendanceLog = { id: string; log_date: string; time_in: string | null; time_out: string | null; status: string | null };
@@ -52,7 +52,7 @@ export default function HROffsetApprovalNotifierV2() {
     setLoading(true);
     const [pendingRes, usageRes, earlyOutRes, balanceRes] = await Promise.all([
       supabase.from('offset_requests').select('id,user_id,eligible_hours,time_out_at,created_at').eq('status', 'Pending').order('created_at', { ascending: true }),
-      supabase.from('offset_usage_requests').select('id,user_id,attendance_log_id,hours,created_at').eq('status', 'Pending').order('created_at', { ascending: true }),
+      supabase.from('offset_usage_requests').select('id,user_id,attendance_log_id,hours,required_minutes,created_at').eq('status', 'Pending').order('created_at', { ascending: true }),
       supabase.from('early_out_offset_requests').select('id,user_id,attendance_log_id,required_minutes,cutoff_hour,created_at').eq('status', 'Pending').order('created_at', { ascending: true }),
       supabase.rpc('get_hr_offset_balances'),
     ]);
@@ -197,11 +197,11 @@ export default function HROffsetApprovalNotifierV2() {
         </section>}
 
         {activeTab === 'late' && <section className="flex min-h-0 flex-1 flex-col">
-          <div className="mb-2 shrink-0"><h3 className="text-xs font-bold text-slate-900 dark:text-white">Late</h3><p className="text-[10px] text-slate-500">Current & previous month · 1h each</p></div>
+          <div className="mb-2 shrink-0"><h3 className="text-xs font-bold text-slate-900 dark:text-white">Late</h3><p className="text-[10px] text-slate-500">Current & previous month · exact late minutes</p></div>
           <div className="min-h-0 flex-1 space-y-1.5 overflow-hidden">
             {loading ? <p className="py-8 text-center text-xs text-slate-500">Loading…</p> : visibleLate.length ? visibleLate.map((request) => {
               const profile = profiles[request.user_id]; const attendance = attendanceLogs[request.attendance_log_id]; const busy = reviewingId === request.id;
-              return <div key={request.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl bg-violet-50/60 px-3 py-2.5 dark:bg-violet-950/15"><div className="min-w-0"><p className="truncate text-xs font-bold text-slate-900 dark:text-white">{profile?.full_name || 'Employee'}</p><p className="mt-0.5 text-[10px] text-slate-500">{attendance?.log_date || '—'} · In {timeLabel(attendance?.time_in)} · <b className="text-violet-700">1h</b></p></div><div className="flex gap-1.5"><button disabled={busy} onClick={() => reviewLate(request.id, false)} className="inline-flex h-8 items-center gap-1 rounded-lg bg-white px-2.5 text-[10px] font-bold text-rose-700 disabled:opacity-40"><X size={13}/> Reject</button><button disabled={busy} onClick={() => reviewLate(request.id, true)} className="inline-flex h-8 items-center gap-1 rounded-lg bg-violet-600 px-2.5 text-[10px] font-bold text-white disabled:opacity-40"><Check size={13}/> Approve</button></div></div>;
+              return <div key={request.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl bg-violet-50/60 px-3 py-2.5 dark:bg-violet-950/15"><div className="min-w-0"><p className="truncate text-xs font-bold text-slate-900 dark:text-white">{profile?.full_name || 'Employee'}</p><p className="mt-0.5 text-[10px] text-slate-500">{attendance?.log_date || '—'} · In {timeLabel(attendance?.time_in)} · <b className="text-violet-700">{formatMinutes(Number(request.required_minutes ?? request.hours * 60))}</b></p></div><div className="flex gap-1.5"><button disabled={busy} onClick={() => reviewLate(request.id, false)} className="inline-flex h-8 items-center gap-1 rounded-lg bg-white px-2.5 text-[10px] font-bold text-rose-700 disabled:opacity-40"><X size={13}/> Reject</button><button disabled={busy} onClick={() => reviewLate(request.id, true)} className="inline-flex h-8 items-center gap-1 rounded-lg bg-violet-600 px-2.5 text-[10px] font-bold text-white disabled:opacity-40"><Check size={13}/> Approve</button></div></div>;
             }) : <p className="rounded-xl bg-slate-50 px-3 py-8 text-center text-xs text-slate-500">No pending Late Offset.</p>}
           </div>{pager}
         </section>}

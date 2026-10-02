@@ -10,7 +10,7 @@ type Request = { id: string; eligible_hours: number; status: string; time_out_at
 type Transaction = { kind: 'earned' | 'used' | 'converted'; hours: number; minutes: number };
 type LateRecord = { id: string; log_date: string; time_in: string | null };
 type EarlyOutRecord = { id: string; log_date: string; time_out: string | null; early_out_offset_minutes: number };
-type UsageRequest = { id: string; attendance_log_id: string; hours: number; status: string; created_at: string; reviewed_at: string | null; hr_notes: string | null };
+type UsageRequest = { id: string; attendance_log_id: string; hours: number; required_minutes: number | null; status: string; created_at: string; reviewed_at: string | null; hr_notes: string | null };
 type EarlyOutRequest = { id: string; attendance_log_id: string; required_minutes: number; status: string; created_at: string; reviewed_at: string | null; hr_notes: string | null };
 type OffsetLeave = { id: string; leave_type: string; start_date: string; status: string; offset_minutes_required: number; offset_charged_at: string | null; offset_refunded_at: string | null; created_at: string };
 type HistoryItem = { id: string; createdAt: string; title: string; detail: string; status: string };
@@ -80,6 +80,14 @@ function earlyOutMinutes(record: EarlyOutRecord, cutoffHour: number) {
   return Math.max(0, Math.ceil((cutoff - actual) / 60000));
 }
 
+function lateMinutes(record: LateRecord) {
+  if (!record.time_in) return 0;
+  const actual = Date.parse(record.time_in);
+  const scheduled = Date.parse(`${record.log_date}T09:00:00+08:00`);
+  if (!Number.isFinite(actual) || !Number.isFinite(scheduled) || actual <= scheduled) return 1;
+  return Math.max(1, Math.floor((actual - scheduled) / 60000));
+}
+
 export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
   const [requests, setRequests] = useState<Request[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -107,7 +115,7 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
       supabase.from('offset_transactions').select('kind,hours,minutes').eq('user_id', userId),
       supabase.from('attendance_logs').select('id,log_date,time_in').eq('user_id', userId).eq('status', 'Late').gte('log_date', cutoff.start).lte('log_date', cutoff.end).order('log_date', { ascending: false }),
       supabase.from('attendance_logs').select('id,log_date,time_out,early_out_offset_minutes').eq('user_id', userId).gte('log_date', cutoff.start).lte('log_date', cutoff.end).not('time_out', 'is', null).order('log_date', { ascending: false }),
-      supabase.from('offset_usage_requests').select('id,attendance_log_id,hours,status,created_at,reviewed_at,hr_notes').eq('user_id', userId).order('created_at', { ascending: false }),
+      supabase.from('offset_usage_requests').select('id,attendance_log_id,hours,required_minutes,status,created_at,reviewed_at,hr_notes').eq('user_id', userId).order('created_at', { ascending: false }),
       supabase.from('early_out_offset_requests').select('id,attendance_log_id,required_minutes,status,created_at,reviewed_at,hr_notes').eq('user_id', userId).order('created_at', { ascending: false }),
       supabase.from('leave_requests').select('id,leave_type,start_date,status,offset_minutes_required,offset_charged_at,offset_refunded_at,created_at').eq('user_id', userId).eq('funding_source', 'offset').order('created_at', { ascending: false }),
       supabase.from('app_settings').select('value').eq('key', 'time_out_reminder_hour').maybeSingle(),
@@ -153,7 +161,7 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
     [transactions]
   );
 
-  const pendingUseMinutes = useMemo(() => usageRequests.filter((request) => request.status === 'Pending').reduce((total, request) => total + request.hours * 60, 0), [usageRequests]);
+  const pendingUseMinutes = useMemo(() => usageRequests.filter((request) => request.status === 'Pending').reduce((total, request) => total + Number(request.required_minutes ?? request.hours * 60), 0), [usageRequests]);
   const pendingEarlyOutMinutes = useMemo(() => earlyOutRequests.filter((request) => request.status === 'Pending').reduce((total, request) => total + Number(request.required_minutes || 0), 0), [earlyOutRequests]);
   const pendingLeaveMinutes = useMemo(() => offsetLeaves.filter((request) => request.status === 'Pending').reduce((total, request) => total + Number(request.offset_minutes_required || 0), 0), [offsetLeaves]);
   const reservedMinutes = pendingUseMinutes + pendingEarlyOutMinutes + pendingLeaveMinutes;
@@ -179,7 +187,8 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
     }));
     const lateItems = usageRequests.map((request) => {
       const record = lateRecordMap.get(request.attendance_log_id);
-      const usageText = request.status === 'Approved' ? `Used ${request.hours}h` : request.status === 'Pending' ? `Reserves ${request.hours}h` : 'No deduction';
+      const minutes = Number(request.required_minutes ?? request.hours * 60);
+      const usageText = request.status === 'Approved' ? `Used ${formatOffsetMinutes(minutes)}` : request.status === 'Pending' ? `Reserves ${formatOffsetMinutes(minutes)}` : 'No deduction';
       return { id: `late-${request.id}`, createdAt: request.created_at, title: `Late${record?.log_date ? ` · ${record.log_date}` : ''}`, detail: `Original ${timeLabel(record?.time_in)} · ${usageText}`, status: request.status };
     });
     const earlyItems = earlyOutRequests.map((request) => {
@@ -266,14 +275,15 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
 
         {usePanel === 'late' && (
           <section className="rounded-2xl bg-slate-50 p-3 dark:bg-[#303632]">
-            <div className="mb-2"><h3 className="text-sm font-bold text-slate-900 dark:text-white">Late · Current & previous month</h3><p className="text-[10px] text-slate-500">1h each</p></div>
+            <div className="mb-2"><h3 className="text-sm font-bold text-slate-900 dark:text-white">Late · Current & previous month</h3><p className="text-[10px] text-slate-500">Exact late minutes after 9:00 AM</p></div>
             <div className="space-y-2">
               {visibleLate.map((record) => {
                 const busy = submittingId === `late-${record.id}`;
-                const enough = availableToRequestMinutes >= 60;
+                const requiredMinutes = lateMinutes(record);
+                const enough = availableToRequestMinutes >= requiredMinutes;
                 return <div key={record.id} className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2.5 dark:bg-[#292f2b]">
-                  <div className="min-w-0"><p className="text-xs font-bold text-slate-900 dark:text-white">{dateLabel(record.log_date)}</p><p className="mt-0.5 text-[10px] text-slate-500">In {timeLabel(record.time_in)} · Uses 1h</p></div>
-                  <button type="button" disabled={busy || !enough} onClick={() => submitLate(record.id)} className="min-h-8 shrink-0 rounded-lg bg-slate-900 px-3 text-[10px] font-bold text-white disabled:opacity-40 dark:bg-white dark:text-slate-900">{busy ? 'Submitting…' : 'Submit to HR'}</button>
+                  <div className="min-w-0"><p className="text-xs font-bold text-slate-900 dark:text-white">{dateLabel(record.log_date)}</p><p className="mt-0.5 text-[10px] text-slate-500">In {timeLabel(record.time_in)} · Uses {formatOffsetMinutes(requiredMinutes)}</p></div>
+                  <button type="button" disabled={busy || !enough} onClick={() => submitLate(record.id)} className="min-h-8 shrink-0 rounded-lg bg-slate-900 px-3 text-[10px] font-bold text-white disabled:opacity-40 dark:bg-white dark:text-slate-900">{busy ? 'Submitting…' : enough ? 'Submit to HR' : `Need ${formatOffsetMinutes(requiredMinutes)}`}</button>
                 </div>;
               })}
             </div>

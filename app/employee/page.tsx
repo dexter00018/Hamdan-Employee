@@ -605,7 +605,7 @@ export default function EmployeeDashboard() {
     const [profileRes, govIdRes, historyRes, leavesCountRes, disputesCountRes, payslipsCountRes, supportCountRes, leaveCreditsRes] = await Promise.all([
       supabase.from('profiles').select('full_name, employee_id, designation, role, avatar_url').eq('id', user.id).single(),
       supabase.from('employee_government_ids').select('sss_number, philhealth_number, pagibig_number, tin_number, hired_date, employment_status').eq('user_id', user.id).maybeSingle(),
-      supabase.from('attendance_logs').select('id, log_date, time_in, time_out, status, early_out_offset_minutes').eq('user_id', user.id).order('log_date', { ascending: false }),
+      supabase.from('attendance_logs').select('id, log_date, time_in, time_out, status, late_offset_minutes, early_out_offset_minutes').eq('user_id', user.id).order('log_date', { ascending: false }),
       supabase.from('leave_requests').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'Pending'),
       supabase.from('attendance_disputes').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'Pending'),
       supabase.from('payslips').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('published', true).is('acknowledged_at', null),
@@ -754,8 +754,8 @@ export default function EmployeeDashboard() {
   // Type-specific leave statuses (e.g. "Sick Leave", "Vacation Leave",
   // "Emergency Leave") all get the same tag styling as the old generic
   // "Leave" status -- match by substring instead of exact equality.
-  const attendanceStatusDisplay = (log: { status: string | null; log_date: string; time_out: string | null; early_out_offset_minutes?: number | null }) =>
-    getAttendanceStatusDisplay({ status: log.status, logDate: log.log_date, timeOut: log.time_out, earlyOutOffsetMinutes: log.early_out_offset_minutes, timeOutHour: timeOutReminderHour });
+  const attendanceStatusDisplay = (log: { status: string | null; log_date: string; time_out: string | null; late_offset_minutes?: number | null; early_out_offset_minutes?: number | null }) =>
+    getAttendanceStatusDisplay({ status: log.status, logDate: log.log_date, timeOut: log.time_out, lateOffsetMinutes: log.late_offset_minutes, earlyOutOffsetMinutes: log.early_out_offset_minutes, timeOutHour: timeOutReminderHour });
 
   // --- Early time-out warning (before 7PM) ---
   const [showEarlyTimeOutWarning, setShowEarlyTimeOutWarning] = useState(false);

@@ -398,7 +398,7 @@ export default function SuperAdminDashboard() {
     setAttendanceLoading(true);
     const { data, error } = await supabase
       .from('attendance_logs')
-      .select('id, time_in, time_out, log_date, status, early_out_offset_minutes, profiles(full_name)')
+      .select('id, time_in, time_out, log_date, status, late_offset_minutes, early_out_offset_minutes, profiles(full_name)')
       // log_date is always populated (unlike time_in, which is null for
       // 'Absent' rows) -- ordering by it keeps the most recent days first
       // regardless of status. nullsFirst: false on time_in keeps each

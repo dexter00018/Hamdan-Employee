@@ -39,7 +39,7 @@ export default function LeaveChoiceModal({ open, onClose, fetchMyLeaves, isRegul
       }
       const [transactionsRes, usageRes, leavesRes] = await Promise.all([
         supabase.from('offset_transactions').select('kind,hours,minutes').eq('user_id', user.id),
-        supabase.from('offset_usage_requests').select('hours').eq('user_id', user.id).eq('status', 'Pending'),
+        supabase.from('offset_usage_requests').select('hours,required_minutes').eq('user_id', user.id).eq('status', 'Pending'),
         supabase.from('leave_requests').select('offset_minutes_required').eq('user_id', user.id).eq('funding_source', 'offset').eq('status', 'Pending'),
       ]);
       if (!active) return;
@@ -48,7 +48,7 @@ export default function LeaveChoiceModal({ open, onClose, fetchMyLeaves, isRegul
         const amount = Number(transaction.hours || 0) * 60 + Number(transaction.minutes || 0);
         return total + (transaction.kind === 'earned' ? amount : -amount);
       }, 0);
-      const usageReserved = (usageRes.data || []).reduce((total: number, row: any) => total + Number(row.hours || 0) * 60, 0);
+      const usageReserved = (usageRes.data || []).reduce((total: number, row: any) => total + Number(row.required_minutes ?? Number(row.hours || 0) * 60), 0);
       const leaveReserved = (leavesRes.data || []).reduce((total: number, row: any) => total + Number(row.offset_minutes_required || 0), 0);
       setBalanceMinutes(balance);
       setReservedMinutes(usageReserved + leaveReserved);
