@@ -118,8 +118,8 @@ export default function SuperAdminManpowerTrackerModal({ open, onClose }: Props)
 
   useEffect(() => {
     if (!open) return;
-    refreshAll();
-  }, [open, refreshAll]);
+    void fetchProjects();
+  }, [open, fetchProjects]);
 
   useEffect(() => {
     if (!open) return;
@@ -129,7 +129,7 @@ export default function SuperAdminManpowerTrackerModal({ open, onClose }: Props)
 
   useEffect(() => {
     if (!open) return;
-    fetchTracker(selectedDate);
+    void fetchTracker(selectedDate);
   }, [selectedDate, open, fetchTracker]);
 
   const projectMap = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
