@@ -200,13 +200,38 @@
 
   .tag-offset {
     @apply px-3 py-1.5 rounded-full font-bold text-[10px] uppercase tracking-wider;
-    background: #e0f2fe;
-    color: #0369a1;
+    background: #ffedd5;
+    color: #c2410c;
   }
 
   .dark .tag-offset {
-    background: #163a52;
-    color: #a8defd;
+    background: #572b16;
+    color: #fdba74;
+  }
+
+  .tag-offset-early,
+  .tag-offset-combined {
+    @apply inline-flex whitespace-nowrap rounded-full px-2 py-1 text-[10px] font-bold;
+  }
+
+  .tag-offset-early {
+    background: #fef3c7;
+    color: #a16207;
+  }
+
+  .tag-offset-combined {
+    background: linear-gradient(90deg, #fed7aa 0 50%, #fef3c7 50% 100%);
+    color: #92400e;
+  }
+
+  .dark .tag-offset-early {
+    background: #4d3a12;
+    color: #fde68a;
+  }
+
+  .dark .tag-offset-combined {
+    background: linear-gradient(90deg, #572b16 0 50%, #4d3a12 50% 100%);
+    color: #fde68a;
   }
 }
 
