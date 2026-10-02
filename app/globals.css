@@ -660,8 +660,12 @@
 }
 #employee-dashboard-top.seasonal-christmas .label-branded,
 #hr-dashboard-top.seasonal-christmas .label-branded {
-  color: var(--pasko-red) !important;
+  color: #357a52 !important;
   letter-spacing: .13em;
+}
+.dark #employee-dashboard-top.seasonal-christmas .label-branded,
+.dark #hr-dashboard-top.seasonal-christmas .label-branded {
+  color: #8fbe9c !important;
 }
 #employee-dashboard-top.seasonal-christmas aside:has(nav[aria-label$="desktop navigation"]),
 #hr-dashboard-top.seasonal-christmas aside:has(nav[aria-label$="desktop navigation"]) {

@@ -98,7 +98,7 @@ export default function EmployeeQuickViewModal({ fallbackLeaveCredits, formatPh,
         </div>
 
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <div className="flex min-h-20 flex-col justify-center rounded-xl border border-rose-100 bg-rose-50/70 px-4 py-3 dark:border-rose-900/40 dark:bg-rose-950/20">
+          <div className="flex min-h-20 flex-col justify-center rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/30">
             <p className="label-branded mb-1">Immediate Head</p>
             <p className="truncate text-xs font-bold text-slate-800 dark:text-slate-100">{extraLoading ? 'Loading…' : immediateHead}</p>
           </div>
