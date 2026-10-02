@@ -31,7 +31,7 @@ function getManilaClock() {
 
 function EmployeeWorkClock({ todayLog, endHour }: { todayLog: TodayLog; endHour: number }) {
   const [clock, setClock] = useState(() => ({ time: '--:--:--', date: '', dateKey: '' }));
-  const [earlyOutOffsetStatus, setEarlyOutOffsetStatus] = useState<string | null>(null);
+  const [earlyOutOffset, setEarlyOutOffset] = useState<{ status: string; requiredMinutes: number } | null>(null);
 
   useEffect(() => {
     const updateClock = () => setClock(getManilaClock());
@@ -43,7 +43,7 @@ function EmployeeWorkClock({ todayLog, endHour }: { todayLog: TodayLog; endHour:
   useEffect(() => {
     const attendanceLogId = todayLog?.id;
     if (!attendanceLogId) {
-      setEarlyOutOffsetStatus(null);
+      setEarlyOutOffset(null);
       return;
     }
 
@@ -51,15 +51,15 @@ function EmployeeWorkClock({ todayLog, endHour }: { todayLog: TodayLog; endHour:
     const loadStatus = async () => {
       const { data, error } = await supabase
         .from('early_out_offset_requests')
-        .select('status')
+        .select('status, required_minutes')
         .eq('attendance_log_id', Number(attendanceLogId))
         .maybeSingle();
       if (!active) return;
       if (error) {
         console.error('Error fetching Early Out Offset status:', error);
-        setEarlyOutOffsetStatus(null);
+        setEarlyOutOffset(null);
       } else {
-        setEarlyOutOffsetStatus(data?.status || null);
+        setEarlyOutOffset(data?.status ? { status: data.status, requiredMinutes: Number(data.required_minutes || 0) } : null);
       }
     };
 
@@ -70,7 +70,10 @@ function EmployeeWorkClock({ todayLog, endHour }: { todayLog: TodayLog; endHour:
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'early_out_offset_requests', filter: `attendance_log_id=eq.${attendanceLogId}` },
-        (payload) => setEarlyOutOffsetStatus(String((payload.new as { status?: string }).status || ''))
+        (payload) => {
+          const request = payload.new as { status?: string; required_minutes?: number };
+          setEarlyOutOffset(request.status ? { status: String(request.status), requiredMinutes: Number(request.required_minutes || 0) } : null);
+        }
       )
       .subscribe();
 
@@ -87,7 +90,7 @@ function EmployeeWorkClock({ todayLog, endHour }: { todayLog: TodayLog; endHour:
         status: todayLog.status,
         logDate: clock.dateKey,
         timeOut: todayLog.time_out,
-        earlyOutOffsetMinutes: earlyOutOffsetStatus === 'Approved' ? 1 : 0,
+        earlyOutOffsetMinutes: earlyOutOffset?.status === 'Approved' ? earlyOutOffset.requiredMinutes : 0,
         timeOutHour: endHour,
       });
 

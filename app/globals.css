@@ -213,7 +213,7 @@
   .tag-offset-early,
   .tag-offset-combined,
   .tag-late-early {
-    @apply inline-flex whitespace-nowrap rounded-full px-2 py-1 text-[10px] font-bold;
+    @apply inline-flex whitespace-nowrap rounded-full px-2 py-1 text-[10px] font-bold uppercase;
   }
 
   .tag-early-out,
