@@ -43,6 +43,8 @@ type AttendanceLog = {
   time_in: string | null;
   time_out: string | null;
   status: string | null;
+  early_out_offset_minutes?: number | null;
+  early_out_offset_requests?: Array<{ status: 'Pending' | 'Approved' | 'Rejected'; required_minutes: number }>;
   profiles?: { full_name: string | null; employee_id?: string | null };
 };
 
@@ -60,6 +62,25 @@ type Profile = {
 // fetched from app_settings (editable via Super Admin -> App Settings).
 const FALLBACK_LATE_CUTOFF_HOUR = 9;
 const FALLBACK_LATE_CUTOFF_MINUTE = 15;
+
+function formatOffsetMinutes(totalMinutes: number) {
+  const safeMinutes = Math.max(0, Math.round(totalMinutes));
+  const hours = Math.floor(safeMinutes / 60);
+  const minutes = safeMinutes % 60;
+  if (hours && minutes) return `${hours}h ${minutes}m`;
+  if (hours) return `${hours}h`;
+  return `${minutes}m`;
+}
+
+function earlyOutOffsetLabel(log: AttendanceLog) {
+  const request = log.early_out_offset_requests?.[0];
+  const approvedMinutes = Number(log.early_out_offset_minutes || 0);
+
+  if (approvedMinutes > 0) return { label: `Offset · ${formatOffsetMinutes(approvedMinutes)}`, tone: 'approved' as const };
+  if (request?.status === 'Pending') return { label: `Offset pending · ${formatOffsetMinutes(request.required_minutes)}`, tone: 'pending' as const };
+  if (request?.status === 'Rejected') return { label: `Offset rejected · ${formatOffsetMinutes(request.required_minutes)}`, tone: 'rejected' as const };
+  return null;
+}
 
 export default function HRDashboard() {
   const router = useRouter();
@@ -450,7 +471,7 @@ export default function HRDashboard() {
     const range = getRawExportRange();
     let query = supabase
       .from('attendance_logs')
-      .select('id, user_id, log_date, time_in, time_out, status, profiles!inner(full_name, employee_id, role, is_active)')
+      .select('id, user_id, log_date, time_in, time_out, status, early_out_offset_minutes, profiles!inner(full_name, employee_id, role, is_active), early_out_offset_requests(status, required_minutes)')
       .eq('profiles.role', 'employee')
       .eq('profiles.is_active', true)
       .gte('log_date', range.start)
@@ -476,6 +497,7 @@ export default function HRDashboard() {
       : '-';
     const rows = logs.map((log) => {
       const isLate = log.status?.toLowerCase() === 'late' && !!log.time_in;
+      const offset = earlyOutOffsetLabel(log);
       return [
         log.log_date || '-',
         log.profiles?.full_name || 'Unknown',
@@ -483,6 +505,7 @@ export default function HRDashboard() {
         formatTime(log.time_in),
         formatTime(log.time_out),
         log.status || '-',
+        offset?.label || '-',
         isLate ? formatLateDuration(getMinutesLate(log.time_in as string)) : '-',
       ];
     });
@@ -500,7 +523,7 @@ export default function HRDashboard() {
       if (rows.length === 0) throw new Error(`No attendance records found for ${label}.`);
       downloadCsv(
         `raw-attendance-${rawExportMonth}-${suffix}.csv`,
-        ['Date', 'Employee', 'Employee ID', 'Time In', 'Time Out', 'Status', 'Late Duration'],
+        ['Date', 'Employee', 'Employee ID', 'Time In', 'Time Out', 'Status', 'Offset', 'Late Duration'],
         rows
       );
       setExportMsg({ type: 'success', text: `Raw attendance CSV downloaded (${rows.length} records for ${label}).` });
@@ -521,7 +544,7 @@ export default function HRDashboard() {
       printReportAsPdf(
         'Raw Attendance Log',
         label,
-        ['Date', 'Employee', 'Employee ID', 'Time In', 'Time Out', 'Status', 'Late Duration'],
+        ['Date', 'Employee', 'Employee ID', 'Time In', 'Time Out', 'Status', 'Offset', 'Late Duration'],
         rows
       );
       setExportMsg({ type: 'success', text: `Raw attendance report opened (${rows.length} records). Choose “Save as PDF” in the print dialog.` });
@@ -818,7 +841,7 @@ export default function HRDashboard() {
     const [att, prof] = await Promise.all([
       supabase
         .from('attendance_logs')
-        .select('*, profiles!inner(full_name, is_active)')
+        .select('*, profiles!inner(full_name, is_active), early_out_offset_requests(status, required_minutes)')
         .eq('profiles.role', 'employee')
         .eq('profiles.is_active', true)
         .order('log_date', { ascending: false })
@@ -2310,7 +2333,7 @@ export default function HRDashboard() {
                       <td className="px-4 py-3 text-slate-600 text-xs">{log.log_date ? new Date(log.log_date).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}</td>
                       <td className="px-4 py-3 text-slate-600 text-xs">{log.time_in ? new Date(log.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'N/A'}</td>
                       <td className="px-4 py-3 text-slate-600 text-xs">{log.time_out ? new Date(log.time_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}</td>
-                      <td className="px-4 py-3"><span className={statusTagClass(log.status)}>{log.status}</span></td>
+                      <td className="px-4 py-3"><div className="flex flex-wrap items-center gap-1.5"><span className={statusTagClass(log.status)}>{log.status}</span>{(() => { const offset = earlyOutOffsetLabel(log); if (!offset) return null; const tone = offset.tone === 'approved' ? 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950/60 dark:text-cyan-200' : offset.tone === 'pending' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-200' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'; return <span className={`inline-flex whitespace-nowrap rounded-full px-2 py-1 text-[10px] font-bold ${tone}`}>{offset.label}</span>; })()}</div></td>
                     </tr>
                   ))}
                   {!loadingData && filteredAttendance.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-400 text-xs">No attendance records found.</td></tr>}
