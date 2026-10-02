@@ -14,7 +14,7 @@ import { useVerificationDialog } from '@/components/shared/useVerificationDialog
 import { APP_SETTING_DEFINITIONS, DEFAULT_APP_SETTINGS, normalizeAppSettings, type AppSettingsValues } from '@/lib/app-settings';
 import { resolveSeasonalTheme, SEASONAL_THEME_PRESENTATION } from '@/lib/seasonal-theme';
 import { countChargeableLeaveDays } from '@/lib/leave-rules';
-import { computeAttendanceStatus } from '@/lib/attendance-rules';
+import { computeAttendanceStatus, isEarlyOut } from '@/lib/attendance-rules';
 import { errorMessage, type AttendanceDispute, type LeaveRequest } from '@/lib/types/hr';
 import SeasonalDecor from '@/components/seasonal/SeasonalDecor';
 
@@ -131,6 +131,9 @@ export default function HRDashboard() {
   const [dismissedSeasonalBanner, setDismissedSeasonalBanner] = useState<string | null>(null);
   const seasonalTheme = useMemo(() => resolveSeasonalTheme(appSettings, 'hr'), [appSettings]);
   const seasonalPresentation = SEASONAL_THEME_PRESENTATION[seasonalTheme.variant];
+  const timeOutReminderHour = typeof appSettings.time_out_reminder_hour === 'number'
+    ? appSettings.time_out_reminder_hour
+    : 19;
 
   const fetchAppSettings = useCallback(async () => {
     const { data, error } = await supabase
@@ -2338,7 +2341,7 @@ export default function HRDashboard() {
                       <td className="px-4 py-3 text-slate-600 text-xs">{log.log_date ? new Date(log.log_date).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}</td>
                       <td className="px-4 py-3 text-slate-600 text-xs">{log.time_in ? new Date(log.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'N/A'}</td>
                       <td className="px-4 py-3 text-slate-600 text-xs">{log.time_out ? new Date(log.time_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}</td>
-                      <td className="px-4 py-3"><div className="flex flex-wrap items-center gap-1.5"><span className={statusTagClass(log.status)}>{attendanceStatusLabel(log.status)}</span>{(() => { const offset = earlyOutOffsetLabel(log); if (!offset) return null; const tone = offset.tone === 'approved' ? 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950/60 dark:text-cyan-200' : offset.tone === 'pending' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-200' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'; return <span className={`inline-flex whitespace-nowrap rounded-full px-2 py-1 text-[10px] font-bold ${tone}`}>{offset.label}</span>; })()}</div></td>
+                      <td className="px-4 py-3"><div className="flex flex-wrap items-center gap-1.5"><span className={statusTagClass(log.status)}>{attendanceStatusLabel(log.status)}</span>{(() => { const offset = earlyOutOffsetLabel(log); if (!offset) return null; const tone = offset.tone === 'approved' ? 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950/60 dark:text-cyan-200' : offset.tone === 'pending' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-200' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'; return <span className={`inline-flex whitespace-nowrap rounded-full px-2 py-1 text-[10px] font-bold ${tone}`}>{offset.label}</span>; })()}{isEarlyOut(log.log_date, log.time_out, timeOutReminderHour) && <span className="inline-flex whitespace-nowrap rounded-full bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-800 dark:bg-amber-950/60 dark:text-amber-200">Early Out</span>}</div></td>
                     </tr>
                   ))}
                   {!loadingData && filteredAttendance.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-400 text-xs">No attendance records found.</td></tr>}
