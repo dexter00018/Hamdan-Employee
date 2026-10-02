@@ -1212,7 +1212,7 @@ export default function HRDashboard() {
     const { data, error } = await supabase
       .from('leave_requests')
       .select(`id, leave_type, start_date, end_date, reason, status, hr_notes, created_at, reviewed_at,
-        employee:profiles!leave_requests_user_id_fkey!inner(full_name, id, is_active),
+        funding_source, employee:profiles!leave_requests_user_id_fkey!inner(full_name, id, is_active),
         reviewer:profiles!leave_requests_reviewed_by_fkey(full_name)`)
       .eq('employee.is_active', true)
       .order('created_at', { ascending: false });
@@ -1276,6 +1276,29 @@ export default function HRDashboard() {
     } catch (err: unknown) {
       console.error('Error rejecting leave:', err);
       setLeaveMsg({ type: 'error', text: errorMessage(err, 'Failed to reject leave.') });
+    } finally {
+      setLeaveActionLoadingId(null);
+    }
+  };
+
+  const cancelApprovedLeave = async (leave: LeaveRequest) => {
+    setLeaveActionLoadingId(leave.id);
+    setLeaveMsg(null);
+    try {
+      const { error } = await supabase.rpc('cancel_approved_leave_as_hr', {
+        p_leave_request_id: leave.id,
+      });
+      if (error) throw error;
+      setLeaveMsg({
+        type: 'success',
+        text: leave.funding_source === 'offset'
+          ? 'Approved Offset leave cancelled and Offset refunded.'
+          : 'Approved leave cancelled.',
+      });
+      await fetchLeaveRequests();
+    } catch (err: unknown) {
+      console.error('Error cancelling approved leave:', err);
+      setLeaveMsg({ type: 'error', text: errorMessage(err, 'Failed to cancel approved leave.') });
     } finally {
       setLeaveActionLoadingId(null);
     }
@@ -2377,7 +2400,7 @@ export default function HRDashboard() {
 
       <HRActionCenterModal open={actionCenterOpen} onClose={() => setActionCenterOpen(false)} pendingDisputesCount={pendingDisputesCount} pendingLeaveCount={pendingLeaveCount} openHrSupportCount={openHrSupportCount} onDisputes={() => { setSelectedDisputeDetail(null); setDisputesHistoryModalOpen(true); }} onLeaveRequests={() => { setSelectedLeaveDetail(null); setLeaveHistoryModalOpen(true); }} onHelpDesk={openHelpdesk} />
 
-      <LeaveHistoryModal open={leaveHistoryModalOpen} onClose={() => setLeaveHistoryModalOpen(false)} approveLeave={approveLeave} rejectLeave={rejectLeave} actionLoadingId={leaveActionLoadingId} message={leaveMsg} loading={leaveRequestsLoading} countLeaveDays={countLeaveDays} leaveRequests={leaveRequests} leaveHrNotes={leaveHrNotes} setLeaveHrNotes={setLeaveHrNotes} selectedLeaveDetail={selectedLeaveDetail} setSelectedLeaveDetail={setSelectedLeaveDetail} />
+      <LeaveHistoryModal open={leaveHistoryModalOpen} onClose={() => setLeaveHistoryModalOpen(false)} approveLeave={approveLeave} rejectLeave={rejectLeave} cancelApprovedLeave={cancelApprovedLeave} actionLoadingId={leaveActionLoadingId} message={leaveMsg} loading={leaveRequestsLoading} countLeaveDays={countLeaveDays} leaveRequests={leaveRequests} leaveHrNotes={leaveHrNotes} setLeaveHrNotes={setLeaveHrNotes} selectedLeaveDetail={selectedLeaveDetail} setSelectedLeaveDetail={setSelectedLeaveDetail} />
 
       {/* HELP DESK REQUESTS MANAGEMENT MODAL */}
       <HelpDeskRequestsModal open={hrSupportModalOpen} onClose={() => setHrSupportModalOpen(false)} loading={hrSupportLoading} requests={hrSupportRequests} drafts={hrSupportDrafts} setDrafts={setHrSupportDrafts} savingId={hrSupportSavingId} onSave={saveHrSupportRequest} />

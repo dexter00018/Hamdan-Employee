@@ -1,4 +1,4 @@
-export type ReviewStatus = 'Pending' | 'Approved' | 'Rejected';
+export type ReviewStatus = 'Pending' | 'Approved' | 'Rejected' | 'Cancelled';
 
 export type ReviewerSummary = { full_name?: string | null } | null;
 export type EmployeeSummary = { id?: string; full_name?: string | null; is_active?: boolean | null } | null;
@@ -31,6 +31,7 @@ export type LeaveRequest = {
   hr_notes: string | null;
   created_at: string;
   reviewed_at: string | null;
+  funding_source?: 'leave_credit' | 'offset';
   employee: EmployeeSummary;
   reviewer: ReviewerSummary;
 };
