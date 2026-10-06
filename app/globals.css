@@ -1174,3 +1174,18 @@ html.dark [class~="to-amber-50"] { --tw-gradient-to: #42331b !important; }
 html.dark [class~="to-teal-700"] { --tw-gradient-to: #193a36 !important; }
 html.dark [class~="from-amber-500"] { --tw-gradient-from: #42331b !important; }
 html.dark [class~="to-orange-700"] { --tw-gradient-to: #442c20 !important; }
+
+/* Charts are supported by adjacent legend buttons, so browser focus rectangles
+   do not need to be drawn around the chart canvas itself. */
+.attendance-analytics-chart .recharts-wrapper,
+.attendance-analytics-chart .recharts-surface,
+.attendance-analytics-chart .recharts-wrapper:focus,
+.attendance-analytics-chart .recharts-surface:focus,
+.attendance-analytics-chart .recharts-wrapper:focus-visible,
+.attendance-analytics-chart .recharts-surface:focus-visible,
+.attendance-analytics-chart [tabindex]:focus,
+.attendance-analytics-chart [tabindex]:focus-visible {
+  outline: none !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}

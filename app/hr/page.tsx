@@ -3,11 +3,13 @@ import { applyPortalTheme } from '@/lib/portal-theme';
 import HRDesktopSidebar from '@/components/hr/HRDesktopSidebar';
 import HRMobileBottomNav from '@/components/hr/HRMobileBottomNav';
 import HRMobileToolsSheet from '@/components/hr/HRMobileToolsSheet';
+import MonthCalendarPicker from '@/components/hr/MonthCalendarPicker';
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { AlertTriangle, BadgeAlert, Bell, CalendarCheck2, CalendarClock, CalendarDays, CalendarRange, CheckCircle2, ChevronRight, Clock3, Coins, ContactRound, FileChartColumn, FolderDown, Headphones, LifeBuoy, Megaphone, Moon, RefreshCw, Search, Sun, UserRound } from 'lucide-react';
+import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { supabase } from '@/lib/supabase';
 import { LoadingRow } from '@/components/Spinner';
 import { useVerificationDialog } from '@/components/shared/useVerificationDialog';
@@ -58,6 +60,8 @@ type Profile = {
   avatar_url: string | null;
   employee_email: string | null;
 };
+
+type AttendanceChartSelection = { start: string; end: string; label: string };
 
 // Must match app/employee/page.tsx and app/api/time-in/route.ts.
 // Fallback values only -- normal operation uses the configurable values
@@ -647,6 +651,10 @@ export default function HRDashboard() {
   const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
   const [dailyOverviewModal, setDailyOverviewModal] = useState<null | 'present' | 'late' | 'leave' | 'notTimedIn'>(null);
   const [attendanceInsightModal, setAttendanceInsightModal] = useState<null | 'attendance' | 'late' | 'absent' | 'leave'>(null);
+  const [attendanceInsightRange, setAttendanceInsightRange] = useState<AttendanceChartSelection | null>(null);
+  const [attendanceChartMode, setAttendanceChartMode] = useState<'daily' | 'weekly' | 'monthly'>('daily');
+  const [attendanceChartMonth, setAttendanceChartMonth] = useState(() => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit' }).format(new Date()).slice(0, 7));
+  const [activeAttendanceSlice, setActiveAttendanceSlice] = useState<number | undefined>(undefined);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [filtersHydrated, setFiltersHydrated] = useState(false);
@@ -1906,7 +1914,7 @@ export default function HRDashboard() {
     : null;
 
   const attendanceInsights = useMemo(() => {
-    const currentMonth = todayManila.slice(0, 7);
+    const currentMonth = attendanceChartMonth;
     const [year, month] = currentMonth.split('-').map(Number);
     const previousDate = new Date(year, month - 2, 1);
     const previousMonth = `${previousDate.getFullYear()}-${String(previousDate.getMonth() + 1).padStart(2, '0')}`;
@@ -1933,29 +1941,121 @@ export default function HRDashboard() {
     return { currentMonth, current, previous, topLateEmployees };
   }, [attendance, todayManila]);
 
+  const attendanceChartData = useMemo(() => {
+    const { worked, late, absent, leave } = attendanceInsights.current;
+    return [
+      { key: 'attendance', name: 'Present', value: Math.max(0, worked - late), color: '#16a34a' },
+      { key: 'late', name: 'Late', value: late, color: '#f59e0b' },
+      { key: 'leave', name: 'Leave', value: leave, color: '#3b82f6' },
+      { key: 'absent', name: 'Absent', value: absent, color: '#f43f5e' },
+    ].filter((item) => item.value > 0);
+  }, [attendanceInsights]);
+
+  const attendanceTrendData = useMemo(() => {
+    const categoryFor = (log: AttendanceLog) => {
+      const status = log.status?.toLowerCase() ?? '';
+      if (status === 'late') return 'late' as const;
+      if (status === 'absent') return 'absent' as const;
+      if (status.includes('leave')) return 'leave' as const;
+      return 'present' as const;
+    };
+    const emptyRow = (label: string, key: string, start = key, end = start) => ({ key, label, start, end, isWeekend: false, present: 0, late: 0, leave: 0, absent: 0 });
+    const currentMonth = attendanceChartMonth;
+
+    if (attendanceChartMode === 'daily') {
+      const daysInMonth = new Date(Number(currentMonth.slice(0, 4)), Number(currentMonth.slice(5, 7)), 0).getDate();
+      const rows = Array.from({ length: daysInMonth }, (_, index) => {
+        const date = new Date(Number(currentMonth.slice(0, 4)), Number(currentMonth.slice(5, 7)) - 1, index + 1);
+        const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        return { ...emptyRow(new Intl.DateTimeFormat('en-PH', { weekday: 'short', day: 'numeric' }).format(date), key), isWeekend: date.getDay() === 0 || date.getDay() === 6 };
+      });
+      const byDate = new Map(rows.map((row) => [row.key, row]));
+      attendance.forEach((log) => {
+        const row = byDate.get(log.log_date);
+        if (row) row[categoryFor(log)] += 1;
+      });
+      return rows;
+    }
+
+    if (attendanceChartMode === 'weekly') {
+      const weeksInMonth = Math.ceil(new Date(Number(currentMonth.slice(0, 4)), Number(currentMonth.slice(5, 7)), 0).getDate() / 7);
+      const rows = Array.from({ length: weeksInMonth }, (_, index) => {
+        const startDay = index * 7 + 1;
+        const endDay = Math.min((index + 1) * 7, new Date(Number(currentMonth.slice(0, 4)), Number(currentMonth.slice(5, 7)), 0).getDate());
+        return emptyRow(`Week ${index + 1}`, `week-${index + 1}`, `${currentMonth}-${String(startDay).padStart(2, '0')}`, `${currentMonth}-${String(endDay).padStart(2, '0')}`);
+      });
+      attendance.filter((log) => log.log_date?.startsWith(currentMonth)).forEach((log) => {
+        const week = Math.min(rows.length - 1, Math.floor((Number(log.log_date.slice(8, 10)) - 1) / 7));
+        rows[week][categoryFor(log)] += 1;
+      });
+      return rows;
+    }
+
+    const selectedYear = Number(currentMonth.slice(0, 4));
+    const rows = Array.from({ length: 12 }, (_, index) => {
+      const month = index + 1;
+      const key = `${selectedYear}-${String(month).padStart(2, '0')}`;
+      const date = new Date(selectedYear, index, 1);
+      const endDay = new Date(selectedYear, month, 0).getDate();
+      return emptyRow(new Intl.DateTimeFormat('en-PH', { month: 'short' }).format(date), key, `${key}-01`, `${key}-${String(endDay).padStart(2, '0')}`);
+    });
+    const byMonth = new Map(rows.map((row) => [row.key, row]));
+    attendance.forEach((log) => {
+      const row = byMonth.get(log.log_date?.slice(0, 7));
+      if (row) row[categoryFor(log)] += 1;
+    });
+    return rows;
+  }, [attendance, attendanceChartMode, attendanceChartMonth, todayManila]);
+
+  const chartTextColor = darkMode ? '#e2e8f0' : '#475569';
+  const chartLineColor = darkMode ? '#475569' : '#cbd5e1';
+  const chartTooltipStyle = { backgroundColor: darkMode ? '#1e293b' : '#ffffff', borderColor: darkMode ? '#475569' : '#cbd5e1', color: darkMode ? '#f8fafc' : '#0f172a', borderRadius: 12, fontSize: 12 };
+  const attendanceLegend = [
+    { key: 'present', label: 'Present', color: '#16a34a' },
+    { key: 'late', label: 'Late', color: '#f59e0b' },
+    { key: 'leave', label: 'Leave', color: '#3b82f6' },
+    { key: 'absent', label: 'Absent', color: '#f43f5e' },
+  ] as const;
+  const attendanceTooltipContent = ({ active, payload, label }: any) => {
+    if (!active || !label) return null;
+    return <div style={chartTooltipStyle} className="min-w-28 border px-3 py-2 shadow-lg"><p className="mb-1.5 text-[11px] font-bold">{label}</p><div className="space-y-1">{attendanceLegend.map((item) => {
+      const value = Number(payload?.find((entry: { name?: string }) => entry.name === item.label)?.value ?? 0);
+      return <div key={item.key} className="flex items-center justify-between gap-5 text-[11px]"><span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} />{item.label}</span><b className="tabular-nums">{value}</b></div>;
+    })}</div></div>;
+  };
+  const openAttendanceChartDetail = (kind: 'attendance' | 'late' | 'leave' | 'absent', row: { start?: string; end?: string; label?: string }) => {
+    if (!row.start || !row.end) return;
+    setAttendanceInsightRange({ start: row.start, end: row.end, label: row.label || 'Selected period' });
+    setAttendanceInsightModal(kind);
+  };
+
   const pendingDisputesCount = disputes.filter((dispute) => dispute.status === 'Pending').length;
   const pendingLeaveCount = leaveRequests.filter((leave) => leave.status === 'Pending').length;
   const openHrSupportCount = hrSupportRequests.filter((request) => !['Resolved', 'Cancelled'].includes(request.status)).length;
   const activeHrDocumentsCount = hrDocuments.filter((document) => document.is_active).length;
 
+  const attendanceInsightScopeLabel = attendanceInsightRange?.label || 'This Month';
+  const attendanceInsightScopeLogs = attendanceInsightRange
+    ? attendance.filter((log) => log.log_date >= attendanceInsightRange.start && log.log_date <= attendanceInsightRange.end)
+    : attendanceInsights.current.logs;
   const attendanceInsightMeta = attendanceInsightModal ? {
-    attendance: { title: 'Attendance Records This Month', description: `Worked records used in the ${attendanceInsights.current.attendanceRate}% attendance rate.`, tone: 'text-emerald-600', empty: 'No worked attendance records this month.' },
-    late: { title: 'Late Records This Month', description: 'All current-month attendance records tagged Late.', tone: 'text-orange-600', empty: 'No late records this month.' },
-    absent: { title: 'Absent Records This Month', description: 'All current-month attendance records tagged Absent.', tone: 'text-rose-600', empty: 'No absent records this month.' },
-    leave: { title: 'Leave Records This Month', description: 'All current-month settled leave-day attendance records.', tone: 'text-blue-600', empty: 'No leave records this month.' },
+    attendance: { title: `Present Records · ${attendanceInsightScopeLabel}`, description: 'On-time attendance records in the selected period.', tone: 'text-emerald-600', empty: 'No on-time attendance records for this period.' },
+    late: { title: `Late Records · ${attendanceInsightScopeLabel}`, description: 'Attendance records tagged Late in the selected period.', tone: 'text-orange-600', empty: 'No late records for this period.' },
+    absent: { title: `Absent Records · ${attendanceInsightScopeLabel}`, description: 'Attendance records tagged Absent in the selected period.', tone: 'text-rose-600', empty: 'No absent records for this period.' },
+    leave: { title: `Leave Records · ${attendanceInsightScopeLabel}`, description: 'Leave-day attendance records in the selected period.', tone: 'text-blue-600', empty: 'No leave records for this period.' },
   }[attendanceInsightModal] : null;
 
   const attendanceInsightRecords = attendanceInsightModal === 'attendance'
-    ? attendanceInsights.current.logs.filter((log) => {
+    ? attendanceInsightScopeLogs.filter((log) => {
         const status = log.status?.toLowerCase() ?? '';
-        return status !== 'absent' && !status.includes('leave');
+        return status !== 'late' && status !== 'absent' && !status.includes('leave');
       })
     : attendanceInsightModal === 'late'
-      ? attendanceInsights.current.logs.filter((log) => log.status?.toLowerCase() === 'late')
+      ? attendanceInsightScopeLogs.filter((log) => log.status?.toLowerCase() === 'late')
       : attendanceInsightModal === 'absent'
-        ? attendanceInsights.current.logs.filter((log) => log.status?.toLowerCase() === 'absent')
+        ? attendanceInsightScopeLogs.filter((log) => log.status?.toLowerCase() === 'absent')
         : attendanceInsightModal === 'leave'
-          ? attendanceInsights.current.logs.filter((log) => log.status?.toLowerCase().includes('leave'))
+          ? attendanceInsightScopeLogs.filter((log) => log.status?.toLowerCase().includes('leave'))
           : [];
 
   const approvedLeavesToday = leaveRequests.filter(
@@ -2122,7 +2222,7 @@ export default function HRDashboard() {
         </div></section>
 
         {/* HR modules keep their existing handlers while sharing one visual language. */}
-        <section aria-labelledby="hr-quick-actions-title"><div className="mb-3"><h2 id="hr-quick-actions-title" className="text-base font-semibold sm:text-lg">HR Quick Actions</h2><p className="mt-0.5 text-xs text-slate-500 dark:text-slate-300">Frequently used people operations tools</p></div><div className="grid grid-cols-3 gap-2 sm:grid-cols-4 sm:gap-3 lg:grid-cols-5">
+        <section hidden aria-labelledby="hr-quick-actions-title"><div className="mb-3"><h2 id="hr-quick-actions-title" className="text-base font-semibold sm:text-lg">HR Quick Actions</h2><p className="mt-0.5 text-xs text-slate-500 dark:text-slate-300">Frequently used people operations tools</p></div><div className="grid grid-cols-3 gap-2 sm:grid-cols-4 sm:gap-3 lg:grid-cols-5">
           {[
             { title: 'Leave Requests', description: pendingLeaveCount ? `${pendingLeaveCount} pending` : 'All clear', icon: CalendarCheck2, tone: 'from-blue-500 to-indigo-700', action: () => { setSelectedLeaveDetail(null); setLeaveHistoryModalOpen(true); }, warning: pendingLeaveCount > 0, count: pendingLeaveCount },
             { title: 'Attendance Disputes', description: pendingDisputesCount ? `${pendingDisputesCount} pending` : 'All clear', icon: BadgeAlert, tone: 'from-orange-500 to-red-700', action: () => { setSelectedDisputeDetail(null); setDisputesHistoryModalOpen(true); }, warning: pendingDisputesCount > 0, count: pendingDisputesCount },
@@ -2137,17 +2237,19 @@ export default function HRDashboard() {
           ].map(({ title, description, icon: Icon, tone, action, warning, count }) => <button key={title} type="button" onClick={action} className="group relative flex min-h-28 min-w-0 flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border border-slate-200 bg-white px-1.5 py-3 text-center shadow-[0_5px_16px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:border-green-300 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 dark:border-slate-700 dark:bg-[#292f2b] dark:hover:border-green-700"><span className={`relative grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br text-white shadow-lg ring-1 ring-black/10 ${warning ? 'from-amber-500 to-orange-700' : tone}`}><span className="absolute inset-[3px] rounded-[13px] border border-white/35"/><Icon size={24} strokeWidth={3}/>{typeof count === 'number' && count > 0 && <span className="absolute -right-2 -top-2 grid h-6 min-w-6 place-items-center rounded-full border-2 border-white bg-rose-600 px-1 text-[10px] font-black text-white shadow dark:border-[#292f2b]">{count > 99 ? '99+' : count}</span>}</span><span className="line-clamp-2 text-[10px] font-extrabold leading-tight text-slate-900 dark:text-white sm:text-xs">{title}</span><span className={`hidden max-w-full truncate text-[10px] sm:block ${warning ? 'font-bold text-orange-700 dark:text-orange-300' : 'text-slate-500 dark:text-slate-300'}`}>{description}</span><span className={`absolute inset-x-4 bottom-0 h-0.5 rounded-t-full bg-gradient-to-r ${warning ? 'from-amber-500 to-orange-700' : tone}`} aria-hidden="true" /></button>)}
         </div></section>
 
-        <section className="card-style !p-4">
-          <div className="flex items-start justify-between gap-3"><div><h3 className="text-sm mb-0">Attendance Insights</h3><p className="mt-0.5 text-[10px] text-slate-400">Current-month performance</p></div><button type="button" onClick={() => setAttendanceInsightModal('attendance')} className="inline-flex min-h-11 items-center gap-1 rounded-full px-3 text-xs font-bold text-green-700 hover:bg-green-50 dark:text-green-300">View Insights <ChevronRight size={15}/></button></div>
-          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {[
-              { key: 'attendance' as const, label: 'Attendance Rate', value: `${attendanceInsights.current.attendanceRate}%`, tone: 'text-emerald-600' },
-              { key: 'late' as const, label: 'Late', value: attendanceInsights.current.late, tone: 'text-orange-600' },
-              { key: 'absent' as const, label: 'Absent', value: attendanceInsights.current.absent, tone: 'text-rose-600' },
-              { key: 'leave' as const, label: 'Leave', value: attendanceInsights.current.leave, tone: 'text-blue-600' },
-            ].map((item) => <button type="button" key={item.key} onClick={() => setAttendanceInsightModal(item.key)} className="min-h-16 rounded-xl border border-slate-100 bg-slate-50 p-2.5 text-left transition hover:bg-white dark:border-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700" aria-label={`View ${item.label}`}><p className={`stat-number text-lg leading-none ${item.tone}`}>{item.value}</p><p className="mt-1 text-[10px] font-bold text-slate-600 dark:text-slate-200">{item.label}</p></button>)}
-          </div>
-        </section>
+        <div className="grid gap-3 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,.85fr)]">
+          <section className="card-style min-w-0 !p-4" aria-labelledby="attendance-trend-title">
+            <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 id="attendance-trend-title" className="text-base font-semibold">Attendance Trend</h2><p className="mt-0.5 text-xs text-slate-500">Attendance records across the selected period</p></div><div className="flex flex-wrap items-center justify-end gap-2"><MonthCalendarPicker value={attendanceChartMonth} onChange={setAttendanceChartMonth} /><div className="flex items-center gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">{(['daily', 'weekly', 'monthly'] as const).map((mode) => <button type="button" key={mode} onClick={() => setAttendanceChartMode(mode)} className={`rounded-lg px-2.5 py-1.5 text-[10px] font-bold capitalize transition ${attendanceChartMode === mode ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white' : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>{mode}</button>)}</div></div></div>
+            <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-semibold text-slate-500"><span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-green-600" />Present</span><span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-amber-500" />Late</span><span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-blue-500" />Leave</span><span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-rose-500" />Absent</span></div>
+            <div className="attendance-analytics-chart mt-2 h-64 min-w-0">{attendanceTrendData.some((row) => row.present || row.late || row.leave || row.absent) ? <ResponsiveContainer width="100%" height="100%"><BarChart data={attendanceTrendData} tabIndex={-1} style={{ outline: 'none' }} margin={{ top: 10, right: 6, left: -18, bottom: 0 }} barCategoryGap={attendanceChartMode === 'daily' ? '18%' : '28%'}><CartesianGrid stroke={chartLineColor} strokeDasharray="4 4" vertical={false} />{attendanceChartMode === 'daily' && attendanceTrendData.filter((row) => row.isWeekend).map((row) => <ReferenceArea key={row.key} x1={row.label} x2={row.label} fill="#94a3b8" fillOpacity={darkMode ? 0.22 : 0.14} stroke="none" />)}<XAxis dataKey="label" interval={attendanceChartMode === 'daily' ? 2 : 0} tick={({ x, y, payload }: { x?: string | number; y?: string | number; payload?: { value?: string } }) => { const label = String(payload?.value ?? ''); const weekend = attendanceTrendData.find((row) => row.label === label)?.isWeekend; return <text x={x} y={(Number(y) || 0) + 14} textAnchor="middle" fontSize={10} fontWeight={weekend ? 700 : 500} fill={weekend ? (darkMode ? '#cbd5e1' : '#475569') : chartTextColor}>{label}</text>; }} tickLine={false} axisLine={{ stroke: chartLineColor }} /><YAxis domain={[0, Math.max(1, profiles.length)]} tick={{ fontSize: 10, fill: chartTextColor }} tickLine={false} axisLine={false} allowDecimals={false} /><Tooltip content={attendanceTooltipContent} cursor={{ fill: darkMode ? 'rgba(148,163,184,.16)' : 'rgba(148,163,184,.08)' }} /><Bar dataKey="present" name="Present" stackId="attendance" fill="#16a34a" isAnimationActive animationDuration={550} className="cursor-pointer" onClick={(row: any) => openAttendanceChartDetail('attendance', row)} /><Bar dataKey="late" name="Late" stackId="attendance" fill="#f59e0b" isAnimationActive animationDuration={550} className="cursor-pointer" onClick={(row: any) => openAttendanceChartDetail('late', row)} /><Bar dataKey="leave" name="Leave" stackId="attendance" fill="#3b82f6" isAnimationActive animationDuration={550} className="cursor-pointer" onClick={(row: any) => openAttendanceChartDetail('leave', row)} /><Bar dataKey="absent" name="Absent" stackId="attendance" fill="#f43f5e" radius={[5, 5, 0, 0]} isAnimationActive animationDuration={550} className="cursor-pointer" onClick={(row: any) => openAttendanceChartDetail('absent', row)} /></BarChart></ResponsiveContainer> : <div className="grid h-full place-items-center text-center text-sm text-slate-400">No attendance records for this period.</div>}</div>
+          </section>
+
+          <section className="card-style min-w-0 !p-4" aria-labelledby="attendance-distribution-title">
+            <div className="flex items-start justify-between gap-3"><div><h2 id="attendance-distribution-title" className="text-base font-semibold">Attendance Overview</h2><p className="mt-0.5 text-xs text-slate-500">Current-month attendance logs</p></div><button type="button" onClick={() => setAttendanceInsightModal('attendance')} className="inline-flex min-h-9 items-center gap-1 rounded-full px-2 text-[10px] font-bold text-green-700 hover:bg-green-50 dark:text-green-300">Details <ChevronRight size={14}/></button></div>
+            <div className="attendance-analytics-chart relative mx-auto mt-2 h-48 max-w-[290px]" aria-label="Current-month attendance record distribution">{attendanceChartData.length > 0 ? <ResponsiveContainer width="100%" height="100%"><PieChart style={{ outline: 'none' }}><Pie data={attendanceChartData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={52} outerRadius={76} paddingAngle={4} stroke="none" isAnimationActive animationDuration={620} onMouseLeave={() => setActiveAttendanceSlice(undefined)} rootTabIndex={-1}>{attendanceChartData.map((item, index) => <Cell key={item.key} fill={item.color} opacity={activeAttendanceSlice === undefined || activeAttendanceSlice === index ? 1 : 0.32} onMouseEnter={() => setActiveAttendanceSlice(index)} />)}</Pie></PieChart></ResponsiveContainer> : <div className="grid h-full place-items-center text-center text-sm text-slate-400">No attendance records<br />this month.</div>}{attendanceChartData.length > 0 && <div className="pointer-events-none absolute inset-0 grid place-items-center text-center"><p className="stat-number text-3xl leading-none text-slate-900 dark:text-white">{attendanceInsights.current.logs.length}</p></div>}</div>
+            {attendanceChartData.length > 0 && <div className="mt-1 grid grid-cols-2 gap-1.5">{attendanceChartData.map((item) => <button type="button" key={item.key} onClick={() => setAttendanceInsightModal(item.key as 'attendance' | 'late' | 'leave' | 'absent')} className="flex items-center justify-between rounded-xl px-2 py-1.5 text-left text-[11px] transition hover:bg-slate-50 dark:hover:bg-slate-800"><span className="flex min-w-0 items-center gap-2 text-slate-600 dark:text-slate-300"><i className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: item.color }} /><span className="truncate">{item.name}</span></span><b className="tabular-nums text-slate-800 dark:text-white">{item.value} · {Math.round(item.value / attendanceInsights.current.logs.length * 100)}%</b></button>)}</div>}
+          </section>
+        </div>
 
         <AttendanceInsightsModal modal={attendanceInsightModal} meta={attendanceInsightMeta} records={attendanceInsightRecords} initials={initials} setModal={setAttendanceInsightModal} />
 
