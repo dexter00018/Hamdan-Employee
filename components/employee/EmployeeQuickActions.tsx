@@ -1,7 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   CalendarDays,
   CircleAlert,
@@ -13,6 +13,7 @@ import {
   Plane,
   TimerReset,
 } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 const ManpowerTrackerModal = dynamic(() => import('@/components/employee/modals/ManpowerTrackerModal'));
 
@@ -26,6 +27,7 @@ type Props = {
   onCompanyCalendar: () => void;
   onHelpdesk: () => void;
   designation: string | null | undefined;
+  ready: boolean;
 };
 
 export default function EmployeeQuickActions({
@@ -38,9 +40,33 @@ export default function EmployeeQuickActions({
   onCompanyCalendar,
   onHelpdesk,
   designation,
+  ready,
 }: Props) {
   const [manpowerOpen, setManpowerOpen] = useState(false);
+  const manpowerPromptCheckedRef = useRef(false);
   const manpowerRestricted = ['IT MANAGER', 'HR MANAGER'].includes((designation || '').trim().toUpperCase());
+
+  useEffect(() => {
+    if (!ready || manpowerRestricted || manpowerPromptCheckedRef.current) return;
+    manpowerPromptCheckedRef.current = true;
+    let cancelled = false;
+
+    const promptForManpowerWhenNeeded = async () => {
+      const { data: authData } = await supabase.auth.getUser();
+      if (!authData.user || cancelled) return;
+      const { data: activeSession, error } = await supabase
+        .from('manpower_sessions')
+        .select('id')
+        .eq('user_id', authData.user.id)
+        .is('ended_at', null)
+        .limit(1)
+        .maybeSingle();
+      if (!cancelled && !error && !activeSession) setManpowerOpen(true);
+    };
+
+    void promptForManpowerWhenNeeded();
+    return () => { cancelled = true; };
+  }, [ready, manpowerRestricted]);
 
   const actions = [
     { label: 'Manpower Tracker', icon: TimerReset, action: () => setManpowerOpen(true), tone: 'from-green-500 to-emerald-700 shadow-green-500/20', disabled: manpowerRestricted, title: manpowerRestricted ? 'Manpower Tracker is not assigned to this designation.' : undefined },

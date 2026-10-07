@@ -2432,6 +2432,7 @@ export default function EmployeeDashboard() {
               onCompanyCalendar={() => { setCalendarModalOpen(true); fetchCompanyHolidays(); }}
               onHelpdesk={() => { setSupportModalOpen(true); fetchSupportRequests(); }}
               designation={profile?.designation}
+              ready={!initLoading}
             />
 
             {/* Attendance History -- collapsed by default; tap the header to expand. */}
