@@ -6,7 +6,7 @@ import ModalShell from '@/components/shared/ModalShell';
 import { supabase } from '@/lib/supabase';
 
 type Props = { open: boolean; onClose: () => void; userId: string | null };
-type Request = { id: string; eligible_hours: number; status: string; time_out_at: string; created_at: string };
+type Request = { id: string; eligible_hours: number; status: string; time_out_at: string; scheduled_end_at: string; created_at: string; reviewed_at: string | null; hr_notes: string | null };
 type Transaction = { kind: 'earned' | 'used' | 'converted'; hours: number; minutes: number };
 type LateRecord = { id: string; log_date: string; time_in: string | null };
 type EarlyOutRecord = { id: string; log_date: string; time_out: string | null; early_out_offset_minutes: number };
@@ -52,6 +52,14 @@ function dateLabel(value: string) {
   return new Date(`${value}T00:00:00+08:00`).toLocaleDateString('en-US', {
     month: 'long', day: 'numeric', year: 'numeric',
   });
+}
+
+function earnedOffsetDetail(request: Request) {
+  const rawMinutes = Math.max(0, Math.floor((Date.parse(request.time_out_at) - Date.parse(request.scheduled_end_at)) / 60000));
+  const credit = request.status === 'Approved' ? `${request.eligible_hours}h credited` : request.status === 'Pending' ? `${request.eligible_hours}h pending HR approval` : `${request.eligible_hours}h not credited`;
+  const decision = request.reviewed_at ? ` · ${request.status} ${submittedLabel(request.reviewed_at)}` : '';
+  const note = request.hr_notes ? ` · ${request.hr_notes}` : '';
+  return `Out ${timeLabel(request.time_out_at)} · ${formatOffsetMinutes(rawMinutes)} after 7:00 PM · ${credit}${decision}${note}`;
 }
 
 function currentAndPreviousCalendarMonths() {
@@ -111,7 +119,7 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
     setLoading(true);
 
     const [requestRes, transactionRes, lateRes, earlyRecordsRes, usageRes, earlyOutRes, leaveRes, settingRes] = await Promise.all([
-      supabase.from('offset_requests').select('id,eligible_hours,status,time_out_at,created_at').eq('user_id', userId).order('created_at', { ascending: false }),
+      supabase.from('offset_requests').select('id,eligible_hours,status,time_out_at,scheduled_end_at,created_at,reviewed_at,hr_notes').eq('user_id', userId).order('created_at', { ascending: false }),
       supabase.from('offset_transactions').select('kind,hours,minutes').eq('user_id', userId),
       supabase.from('attendance_logs').select('id,log_date,time_in').eq('user_id', userId).eq('status', 'Late').gte('log_date', cutoff.start).lte('log_date', cutoff.end).order('log_date', { ascending: false }),
       supabase.from('attendance_logs').select('id,log_date,time_out,early_out_offset_minutes').eq('user_id', userId).gte('log_date', cutoff.start).lte('log_date', cutoff.end).not('time_out', 'is', null).order('log_date', { ascending: false }),
@@ -196,7 +204,7 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
       const usageText = request.status === 'Approved' ? `Used ${formatOffsetMinutes(request.required_minutes)}` : request.status === 'Pending' ? `Reserves ${formatOffsetMinutes(request.required_minutes)}` : 'No deduction';
       return { id: `early-${request.id}`, createdAt: request.created_at, title: `Early Out${record?.log_date ? ` · ${record.log_date}` : ''}`, detail: `Original out ${timeLabel(record?.time_out)} · ${usageText}`, status: request.status };
     });
-    const earnedItems = requests.map((request) => ({ id: `earned-${request.id}`, createdAt: request.created_at, title: `Earned ${request.eligible_hours}h Offset`, detail: `Time Out ${submittedLabel(request.time_out_at)}`, status: request.status }));
+    const earnedItems = requests.map((request) => ({ id: `earned-${request.id}`, createdAt: request.created_at, title: `OT / Earned Offset · ${request.eligible_hours}h`, detail: earnedOffsetDetail(request), status: request.status }));
     return [...leaveItems, ...lateItems, ...earlyItems, ...earnedItems].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [offsetLeaves, usageRequests, earlyOutRequests, requests, lateRecordMap, earlyRecordMap]);
 
