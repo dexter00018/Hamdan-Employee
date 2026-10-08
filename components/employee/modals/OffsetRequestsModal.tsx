@@ -12,8 +12,8 @@ type LateRecord = { id: string; log_date: string; time_in: string | null };
 type EarlyOutRecord = { id: string; log_date: string; time_out: string | null; early_out_offset_minutes: number };
 type UsageRequest = { id: string; attendance_log_id: string; hours: number; required_minutes: number | null; status: string; created_at: string; reviewed_at: string | null; hr_notes: string | null };
 type EarlyOutRequest = { id: string; attendance_log_id: string; required_minutes: number; status: string; created_at: string; reviewed_at: string | null; hr_notes: string | null };
-type OffsetLeave = { id: string; leave_type: string; start_date: string; status: string; offset_minutes_required: number; offset_charged_at: string | null; offset_refunded_at: string | null; created_at: string };
-type HistoryItem = { id: string; createdAt: string; title: string; detail: string; status: string };
+type OffsetLeave = { id: string; leave_type: string; start_date: string; status: string; offset_minutes_required: number; offset_charged_at: string | null; offset_refunded_at: string | null; reviewed_at: string | null; created_at: string };
+type HistoryItem = { id: string; createdAt: string; title: string; detail: string; status: string; workDate: string; reviewedAt: string | null };
 type UsePanel = 'late' | 'early' | null;
 
 const REQUIRED_LEAVE_MINUTES = 9 * 60;
@@ -52,6 +52,19 @@ function dateLabel(value: string) {
   return new Date(`${value}T00:00:00+08:00`).toLocaleDateString('en-US', {
     month: 'long', day: 'numeric', year: 'numeric',
   });
+}
+
+function eventDateLabel(value: string | null | undefined) {
+  if (!value) return '—';
+  return new Date(value).toLocaleDateString('en-US', {
+    timeZone: 'Asia/Manila', month: 'long', day: 'numeric', year: 'numeric',
+  });
+}
+
+function historyReviewLabel(item: HistoryItem) {
+  if (!item.reviewedAt) return item.status === 'Pending' ? 'Awaiting HR approval' : 'Review date unavailable';
+  const action = item.status === 'Approved' ? 'Approved' : item.status === 'Rejected' ? 'Rejected' : 'Reviewed';
+  return `${action}: ${submittedLabel(item.reviewedAt)}`;
 }
 
 function earnedOffsetDetail(request: Request) {
@@ -125,7 +138,7 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
       supabase.from('attendance_logs').select('id,log_date,time_out,early_out_offset_minutes').eq('user_id', userId).gte('log_date', cutoff.start).lte('log_date', cutoff.end).not('time_out', 'is', null).order('log_date', { ascending: false }),
       supabase.from('offset_usage_requests').select('id,attendance_log_id,hours,required_minutes,status,created_at,reviewed_at,hr_notes').eq('user_id', userId).order('created_at', { ascending: false }),
       supabase.from('early_out_offset_requests').select('id,attendance_log_id,required_minutes,status,created_at,reviewed_at,hr_notes').eq('user_id', userId).order('created_at', { ascending: false }),
-      supabase.from('leave_requests').select('id,leave_type,start_date,status,offset_minutes_required,offset_charged_at,offset_refunded_at,created_at').eq('user_id', userId).eq('funding_source', 'offset').order('created_at', { ascending: false }),
+      supabase.from('leave_requests').select('id,leave_type,start_date,status,offset_minutes_required,offset_charged_at,offset_refunded_at,reviewed_at,created_at').eq('user_id', userId).eq('funding_source', 'offset').order('created_at', { ascending: false }),
       supabase.from('app_settings').select('value').eq('key', 'time_out_reminder_hour').maybeSingle(),
     ]);
 
@@ -192,19 +205,31 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
     const leaveItems = offsetLeaves.map((leave) => ({
       id: `leave-${leave.id}`, createdAt: leave.created_at, title: `${leave.leave_type} Leave · ${leave.start_date}`,
       detail: leave.offset_refunded_at ? '9h refunded' : leave.offset_charged_at ? '9h deducted' : '9h reserved', status: leave.status,
+      workDate: dateLabel(leave.start_date), reviewedAt: leave.reviewed_at,
     }));
     const lateItems = usageRequests.map((request) => {
       const record = lateRecordMap.get(request.attendance_log_id);
       const minutes = Number(request.required_minutes ?? request.hours * 60);
       const usageText = request.status === 'Approved' ? `Used ${formatOffsetMinutes(minutes)}` : request.status === 'Pending' ? `Reserves ${formatOffsetMinutes(minutes)}` : 'No deduction';
-      return { id: `late-${request.id}`, createdAt: request.created_at, title: `Late${record?.log_date ? ` · ${record.log_date}` : ''}`, detail: `Original ${timeLabel(record?.time_in)} · ${usageText}`, status: request.status };
+      return {
+        id: `late-${request.id}`, createdAt: request.created_at, title: `Late${record?.log_date ? ` · ${record.log_date}` : ''}`,
+        detail: `Original ${timeLabel(record?.time_in)} · ${usageText}`, status: request.status,
+        workDate: record?.log_date ? dateLabel(record.log_date) : '—', reviewedAt: request.reviewed_at,
+      };
     });
     const earlyItems = earlyOutRequests.map((request) => {
       const record = earlyRecordMap.get(request.attendance_log_id);
       const usageText = request.status === 'Approved' ? `Used ${formatOffsetMinutes(request.required_minutes)}` : request.status === 'Pending' ? `Reserves ${formatOffsetMinutes(request.required_minutes)}` : 'No deduction';
-      return { id: `early-${request.id}`, createdAt: request.created_at, title: `Early Out${record?.log_date ? ` · ${record.log_date}` : ''}`, detail: `Original out ${timeLabel(record?.time_out)} · ${usageText}`, status: request.status };
+      return {
+        id: `early-${request.id}`, createdAt: request.created_at, title: `Early Out${record?.log_date ? ` · ${record.log_date}` : ''}`,
+        detail: `Original out ${timeLabel(record?.time_out)} · ${usageText}`, status: request.status,
+        workDate: record?.log_date ? dateLabel(record.log_date) : '—', reviewedAt: request.reviewed_at,
+      };
     });
-    const earnedItems = requests.map((request) => ({ id: `earned-${request.id}`, createdAt: request.created_at, title: `OT / Earned Offset · ${request.eligible_hours}h`, detail: earnedOffsetDetail(request), status: request.status }));
+    const earnedItems = requests.map((request) => ({
+      id: `earned-${request.id}`, createdAt: request.created_at, title: `OT / Earned Offset · ${request.eligible_hours}h`,
+      detail: earnedOffsetDetail(request), status: request.status, workDate: eventDateLabel(request.scheduled_end_at), reviewedAt: request.reviewed_at,
+    }));
     return [...leaveItems, ...lateItems, ...earlyItems, ...earnedItems].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [offsetLeaves, usageRequests, earlyOutRequests, requests, lateRecordMap, earlyRecordMap]);
 
@@ -304,7 +329,7 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
         <section>
           <div className="mb-2"><h3 className="text-sm font-bold text-slate-900 dark:text-white">Offset History</h3><p className="text-[10px] text-slate-500">Earned and used Offset</p></div>
           {loading ? <p className="py-4 text-center text-xs text-slate-500">Loading…</p> : visibleHistory.length ? (
-            <div className="space-y-1.5">{visibleHistory.map((item) => <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-[#303632]"><div className="min-w-0"><p className="text-xs font-semibold text-slate-900 dark:text-white">{item.title}</p><p className="mt-0.5 text-[10px] text-slate-500">{item.detail}</p></div><span className={`shrink-0 rounded-full px-2 py-1 text-[9px] font-bold ${statusClass(item.status)}`}>{item.status}</span></div>)}</div>
+            <div className="space-y-1.5">{visibleHistory.map((item) => <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-[#303632]"><div className="min-w-0"><p className="text-xs font-semibold text-slate-900 dark:text-white">{item.title}</p><p className="mt-0.5 text-[10px] font-medium text-slate-600 dark:text-slate-300">Work date: {item.workDate} · {historyReviewLabel(item)}</p><p className="mt-0.5 text-[10px] text-slate-500">{item.detail}</p></div><span className={`shrink-0 rounded-full px-2 py-1 text-[9px] font-bold ${statusClass(item.status)}`}>{item.status}</span></div>)}</div>
           ) : <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-xs text-slate-500">No offset history.</p>}
           {historyPages > 1 && <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-2"><button onClick={() => setHistoryPage((p) => Math.max(0, p - 1))} disabled={safeHistoryPage === 0} className="text-[10px] font-bold disabled:opacity-30">Previous</button><span className="text-[10px] text-slate-400">{safeHistoryPage + 1}/{historyPages}</span><button onClick={() => setHistoryPage((p) => Math.min(historyPages - 1, p + 1))} disabled={safeHistoryPage >= historyPages - 1} className="text-[10px] font-bold disabled:opacity-30">Next</button></div>}
         </section>
