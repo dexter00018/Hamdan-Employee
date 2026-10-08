@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase';
 type Project = { id: string; name: string; project_code: string | null };
 type Session = { id: string; project_id: string; started_at: string; ended_at: string | null };
 type LunchPause = { project_id: string; resumed_at: string | null };
+type ManpowerAdjustment = { project_id: string; delta_minutes: number; work_date: string };
 type ShiftStatus = 'not_started' | 'active' | 'completed';
 type Props = { open: boolean; onClose: () => void };
 
@@ -46,6 +47,7 @@ function clippedDuration(session: Session, start: Date, end: Date, now: Date) {
 export default function ManpowerTrackerModal({ open, onClose }: Props) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [adjustments, setAdjustments] = useState<ManpowerAdjustment[]>([]);
   const [activeSession, setActiveSession] = useState<Session | null>(null);
   const [lunchPause, setLunchPause] = useState<LunchPause | null>(null);
   const [shiftStatus, setShiftStatus] = useState<ShiftStatus>('not_started');
@@ -67,12 +69,13 @@ export default function ManpowerTrackerModal({ open, onClose }: Props) {
 
     const date = todayManilaDate();
     const { start, end } = dayBounds(date);
-    const [projectRes, activeRes, sessionRes, attendanceRes, lunchRes] = await Promise.all([
+    const [projectRes, activeRes, sessionRes, attendanceRes, lunchRes, adjustmentRes] = await Promise.all([
       supabase.from('manpower_projects').select('id,name,project_code').eq('is_active', true).order('name'),
       supabase.from('manpower_sessions').select('id,project_id,started_at,ended_at').eq('user_id', user.id).is('ended_at', null).order('started_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('manpower_sessions').select('id,project_id,started_at,ended_at').eq('user_id', user.id).lt('started_at', end.toISOString()).or(`ended_at.is.null,ended_at.gte.${start.toISOString()}`).order('started_at', { ascending: true }),
       supabase.from('attendance_logs').select('time_in,time_out').eq('user_id', user.id).eq('log_date', date).maybeSingle(),
       supabase.from('manpower_lunch_pauses').select('project_id,resumed_at').eq('user_id', user.id).eq('lunch_date', date).maybeSingle(),
+      supabase.from('manpower_time_adjustments').select('project_id,delta_minutes,work_date').eq('user_id', user.id).order('work_date', { ascending: false }).limit(6),
     ]);
 
     if (projectRes.error) console.error('Error fetching manpower projects:', projectRes.error);
@@ -80,12 +83,14 @@ export default function ManpowerTrackerModal({ open, onClose }: Props) {
     if (sessionRes.error) console.error('Error fetching manpower sessions:', sessionRes.error);
     if (attendanceRes.error) console.error('Error fetching attendance shift:', attendanceRes.error);
     if (lunchRes.error) console.error('Error fetching manpower lunch pause:', lunchRes.error);
+    if (adjustmentRes.error) console.error('Error fetching manpower adjustments:', adjustmentRes.error);
 
     const attendance = attendanceRes.data;
     setShiftStatus(!attendance?.time_in ? 'not_started' : attendance.time_out ? 'completed' : 'active');
     setProjects((projectRes.data || []) as Project[]);
     setActiveSession((activeRes.data || null) as Session | null);
     setSessions((sessionRes.data || []) as Session[]);
+    setAdjustments((adjustmentRes.data || []) as ManpowerAdjustment[]);
     setLunchPause((lunchRes.data || null) as LunchPause | null);
     setNow(new Date());
     if (!silent) setLoading(false);
@@ -105,7 +110,8 @@ export default function ManpowerTrackerModal({ open, onClose }: Props) {
   const projectMap = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
   const currentProject = activeSession ? projectMap.get(activeSession.project_id) : null;
   const pausedProject = lunchPause ? projectMap.get(lunchPause.project_id) : null;
-  const bounds = dayBounds(todayManilaDate());
+  const currentDate = todayManilaDate();
+  const bounds = dayBounds(currentDate);
   const localMinutes = manilaMinutes(now);
   const beforeTrackerStart = localMinutes < 9 * 60;
   const lunchBreak = localMinutes >= 12 * 60 && localMinutes < 13 * 60;
@@ -115,15 +121,25 @@ export default function ManpowerTrackerModal({ open, onClose }: Props) {
   const canSelectProject = shiftActive && !lunchBreak && !cutoffReached;
 
   const projectTotals = useMemo(() => {
-    const totals = new Map<string, number>();
+    const totals = new Map<string, { duration: number; adjustmentMinutes: number }>();
     for (const session of sessions) {
       const duration = clippedDuration(session, bounds.start, bounds.end, now);
-      totals.set(session.project_id, (totals.get(session.project_id) || 0) + duration);
+      const existing = totals.get(session.project_id) || { duration: 0, adjustmentMinutes: 0 };
+      existing.duration += duration;
+      totals.set(session.project_id, existing);
+    }
+    for (const adjustment of adjustments) {
+      if (adjustment.work_date !== currentDate) continue;
+      const existing = totals.get(adjustment.project_id) || { duration: 0, adjustmentMinutes: 0 };
+      existing.duration += Number(adjustment.delta_minutes || 0) * 60_000;
+      existing.adjustmentMinutes += Number(adjustment.delta_minutes || 0);
+      totals.set(adjustment.project_id, existing);
     }
     return [...totals.entries()]
-      .map(([projectId, duration]) => ({ projectId, duration, project: projectMap.get(projectId) }))
+      .map(([projectId, total]) => ({ projectId, ...total, project: projectMap.get(projectId) }))
+      .filter((item) => item.duration > 0)
       .sort((a, b) => b.duration - a.duration);
-  }, [sessions, bounds.start, bounds.end, now, projectMap]);
+  }, [sessions, adjustments, currentDate, bounds.start, bounds.end, now, projectMap]);
 
   const todayTotal = projectTotals.reduce((sum, item) => sum + item.duration, 0);
   const activeElapsed = activeSession ? Math.max(0, now.getTime() - new Date(activeSession.started_at).getTime()) : 0;
@@ -202,7 +218,7 @@ export default function ManpowerTrackerModal({ open, onClose }: Props) {
           )}
         </section>
 
-        <section className="border-t border-slate-100 pt-4 dark:border-slate-800"><div className="mb-2 flex items-end justify-between gap-3"><div><h3 className="text-sm font-bold text-slate-900 dark:text-white">Today by project</h3><p className="text-[11px] text-slate-500">You can pre-select after Time In. Tracking begins at 9:00 AM; lunch from 12:00 PM to 1:00 PM is excluded automatically.</p></div><span className="rounded-full bg-cyan-50 px-2.5 py-1 text-[11px] font-bold text-cyan-700 dark:bg-cyan-950/35 dark:text-cyan-300">{formatDuration(todayTotal)}</span></div>{projectTotals.length === 0 ? <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-xs text-slate-500 dark:bg-[#303632]">No project time recorded today.</p> : <div className="space-y-2">{projectTotals.map((item) => <div key={item.projectId} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-[#303632]"><div className="min-w-0"><p className="truncate text-xs font-semibold text-slate-900 dark:text-white">{item.project?.name || 'Inactive project'}</p>{item.project?.project_code && <p className="mt-0.5 text-[10px] text-slate-500">{item.project.project_code}</p>}</div><span className="flex-none font-mono text-xs font-bold text-slate-700 dark:text-slate-200">{formatDuration(item.duration)}</span></div>)}</div>}</section>
+        <section className="border-t border-slate-100 pt-4 dark:border-slate-800"><div className="mb-2 flex items-end justify-between gap-3"><div><h3 className="text-sm font-bold text-slate-900 dark:text-white">Today by project</h3><p className="text-[11px] text-slate-500">Includes approved Super Admin time corrections. Tracking begins at 9:00 AM; lunch from 12:00 PM to 1:00 PM is excluded automatically.</p></div><span className="rounded-full bg-cyan-50 px-2.5 py-1 text-[11px] font-bold text-cyan-700 dark:bg-cyan-950/35 dark:text-cyan-300">{formatDuration(todayTotal)}</span></div>{projectTotals.length === 0 ? <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-xs text-slate-500 dark:bg-[#303632]">No project time recorded today.</p> : <div className="space-y-2">{projectTotals.map((item) => <div key={item.projectId} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-[#303632]"><div className="min-w-0"><p className="truncate text-xs font-semibold text-slate-900 dark:text-white">{item.project?.name || 'Inactive project'}</p>{item.project?.project_code && <p className="mt-0.5 text-[10px] text-slate-500">{item.project.project_code}</p>}{item.adjustmentMinutes !== 0 && <p className={`mt-0.5 text-[10px] font-semibold ${item.adjustmentMinutes > 0 ? 'text-emerald-600 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300'}`}>Audited correction: {item.adjustmentMinutes > 0 ? '+' : ''}{item.adjustmentMinutes} min</p>}</div><span className="flex-none font-mono text-xs font-bold text-slate-700 dark:text-slate-200">{formatDuration(item.duration)}</span></div>)}</div>}{adjustments.length > 0 && <div className="mt-4 border-t border-slate-100 pt-3 dark:border-slate-800"><p className="text-xs font-bold text-slate-800 dark:text-slate-100">Recent approved corrections</p><div className="mt-2 space-y-1.5">{adjustments.map((adjustment, index) => <div key={`${adjustment.work_date}-${adjustment.project_id}-${index}`} className="flex items-center justify-between gap-3 text-[11px]"><span className="min-w-0 truncate text-slate-500 dark:text-slate-400">{adjustment.work_date} · {projectMap.get(adjustment.project_id)?.name || 'Inactive project'}</span><span className={`flex-none font-bold ${adjustment.delta_minutes > 0 ? 'text-emerald-600 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300'}`}>{adjustment.delta_minutes > 0 ? '+' : ''}{adjustment.delta_minutes} min</span></div>)}</div></div>}</section>
       </div>
     </ModalShell>
   );
