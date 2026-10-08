@@ -86,6 +86,7 @@ export default function SuperAdminManpowerTrackerModal({ open, onClose }: Props)
   const [adjustmentEmployeeId, setAdjustmentEmployeeId] = useState('');
   const [adjustmentProjectId, setAdjustmentProjectId] = useState('');
   const [adjustmentDirection, setAdjustmentDirection] = useState<'add' | 'deduct'>('add');
+  const [adjustmentHours, setAdjustmentHours] = useState('');
   const [adjustmentMinutes, setAdjustmentMinutes] = useState('');
   const [adjustmentReason, setAdjustmentReason] = useState('');
   const [loading, setLoading] = useState(true);
@@ -240,13 +241,15 @@ export default function SuperAdminManpowerTrackerModal({ open, onClose }: Props)
   };
 
   const saveAdjustment = async () => {
-    const minutes = Number(adjustmentMinutes);
-    if (!adjustmentEmployeeId || !adjustmentProjectId || !Number.isInteger(minutes) || minutes < 1 || minutes > 720 || adjustmentReason.trim().length < 3) {
-      setMessage({ type: 'error', text: 'Select an employee and project, enter 1–720 minutes, and provide a reason.' });
+    const hours = adjustmentHours.trim() ? Number(adjustmentHours) : 0;
+    const minutes = adjustmentMinutes.trim() ? Number(adjustmentMinutes) : 0;
+    const totalMinutes = hours * 60 + minutes;
+    if (!adjustmentEmployeeId || !adjustmentProjectId || !Number.isInteger(hours) || !Number.isInteger(minutes) || hours < 0 || hours > 24 || minutes < 0 || minutes > 59 || totalMinutes < 1 || totalMinutes > 1440 || adjustmentReason.trim().length < 3) {
+      setMessage({ type: 'error', text: 'Select an employee and project, enter 0–24 hours plus 0–59 minutes, and provide a reason.' });
       return;
     }
-    if (selectedDate >= todayManilaDate()) {
-      setMessage({ type: 'error', text: 'Only past work dates can be adjusted.' });
+    if (selectedDate > todayManilaDate()) {
+      setMessage({ type: 'error', text: 'A future work date cannot be adjusted.' });
       return;
     }
 
@@ -256,12 +259,13 @@ export default function SuperAdminManpowerTrackerModal({ open, onClose }: Props)
       p_user_id: adjustmentEmployeeId,
       p_project_id: adjustmentProjectId,
       p_work_date: selectedDate,
-      p_delta_minutes: adjustmentDirection === 'add' ? minutes : -minutes,
+      p_delta_minutes: adjustmentDirection === 'add' ? totalMinutes : -totalMinutes,
       p_reason: adjustmentReason.trim(),
     });
     if (error) {
       setMessage({ type: 'error', text: error.message || 'Unable to save the manpower adjustment.' });
     } else {
+      setAdjustmentHours('');
       setAdjustmentMinutes('');
       setAdjustmentReason('');
       setMessage({ type: 'success', text: 'Manpower adjustment saved with an audit record.' });
@@ -332,15 +336,16 @@ export default function SuperAdminManpowerTrackerModal({ open, onClose }: Props)
         ) : tab === 'adjustments' ? (
           <>
             <section className="rounded-2xl bg-slate-50 p-3 dark:bg-[#303632]">
-              <div className="mb-3"><h3 className="text-sm font-bold text-slate-900 dark:text-white">Audited manpower correction</h3><p className="mt-0.5 text-[10px] text-slate-500">For past dates only. The original timer is preserved; this adds a traceable positive or negative minute adjustment.</p></div>
+              <div className="mb-3"><h3 className="text-sm font-bold text-slate-900 dark:text-white">Audited manpower correction</h3><p className="mt-0.5 text-[10px] text-slate-500">Use this to clean up earlier lapses. Select the affected work date, then add or deduct the exact hours and minutes. The original timer is preserved.</p></div>
               <div className="grid gap-2 sm:grid-cols-2">
+                <input type="date" value={selectedDate} max={todayManilaDate()} onChange={(event) => setSelectedDate(event.target.value)} className="min-h-10 rounded-xl bg-white px-3 text-xs outline-none dark:bg-[#292f2b] dark:text-white" aria-label="Work date" />
                 <select value={adjustmentEmployeeId} onChange={(event) => setAdjustmentEmployeeId(event.target.value)} className="min-h-10 rounded-xl bg-white px-3 text-xs outline-none dark:bg-[#292f2b] dark:text-white"><option value="">Select employee</option>{employees.filter((employee) => employee.is_active).map((employee) => <option key={employee.id} value={employee.id}>{employee.full_name || employee.employee_id || 'Employee'}</option>)}</select>
                 <select value={adjustmentProjectId} onChange={(event) => setAdjustmentProjectId(event.target.value)} className="min-h-10 rounded-xl bg-white px-3 text-xs outline-none dark:bg-[#292f2b] dark:text-white"><option value="">Select project</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}{project.is_active ? '' : ' (inactive)'}</option>)}</select>
                 <select value={adjustmentDirection} onChange={(event) => setAdjustmentDirection(event.target.value as 'add' | 'deduct')} className="min-h-10 rounded-xl bg-white px-3 text-xs outline-none dark:bg-[#292f2b] dark:text-white"><option value="add">Add time</option><option value="deduct">Deduct time</option></select>
-                <input type="number" min="1" max="720" inputMode="numeric" value={adjustmentMinutes} onChange={(event) => setAdjustmentMinutes(event.target.value)} placeholder="Minutes" className="min-h-10 rounded-xl bg-white px-3 text-xs outline-none dark:bg-[#292f2b] dark:text-white" />
+                <div className="grid grid-cols-2 gap-2"><input type="number" min="0" max="24" inputMode="numeric" value={adjustmentHours} onChange={(event) => setAdjustmentHours(event.target.value)} placeholder="Hours" className="min-h-10 rounded-xl bg-white px-3 text-xs outline-none dark:bg-[#292f2b] dark:text-white" /><input type="number" min="0" max="59" inputMode="numeric" value={adjustmentMinutes} onChange={(event) => setAdjustmentMinutes(event.target.value)} placeholder="Minutes" className="min-h-10 rounded-xl bg-white px-3 text-xs outline-none dark:bg-[#292f2b] dark:text-white" /></div>
               </div>
               <textarea value={adjustmentReason} onChange={(event) => setAdjustmentReason(event.target.value)} placeholder="Reason for correction" maxLength={500} rows={2} className="mt-2 w-full resize-none rounded-xl bg-white px-3 py-2 text-xs outline-none dark:bg-[#292f2b] dark:text-white" />
-              <div className="mt-2 flex items-center justify-between gap-3"><p className="text-[10px] text-slate-500">Work date: {selectedDate}</p><button type="button" onClick={saveAdjustment} disabled={savingAdjustment || selectedDate >= todayManilaDate()} className="min-h-9 rounded-xl bg-slate-900 px-3 text-xs font-bold text-white disabled:opacity-40 dark:bg-white dark:text-slate-900">{savingAdjustment ? 'Saving…' : `${adjustmentDirection === 'add' ? 'Add' : 'Deduct'} minutes`}</button></div>
+              <div className="mt-2 flex items-center justify-between gap-3"><p className="text-[10px] text-slate-500">Maximum correction: 24 hours per work date.</p><button type="button" onClick={saveAdjustment} disabled={savingAdjustment || selectedDate > todayManilaDate()} className="min-h-9 rounded-xl bg-slate-900 px-3 text-xs font-bold text-white disabled:opacity-40 dark:bg-white dark:text-slate-900">{savingAdjustment ? 'Saving…' : `${adjustmentDirection === 'add' ? 'Add' : 'Deduct'} time`}</button></div>
             </section>
             <section><div className="mb-2"><h3 className="text-sm font-bold text-slate-900 dark:text-white">Adjustments on {selectedDate}</h3></div>{adjustments.length ? <div className="space-y-2">{adjustments.map((adjustment) => { const employee = employeeMap.get(adjustment.user_id); const project = projectMap.get(adjustment.project_id); return <div key={adjustment.id} className="grid gap-1 rounded-2xl bg-slate-50 px-3 py-2.5 dark:bg-[#303632] sm:grid-cols-[1fr_1fr_auto]"><div className="min-w-0"><p className="truncate text-xs font-bold text-slate-900 dark:text-white">{employee?.full_name || 'Employee'}</p><p className="text-[10px] text-slate-500">{project?.name || 'Project'}</p></div><p className="text-[10px] text-slate-500">{adjustment.reason}</p><span className={`font-mono text-xs font-bold ${adjustment.delta_minutes > 0 ? 'text-cyan-700 dark:text-cyan-300' : 'text-amber-700 dark:text-amber-300'}`}>{adjustment.delta_minutes > 0 ? '+' : ''}{adjustment.delta_minutes}m</span></div>; })}</div> : <p className="rounded-2xl bg-slate-50 px-4 py-8 text-center text-sm text-slate-500 dark:bg-[#303632]">No adjustments for this date.</p>}</section>
           </>
