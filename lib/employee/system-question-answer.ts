@@ -4,13 +4,13 @@ type Entry = { terms: string[]; en: string; tl: string };
 const ENTRIES: Entry[] = [
   {
     terms: ['manpower tracker', 'project tracker', 'time tracker', 'project timer', 'track project', 'project hours'],
-    en: 'After Time In, you can pre-select a Manpower project before 9:00 AM; tracking begins automatically at 9:00 AM Manila time. It pauses automatically from 12:00 PM to 1:00 PM, resumes the same project at 1:00 PM only if the shift is still open, and stops automatically at Time Out. Switching projects stops the previous project and starts the new one.',
-    tl: 'Pagkatapos ng Time In, puwede nang mag-pre-select ng Manpower project bago mag-9:00 AM; automatic magsisimula ang tracking ng 9:00 AM Manila time. Automatic itong magpa-pause ng 12:00 PM–1:00 PM, magre-resume sa parehong project ng 1:00 PM kung open pa ang shift, at hihinto sa Time Out. Kapag nag-switch ng project, hihinto ang nauna at magsisimula ang bago.',
+    en: 'After Time In, you can pre-select a Manpower project before 9:00 AM; tracking begins automatically at 9:00 AM Manila time. It pauses automatically from 12:00 PM to 1:00 PM, resumes the same project at 1:00 PM only if the shift is still open, and closes at 7:30 PM or Time Out, whichever comes first. Switching projects stops the previous project and starts the new one.',
+    tl: 'Pagkatapos ng Time In, puwede nang mag-pre-select ng Manpower project bago mag-9:00 AM; automatic magsisimula ang tracking ng 9:00 AM Manila time. Automatic itong magpa-pause ng 12:00 PM–1:00 PM, magre-resume sa parehong project ng 1:00 PM kung open pa ang shift, at hihinto sa 7:30 PM o sa Time Out, alinman ang mauna. Kapag nag-switch ng project, hihinto ang nauna at magsisimula ang bago.',
   },
   {
     terms: ['tracker locked', 'tracker disabled', 'cannot start tracker', "can't start tracker", 'di ma start tracker', 'hindi ma start tracker', 'before 9', '9 am tracker', 'active shift tracker'],
-    en: 'Before Time In, during the 12:00 PM–1:00 PM lunch break, and after Time Out, the tracker is locked. Before 9:00 AM you can pre-select a project after Time In, but no time is recorded until 9:00 AM.',
-    tl: 'Naka-lock ang tracker bago mag-Time In, habang 12:00 PM–1:00 PM lunch break, at pagkatapos mag-Time Out. Bago mag-9:00 AM, puwede kang mag-pre-select ng project pagkatapos ng Time In, pero walang mare-record na oras hanggang 9:00 AM.',
+    en: 'Before Time In, during the 12:00 PM–1:00 PM lunch break, after 7:30 PM, and after Time Out, the tracker is locked. Before 9:00 AM you can pre-select a project after Time In, but no time is recorded until 9:00 AM.',
+    tl: 'Naka-lock ang tracker bago mag-Time In, habang 12:00 PM–1:00 PM lunch break, pagkatapos ng 7:30 PM, at pagkatapos mag-Time Out. Bago mag-9:00 AM, puwede kang mag-pre-select ng project pagkatapos ng Time In, pero walang mare-record na oras hanggang 9:00 AM.',
   },
   {
     terms: ['manpower project', 'tracker project list', 'project list tracker', 'add tracker project', 'who adds project', 'super admin project'],
@@ -19,13 +19,13 @@ const ENTRIES: Entry[] = [
   },
   {
     terms: ['offset', 'offset hours', 'offset tracker', 'approved offset', 'earn offset'],
-    en: 'Offset is approved time credit from eligible work after 7:00 PM. Earned requests must be approved before becoming usable balance. Approved offset can be used for supported Late correction, exact-minute Early Out, or a one-day Leave Using Offset when at least 9 unreserved approved hours are available. Super Admin can make audited manual hour/minute adjustments.',
-    tl: 'Ang Offset ay approved time credit mula sa eligible work pagkatapos ng 7:00 PM. Kailangan munang ma-approve ang earned request bago maging usable balance. Puwede itong gamitin sa supported Late correction, exact-minute Early Out, o one-day Leave Using Offset kapag may at least 9 unreserved approved hours. Puwede ring gumawa ang Super Admin ng audited manual hour/minute adjustment.',
+    en: 'Offset is approved time credit from eligible work after 7:30 PM. Earned requests must be approved before becoming usable balance. On approval, the eligible OT time is assigned to the employee’s final project at the 7:30 PM cutoff. Approved offset can be used for supported Late correction, exact-minute Early Out, or a one-day Leave Using Offset when at least 9 unreserved approved hours are available. Super Admin can make audited manpower-time adjustments for past records.',
+    tl: 'Ang Offset ay approved time credit mula sa eligible work pagkatapos ng 7:30 PM. Kailangan munang ma-approve ang earned request bago maging usable balance. Kapag na-approve, ang eligible OT time ay ia-assign sa huling project ng employee sa 7:30 PM cutoff. Puwede itong gamitin sa supported Late correction, exact-minute Early Out, o one-day Leave Using Offset kapag may at least 9 unreserved approved hours. Puwede ring gumawa ang Super Admin ng audited manpower-time adjustment para sa past records.',
   },
   {
-    terms: ['earn offset', 'how offset earned', '7 pm offset', 'after 7 pm', 'paano maka offset', 'paano kumita offset'],
-    en: 'Automatic offset earning uses completed whole hours after 7:00 PM. The earned request remains pending until reviewed, and only approved earned time becomes usable offset balance.',
-    tl: 'Completed whole hours pagkatapos ng 7:00 PM ang ginagamit sa automatic offset earning. Pending muna ang earned request hanggang ma-review, at approved earned time lang ang nagiging usable offset balance.',
+    terms: ['earn offset', 'how offset earned', '7 pm offset', '7:30 pm offset', 'after 7 pm', 'after 7:30 pm', 'paano maka offset', 'paano kumita offset'],
+    en: 'Automatic offset earning uses completed whole hours after 7:30 PM. The earned request remains pending until reviewed, and only approved earned time becomes usable offset balance.',
+    tl: 'Completed whole hours pagkatapos ng 7:30 PM ang ginagamit sa automatic offset earning. Pending muna ang earned request hanggang ma-review, at approved earned time lang ang nagiging usable offset balance.',
   },
   {
     terms: ['offset late', 'use offset for late', 'late using offset', 'scrub late', 'offset applied'],

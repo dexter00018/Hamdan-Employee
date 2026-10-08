@@ -177,7 +177,7 @@ export default function HROffsetApprovalNotifierV2() {
         </div>
 
         {activeTab === 'earned' && <section className="flex min-h-0 flex-1 flex-col">
-          <div className="mb-2 flex shrink-0 items-center justify-between"><div><h3 className="text-xs font-bold text-slate-900 dark:text-white">Earned Hours</h3><p className="text-[10px] text-slate-500">After 7 PM</p></div><span className="rounded-full bg-cyan-50 px-2 py-1 text-[10px] font-bold text-cyan-700">{requests.length} · {totalHours}h</span></div>
+          <div className="mb-2 flex shrink-0 items-center justify-between"><div><h3 className="text-xs font-bold text-slate-900 dark:text-white">Earned Hours</h3><p className="text-[10px] text-slate-500">After 7:30 PM · assigned to final project on approval</p></div><span className="rounded-full bg-cyan-50 px-2 py-1 text-[10px] font-bold text-cyan-700">{requests.length} · {totalHours}h</span></div>
           <div className="min-h-0 flex-1 space-y-1.5 overflow-hidden">
             {loading ? <p className="py-8 text-center text-xs text-slate-500">Loading…</p> : visibleEarned.length ? visibleEarned.map((request) => {
               const profile = profiles[request.user_id]; const busy = reviewingId === request.id;

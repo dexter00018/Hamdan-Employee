@@ -377,7 +377,7 @@ export default function HROffsetApprovalNotifier() {
             <div className="mb-2 flex items-center justify-between gap-2">
               <div>
                 <h3 className="text-xs font-bold text-slate-900 dark:text-white">Earned Hours</h3>
-                <p className="text-[10px] text-slate-500">After 7 PM</p>
+                <p className="text-[10px] text-slate-500">After 7:30 PM · assigned to final project on approval</p>
               </div>
               <span className="rounded-full bg-cyan-50 px-2 py-1 text-[10px] font-bold text-cyan-700 dark:bg-cyan-950/35 dark:text-cyan-300">{requests.length} · {totalHours}h</span>
             </div>
