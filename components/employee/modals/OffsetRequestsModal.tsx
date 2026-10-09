@@ -8,7 +8,7 @@ import { supabase } from '@/lib/supabase';
 type Props = { open: boolean; onClose: () => void; userId: string | null };
 type Request = { id: string; eligible_hours: number; status: string; time_out_at: string; scheduled_end_at: string; created_at: string; reviewed_at: string | null; hr_notes: string | null };
 type Transaction = { kind: 'earned' | 'used' | 'converted'; hours: number; minutes: number };
-type LateRecord = { id: string; log_date: string; time_in: string | null };
+type LateRecord = { id: string; log_date: string; time_in: string | null; status: string };
 type EarlyOutRecord = { id: string; log_date: string; time_out: string | null; early_out_offset_minutes: number };
 type UsageRequest = { id: string; attendance_log_id: string; hours: number; required_minutes: number | null; status: string; created_at: string; reviewed_at: string | null; hr_notes: string | null };
 type EarlyOutRequest = { id: string; attendance_log_id: string; required_minutes: number; status: string; created_at: string; reviewed_at: string | null; hr_notes: string | null };
@@ -134,7 +134,9 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
     const [requestRes, transactionRes, lateRes, earlyRecordsRes, usageRes, earlyOutRes, leaveRes, settingRes] = await Promise.all([
       supabase.from('offset_requests').select('id,eligible_hours,status,time_out_at,scheduled_end_at,created_at,reviewed_at,hr_notes').eq('user_id', userId).order('created_at', { ascending: false }),
       supabase.from('offset_transactions').select('kind,hours,minutes').eq('user_id', userId),
-      supabase.from('attendance_logs').select('id,log_date,time_in').eq('user_id', userId).eq('status', 'Late').gte('log_date', cutoff.start).lte('log_date', cutoff.end).order('log_date', { ascending: false }),
+      // Keep the linked attendance row for history even after an approved Offset
+      // changes its status away from "Late". The Late button filters below.
+      supabase.from('attendance_logs').select('id,log_date,time_in,status').eq('user_id', userId).gte('log_date', cutoff.start).lte('log_date', cutoff.end).order('log_date', { ascending: false }),
       supabase.from('attendance_logs').select('id,log_date,time_out,early_out_offset_minutes').eq('user_id', userId).gte('log_date', cutoff.start).lte('log_date', cutoff.end).not('time_out', 'is', null).order('log_date', { ascending: false }),
       supabase.from('offset_usage_requests').select('id,attendance_log_id,hours,required_minutes,status,created_at,reviewed_at,hr_notes').eq('user_id', userId).order('created_at', { ascending: false }),
       supabase.from('early_out_offset_requests').select('id,attendance_log_id,required_minutes,status,created_at,reviewed_at,hr_notes').eq('user_id', userId).order('created_at', { ascending: false }),
@@ -152,9 +154,20 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
 
     setRequests((requestRes.data || []) as Request[]);
     setTransactions((transactionRes.data || []) as Transaction[]);
-    setLateRecords(((lateRes.data || []) as any[]).map((row) => ({ ...row, id: String(row.id) })) as LateRecord[]);
+    const usageRows = (usageRes.data || []) as any[];
+    const lateHistoryLogIds = [...new Set(usageRows.map((row) => Number(row.attendance_log_id)).filter(Number.isFinite))];
+    const lateHistoryRes = lateHistoryLogIds.length
+      ? await supabase.from('attendance_logs').select('id,log_date,time_in,status').eq('user_id', userId).in('id', lateHistoryLogIds)
+      : { data: [], error: null };
+    if (lateHistoryRes.error) console.error('Error fetching Late history records:', lateHistoryRes.error);
+
+    const lateRecordById = new Map(
+      [...((lateRes.data || []) as any[]), ...((lateHistoryRes.data || []) as any[])]
+        .map((row) => [String(row.id), { ...row, id: String(row.id) }])
+    );
+    setLateRecords([...lateRecordById.values()] as LateRecord[]);
     setEarlyOutRecords(((earlyRecordsRes.data || []) as any[]).map((row) => ({ ...row, id: String(row.id), early_out_offset_minutes: Number(row.early_out_offset_minutes || 0) })) as EarlyOutRecord[]);
-    setUsageRequests(((usageRes.data || []) as any[]).map((row) => ({ ...row, attendance_log_id: String(row.attendance_log_id) })) as UsageRequest[]);
+    setUsageRequests(usageRows.map((row) => ({ ...row, attendance_log_id: String(row.attendance_log_id) })) as UsageRequest[]);
     setEarlyOutRequests(((earlyOutRes.data || []) as any[]).map((row) => ({ ...row, attendance_log_id: String(row.attendance_log_id) })) as EarlyOutRequest[]);
     setOffsetLeaves((leaveRes.data || []) as OffsetLeave[]);
     if (typeof settingRes.data?.value === 'number') setCutoffHour(settingRes.data.value);
@@ -190,7 +203,7 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
 
   const requestedLateLogIds = useMemo(() => new Set(usageRequests.map((request) => request.attendance_log_id)), [usageRequests]);
   const requestedEarlyLogIds = useMemo(() => new Set(earlyOutRequests.map((request) => request.attendance_log_id)), [earlyOutRequests]);
-  const eligibleLateRecords = useMemo(() => lateRecords.filter((record) => !requestedLateLogIds.has(record.id)), [lateRecords, requestedLateLogIds]);
+  const eligibleLateRecords = useMemo(() => lateRecords.filter((record) => record.status === 'Late' && !requestedLateLogIds.has(record.id)), [lateRecords, requestedLateLogIds]);
   const eligibleEarlyRecords = useMemo(() => earlyOutRecords
     .map((record) => ({ ...record, requiredMinutes: earlyOutMinutes(record, cutoffHour) }))
     .filter((record) => record.requiredMinutes > 0 && record.early_out_offset_minutes <= 0 && !requestedEarlyLogIds.has(record.id)),
