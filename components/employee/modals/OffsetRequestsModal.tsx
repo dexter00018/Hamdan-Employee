@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarPlus, CalendarX2, Clock3, Eraser, LogOut } from 'lucide-react';
+import { CalendarDays, CalendarPlus, CalendarX2, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, Clock3, Eraser, FileText, Info, LogOut, Send } from 'lucide-react';
 import ModalShell from '@/components/shared/ModalShell';
 import { supabase } from '@/lib/supabase';
 
@@ -59,6 +59,14 @@ function eventDateLabel(value: string | null | undefined) {
   return new Date(value).toLocaleDateString('en-US', {
     timeZone: 'Asia/Manila', month: 'long', day: 'numeric', year: 'numeric',
   });
+}
+
+function dateTile(value: string) {
+  const date = new Date(`${value}T00:00:00+08:00`);
+  return {
+    month: date.toLocaleDateString('en-US', { month: 'short' }).toUpperCase(),
+    day: date.toLocaleDateString('en-US', { day: '2-digit' }),
+  };
 }
 
 function historyReviewLabel(item: HistoryItem) {
@@ -287,86 +295,91 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
 
   return (
     <ModalShell open={open} onClose={onClose} title="Offset Request" description="Late · Early Out · Absent · Leave" icon={<Clock3 size={20} />} size="lg">
-      <div className="space-y-4">
-        {message && <div className={`rounded-xl px-3 py-2 text-xs font-medium ${message.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>{message.text}</div>}
+      <div className="space-y-5">
+        {message && <div className={`rounded-2xl border px-4 py-3 text-xs font-semibold ${message.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-rose-200 bg-rose-50 text-rose-700'}`}>{message.text}</div>}
 
-        <section className="rounded-2xl bg-cyan-50/80 p-4 dark:bg-cyan-950/25">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-cyan-700/80">Approved Offset</p>
-              <p className="mt-1 text-3xl font-semibold tracking-tight text-cyan-800 dark:text-cyan-200">{formatOffsetMinutes(approvedBalanceMinutes)}</p>
-              <p className="mt-1 text-[11px] text-slate-500">{formatOffsetMinutes(reservedMinutes)} reserved · {formatOffsetMinutes(availableToRequestMinutes)} available</p>
+        <section className="relative overflow-hidden rounded-[26px] border border-sky-100 bg-gradient-to-br from-cyan-50 via-white to-sky-100/80 p-5 shadow-sm dark:border-cyan-900/40 dark:from-cyan-950/50 dark:via-[#27312e] dark:to-slate-900">
+          <div className="pointer-events-none absolute -right-16 -top-16 h-52 w-52 rounded-full bg-sky-200/40 dark:bg-sky-500/10" />
+          <div className="pointer-events-none absolute -bottom-24 right-24 h-44 w-44 rounded-full border-[28px] border-cyan-100/60 dark:border-cyan-900/20" />
+          <div className="relative flex flex-col gap-5 lg:flex-row lg:items-center">
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] font-extrabold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-300">Approved Offset</p>
+              <div className="mt-1 flex items-end gap-2"><p className="text-5xl font-black leading-none tracking-tight text-cyan-900 dark:text-cyan-100">{formatOffsetMinutes(approvedBalanceMinutes)}</p><Info className="mb-1 text-slate-400" size={20} /></div>
+              <p className="mt-2 text-sm font-medium text-slate-600 dark:text-slate-300">{formatOffsetMinutes(reservedMinutes)} reserved · {formatOffsetMinutes(availableToRequestMinutes)} available</p>
+              <p className="mt-4 inline-flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-300"><CalendarDays size={17} className="text-sky-600 dark:text-cyan-300" /> Current payroll cutoff: {cutoff.label}</p>
             </div>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
-              <button type="button" onClick={openOffsetLeave} disabled={!canFileOffsetLeave} className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl bg-emerald-700 px-3 text-[11px] font-bold text-white disabled:opacity-40"><CalendarPlus size={14} /> Leave</button>
-              <button type="button" onClick={() => setUsePanel((value) => value === 'early' ? null : 'early')} disabled={eligibleEarlyRecords.length === 0} className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl bg-amber-600 px-3 text-[11px] font-bold text-white disabled:opacity-40"><LogOut size={14} /> Early Out</button>
-              <button type="button" onClick={() => setUsePanel((value) => value === 'absent' ? null : 'absent')} disabled={eligibleAbsentRecords.length === 0} className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl bg-rose-700 px-3 text-[11px] font-bold text-white disabled:opacity-40"><CalendarX2 size={14} /> Absent</button>
-              <button type="button" onClick={() => setUsePanel((value) => value === 'late' ? null : 'late')} disabled={eligibleLateRecords.length === 0} className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl bg-cyan-700 px-3 text-[11px] font-bold text-white disabled:opacity-40"><Eraser size={14} /> Late</button>
+            <div className="grid grid-cols-2 gap-2 border-t border-sky-100 pt-4 sm:grid-cols-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0 dark:border-slate-600">
+              <button type="button" onClick={openOffsetLeave} disabled={!canFileOffsetLeave} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-emerald-100 px-4 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-200 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:opacity-100 dark:bg-emerald-900/30 dark:text-emerald-200 dark:hover:bg-emerald-900/45 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"><CalendarPlus size={17} /> Leave</button>
+              <button type="button" onClick={() => setUsePanel((value) => value === 'early' ? null : 'early')} disabled={eligibleEarlyRecords.length === 0} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-orange-100 px-4 text-xs font-extrabold text-orange-700 transition hover:bg-orange-200 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:opacity-100 dark:bg-orange-900/30 dark:text-orange-200 dark:hover:bg-orange-900/45 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"><LogOut size={17} /> Early Out</button>
+              <button type="button" onClick={() => setUsePanel((value) => value === 'absent' ? null : 'absent')} disabled={eligibleAbsentRecords.length === 0} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-rose-100 px-4 text-xs font-extrabold text-rose-700 transition hover:bg-rose-200 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:opacity-100 dark:bg-rose-900/30 dark:text-rose-200 dark:hover:bg-rose-900/45 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"><CalendarX2 size={17} /> Absent</button>
+              <button type="button" onClick={() => setUsePanel((value) => value === 'late' ? null : 'late')} disabled={eligibleLateRecords.length === 0} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full border-2 border-sky-600 bg-white/80 px-4 text-xs font-extrabold text-sky-700 shadow-sm transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-200 disabled:text-slate-400 disabled:opacity-100 dark:border-cyan-400 dark:bg-slate-800/60 dark:text-cyan-200 dark:hover:bg-slate-800 dark:disabled:border-slate-700 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"><Eraser size={17} /> Late</button>
             </div>
           </div>
-          <p className="mt-2 text-[10px] text-slate-500">Current payroll cutoff {cutoff.label} · Absent uses 9h</p>
         </section>
 
         {usePanel === 'early' && (
-          <section className="rounded-2xl bg-amber-50/60 p-3 dark:bg-amber-950/15">
-            <div className="mb-2"><h3 className="text-sm font-bold text-slate-900 dark:text-white">Early Out · Current payroll cutoff</h3><p className="text-[10px] text-slate-500">Exact minutes to {cutoffHour}:00</p></div>
-            <div className="space-y-2">
+          <section className="rounded-[26px] border border-orange-100 bg-gradient-to-br from-orange-50/80 to-white p-4 shadow-sm dark:border-orange-950/50 dark:from-orange-950/20 dark:to-[#27312e]">
+            <div className="mb-4 flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-orange-100 text-orange-600 dark:bg-orange-900/35 dark:text-orange-300"><LogOut size={21} /></span><div><h3 className="text-base font-extrabold text-slate-900 dark:text-white">Early Out · Current payroll cutoff</h3><p className="text-xs text-slate-500 dark:text-slate-300">Exact minutes to {cutoffHour}:00</p></div></div>
+            <div className="space-y-2.5">
               {visibleEarly.map((record) => {
                 const busy = submittingId === `early-${record.id}`;
                 const enough = availableToRequestMinutes >= record.requiredMinutes;
-                return <div key={record.id} className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2.5 dark:bg-[#292f2b]">
-                  <div className="min-w-0"><p className="text-xs font-bold text-slate-900 dark:text-white">{dateLabel(record.log_date)}</p><p className="mt-0.5 text-[10px] text-slate-500">Out {timeLabel(record.time_out)} · Uses {formatOffsetMinutes(record.requiredMinutes)}</p></div>
-                  <button type="button" disabled={busy || !enough} onClick={() => submitEarly(record.id)} className="min-h-8 shrink-0 rounded-lg bg-slate-900 px-3 text-[10px] font-bold text-white disabled:opacity-40 dark:bg-white dark:text-slate-900">{busy ? 'Submitting…' : enough ? 'Submit to HR' : `Need ${formatOffsetMinutes(record.requiredMinutes)}`}</button>
+                const tile = dateTile(record.log_date);
+                return <div key={record.id} className="flex items-center justify-between gap-3 rounded-2xl border border-white bg-white/90 px-3 py-3 shadow-sm dark:border-slate-700 dark:bg-slate-800/80">
+                  <div className="flex min-w-0 items-center gap-3"><span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-orange-50 text-center leading-none dark:bg-orange-900/25"><span className="block text-[9px] font-extrabold tracking-wide text-orange-600 dark:text-orange-300">{tile.month}</span><span className="block text-lg font-black text-slate-700 dark:text-white">{tile.day}</span></span><div className="min-w-0"><p className="text-sm font-extrabold text-slate-900 dark:text-white">{dateLabel(record.log_date)}</p><p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-300"><Clock3 className="mr-1 inline" size={14} /> Out {timeLabel(record.time_out)} <span className="mx-1.5 text-slate-300">•</span> Uses {formatOffsetMinutes(record.requiredMinutes)}</p></div></div>
+                  <button type="button" disabled={busy || !enough} onClick={() => submitEarly(record.id)} className="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-xl bg-orange-600 px-3.5 text-[11px] font-extrabold text-white shadow-sm transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none disabled:opacity-100 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"><Send size={15} /> {busy ? 'Submitting…' : enough ? 'Submit to HR' : `Need ${formatOffsetMinutes(record.requiredMinutes)}`}</button>
                 </div>;
               })}
             </div>
-            {listPages > 1 && <div className="mt-2 flex items-center justify-between"><button onClick={() => setListPage((p) => Math.max(0, p - 1))} disabled={safeListPage === 0} className="text-[10px] font-bold disabled:opacity-30">Previous</button><span className="text-[10px] text-slate-400">{safeListPage + 1}/{listPages}</span><button onClick={() => setListPage((p) => Math.min(listPages - 1, p + 1))} disabled={safeListPage >= listPages - 1} className="text-[10px] font-bold disabled:opacity-30">Next</button></div>}
+            {listPages > 1 && <div className="mt-3 flex items-center justify-between"><button onClick={() => setListPage((p) => Math.max(0, p - 1))} disabled={safeListPage === 0} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-500 disabled:opacity-35 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"><ChevronLeft size={15} /> Previous</button><span className="text-xs font-semibold text-slate-400">Page {safeListPage + 1} of {listPages}</span><button onClick={() => setListPage((p) => Math.min(listPages - 1, p + 1))} disabled={safeListPage >= listPages - 1} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-500 disabled:opacity-35 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">Next <ChevronRight size={15} /></button></div>}
           </section>
         )}
 
         {usePanel === 'late' && (
-          <section className="rounded-2xl bg-slate-50 p-3 dark:bg-[#303632]">
-            <div className="mb-2"><h3 className="text-sm font-bold text-slate-900 dark:text-white">Late · Current payroll cutoff</h3><p className="text-[10px] text-slate-500">Exact late minutes after 9:00 AM</p></div>
-            <div className="space-y-2">
+          <section className="rounded-[26px] border border-sky-100 bg-gradient-to-br from-slate-50 to-sky-50/60 p-4 shadow-sm dark:border-slate-700 dark:from-[#303632] dark:to-[#27312e]">
+            <div className="mb-4 flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-sky-100 text-sky-700 dark:bg-sky-900/35 dark:text-cyan-300"><Clock3 size={21} /></span><div><h3 className="text-base font-extrabold text-slate-900 dark:text-white">Late · Current payroll cutoff</h3><p className="text-xs text-slate-500 dark:text-slate-300">Exact late minutes after 9:00 AM</p></div></div>
+            <div className="space-y-2.5">
               {visibleLate.map((record) => {
                 const busy = submittingId === `late-${record.id}`;
                 const requiredMinutes = lateMinutes(record);
                 const enough = availableToRequestMinutes >= requiredMinutes;
-                return <div key={record.id} className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2.5 dark:bg-[#292f2b]">
-                  <div className="min-w-0"><p className="text-xs font-bold text-slate-900 dark:text-white">{dateLabel(record.log_date)}</p><p className="mt-0.5 text-[10px] text-slate-500">In {timeLabel(record.time_in)} · Uses {formatOffsetMinutes(requiredMinutes)}</p></div>
-                  <button type="button" disabled={busy || !enough} onClick={() => submitAttendanceOffset(record.id, 'late')} className="min-h-8 shrink-0 rounded-lg bg-slate-900 px-3 text-[10px] font-bold text-white disabled:opacity-40 dark:bg-white dark:text-slate-900">{busy ? 'Submitting…' : enough ? 'Submit to HR' : `Need ${formatOffsetMinutes(requiredMinutes)}`}</button>
+                const tile = dateTile(record.log_date);
+                return <div key={record.id} className="flex items-center justify-between gap-3 rounded-2xl border border-white bg-white/90 px-3 py-3 shadow-sm dark:border-slate-700 dark:bg-slate-800/80">
+                  <div className="flex min-w-0 items-center gap-3"><span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-sky-50 text-center leading-none dark:bg-sky-900/25"><span className="block text-[9px] font-extrabold tracking-wide text-sky-700 dark:text-cyan-300">{tile.month}</span><span className="block text-lg font-black text-slate-700 dark:text-white">{tile.day}</span></span><div className="min-w-0"><p className="text-sm font-extrabold text-slate-900 dark:text-white">{dateLabel(record.log_date)}</p><p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-300"><Clock3 className="mr-1 inline" size={14} /> In {timeLabel(record.time_in)} <span className="mx-1.5 text-slate-300">•</span> Uses {formatOffsetMinutes(requiredMinutes)}</p></div></div>
+                  <button type="button" disabled={busy || !enough} onClick={() => submitAttendanceOffset(record.id, 'late')} className="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-800 to-sky-700 px-3.5 text-[11px] font-extrabold text-white shadow-sm transition hover:from-cyan-900 hover:to-sky-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:bg-none disabled:text-slate-400 disabled:shadow-none disabled:opacity-100 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"><Send size={15} /> {busy ? 'Submitting…' : enough ? 'Submit to HR' : `Need ${formatOffsetMinutes(requiredMinutes)}`}</button>
                 </div>;
               })}
             </div>
-            {listPages > 1 && <div className="mt-2 flex items-center justify-between"><button onClick={() => setListPage((p) => Math.max(0, p - 1))} disabled={safeListPage === 0} className="text-[10px] font-bold disabled:opacity-30">Previous</button><span className="text-[10px] text-slate-400">{safeListPage + 1}/{listPages}</span><button onClick={() => setListPage((p) => Math.min(listPages - 1, p + 1))} disabled={safeListPage >= listPages - 1} className="text-[10px] font-bold disabled:opacity-30">Next</button></div>}
+            {listPages > 1 && <div className="mt-3 flex items-center justify-between"><button onClick={() => setListPage((p) => Math.max(0, p - 1))} disabled={safeListPage === 0} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-500 disabled:opacity-35 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"><ChevronLeft size={15} /> Previous</button><span className="text-xs font-semibold text-slate-400">Page {safeListPage + 1} of {listPages}</span><button onClick={() => setListPage((p) => Math.min(listPages - 1, p + 1))} disabled={safeListPage >= listPages - 1} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-500 disabled:opacity-35 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">Next <ChevronRight size={15} /></button></div>}
           </section>
         )}
 
         {usePanel === 'absent' && (
-          <section className="rounded-2xl bg-rose-50/60 p-3 dark:bg-rose-950/15">
-            <div className="mb-2"><h3 className="text-sm font-bold text-slate-900 dark:text-white">Absent · Current payroll cutoff</h3><p className="text-[10px] text-slate-500">One full absence uses 9h of approved Offset</p></div>
-            <div className="space-y-2">
+          <section className="rounded-[26px] border border-rose-100 bg-gradient-to-br from-rose-50/80 to-white p-4 shadow-sm dark:border-rose-950/50 dark:from-rose-950/20 dark:to-[#27312e]">
+            <div className="mb-4 flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-rose-100 text-rose-700 dark:bg-rose-900/35 dark:text-rose-300"><CalendarX2 size={21} /></span><div><h3 className="text-base font-extrabold text-slate-900 dark:text-white">Absent · Current payroll cutoff</h3><p className="text-xs text-slate-500 dark:text-slate-300">One full absence uses 9h of approved Offset</p></div></div>
+            <div className="space-y-2.5">
               {visibleAbsent.map((record) => {
                 const busy = submittingId === `absent-${record.id}`;
                 const enough = availableToRequestMinutes >= REQUIRED_LEAVE_MINUTES;
-                return <div key={record.id} className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2.5 dark:bg-[#292f2b]">
-                  <div className="min-w-0"><p className="text-xs font-bold text-slate-900 dark:text-white">{dateLabel(record.log_date)}</p><p className="mt-0.5 text-[10px] text-slate-500">Full day · Uses 9h</p></div>
-                  <button type="button" disabled={busy || !enough} onClick={() => submitAttendanceOffset(record.id, 'absent')} className="min-h-8 shrink-0 rounded-lg bg-rose-700 px-3 text-[10px] font-bold text-white disabled:opacity-40">{busy ? 'Submitting…' : enough ? 'Submit to HR' : 'Need 9h'}</button>
+                const tile = dateTile(record.log_date);
+                return <div key={record.id} className="flex items-center justify-between gap-3 rounded-2xl border border-white bg-white/90 px-3 py-3 shadow-sm dark:border-slate-700 dark:bg-slate-800/80">
+                  <div className="flex min-w-0 items-center gap-3"><span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-rose-50 text-center leading-none dark:bg-rose-900/25"><span className="block text-[9px] font-extrabold tracking-wide text-rose-700 dark:text-rose-300">{tile.month}</span><span className="block text-lg font-black text-slate-700 dark:text-white">{tile.day}</span></span><div className="min-w-0"><p className="text-sm font-extrabold text-slate-900 dark:text-white">{dateLabel(record.log_date)}</p><p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-300">Full day <span className="mx-1.5 text-slate-300">•</span> Uses 9h</p></div></div>
+                  <button type="button" disabled={busy || !enough} onClick={() => submitAttendanceOffset(record.id, 'absent')} className="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-xl bg-rose-700 px-3.5 text-[11px] font-extrabold text-white shadow-sm transition hover:bg-rose-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none disabled:opacity-100 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"><Send size={15} /> {busy ? 'Submitting…' : enough ? 'Submit to HR' : 'Need 9h'}</button>
                 </div>;
               })}
             </div>
-            {listPages > 1 && <div className="mt-2 flex items-center justify-between"><button onClick={() => setListPage((p) => Math.max(0, p - 1))} disabled={safeListPage === 0} className="text-[10px] font-bold disabled:opacity-30">Previous</button><span className="text-[10px] text-slate-400">{safeListPage + 1}/{listPages}</span><button onClick={() => setListPage((p) => Math.min(listPages - 1, p + 1))} disabled={safeListPage >= listPages - 1} className="text-[10px] font-bold disabled:opacity-30">Next</button></div>}
+            {listPages > 1 && <div className="mt-3 flex items-center justify-between"><button onClick={() => setListPage((p) => Math.max(0, p - 1))} disabled={safeListPage === 0} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-500 disabled:opacity-35 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"><ChevronLeft size={15} /> Previous</button><span className="text-xs font-semibold text-slate-400">Page {safeListPage + 1} of {listPages}</span><button onClick={() => setListPage((p) => Math.min(listPages - 1, p + 1))} disabled={safeListPage >= listPages - 1} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-500 disabled:opacity-35 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">Next <ChevronRight size={15} /></button></div>}
           </section>
         )}
 
-        {!canFileOffsetLeave && !loading && <div className="rounded-xl bg-amber-50 px-3 py-2 text-[10px] font-medium text-amber-800">Offset Leave needs 9h available.</div>}
+        {!canFileOffsetLeave && !loading && <div className="flex items-center gap-3 rounded-2xl border border-orange-200 bg-gradient-to-r from-orange-50 to-amber-50 px-4 py-3 text-xs font-bold text-orange-700 dark:border-orange-900/50 dark:from-orange-950/25 dark:to-amber-950/20 dark:text-orange-200"><span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-orange-600 text-white"><CircleAlert size={16} /></span>Offset Leave needs 9h available.</div>}
 
-        <section>
-          <div className="mb-2"><h3 className="text-sm font-bold text-slate-900 dark:text-white">Offset History</h3><p className="text-[10px] text-slate-500">Earned and used Offset</p></div>
+        <section className="rounded-[26px] border border-slate-100 bg-gradient-to-br from-slate-50 to-white p-4 shadow-sm dark:border-slate-700 dark:from-[#303632] dark:to-[#27312e]">
+          <div className="mb-4 flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-emerald-100 text-emerald-700 dark:bg-emerald-900/35 dark:text-emerald-300"><FileText size={21} /></span><div><h3 className="text-base font-extrabold text-slate-900 dark:text-white">Offset History</h3><p className="text-xs text-slate-500 dark:text-slate-300">Earned and used Offset</p></div></div>
           {loading ? <p className="py-4 text-center text-xs text-slate-500">Loading…</p> : visibleHistory.length ? (
-            <div className="space-y-1.5">{visibleHistory.map((item) => <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-[#303632]"><div className="min-w-0"><p className="text-xs font-semibold text-slate-900 dark:text-white">{item.title}</p><p className="mt-0.5 text-[10px] font-medium text-slate-600 dark:text-slate-300">Work date: {item.workDate} · {historyReviewLabel(item)}</p><p className="mt-0.5 text-[10px] text-slate-500">{item.detail}</p></div><span className={`shrink-0 rounded-full px-2 py-1 text-[9px] font-bold ${statusClass(item.status)}`}>{item.status}</span></div>)}</div>
-          ) : <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-xs text-slate-500">No offset history.</p>}
-          {historyPages > 1 && <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-2"><button onClick={() => setHistoryPage((p) => Math.max(0, p - 1))} disabled={safeHistoryPage === 0} className="text-[10px] font-bold disabled:opacity-30">Previous</button><span className="text-[10px] text-slate-400">{safeHistoryPage + 1}/{historyPages}</span><button onClick={() => setHistoryPage((p) => Math.min(historyPages - 1, p + 1))} disabled={safeHistoryPage >= historyPages - 1} className="text-[10px] font-bold disabled:opacity-30">Next</button></div>}
+            <div className="space-y-2.5">{visibleHistory.map((item) => <div key={item.id} className="flex items-center justify-between gap-3 rounded-2xl border border-white bg-emerald-50/55 px-3 py-3 shadow-sm dark:border-slate-700 dark:bg-emerald-950/15"><div className="flex min-w-0 items-center gap-3"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-white text-emerald-600 shadow-sm dark:bg-slate-800 dark:text-emerald-300"><CalendarDays size={19} /></span><div className="min-w-0"><p className="text-sm font-extrabold text-slate-900 dark:text-white">{item.title}</p><p className="mt-1 text-xs font-medium text-slate-600 dark:text-slate-300">Work date: {item.workDate} <span className="mx-1 text-slate-300">•</span> {historyReviewLabel(item)}</p><p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{item.detail}</p></div></div><span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1.5 text-[10px] font-extrabold ${statusClass(item.status)}`}>{item.status === 'Approved' && <CheckCircle2 size={13} />}{item.status}</span></div>)}</div>
+          ) : <p className="rounded-2xl bg-slate-50 px-3 py-5 text-center text-xs font-medium text-slate-500 dark:bg-slate-800/60">No offset history.</p>}
+          {historyPages > 1 && <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3 dark:border-slate-700"><button onClick={() => setHistoryPage((p) => Math.max(0, p - 1))} disabled={safeHistoryPage === 0} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-500 disabled:opacity-35 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"><ChevronLeft size={15} /> Previous</button><span className="text-xs font-semibold text-slate-400">Page {safeHistoryPage + 1} of {historyPages}</span><button onClick={() => setHistoryPage((p) => Math.min(historyPages - 1, p + 1))} disabled={safeHistoryPage >= historyPages - 1} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-500 disabled:opacity-35 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">Next <ChevronRight size={15} /></button></div>}
         </section>
       </div>
     </ModalShell>
