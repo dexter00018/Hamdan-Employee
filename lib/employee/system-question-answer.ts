@@ -19,8 +19,8 @@ const ENTRIES: Entry[] = [
   },
   {
     terms: ['offset', 'offset hours', 'offset tracker', 'approved offset', 'earn offset'],
-    en: 'Offset is approved time credit from eligible work after 7:00 PM. Earned requests must be approved before becoming usable balance. Only completed whole hours count: 7:59 PM earns 0 hours, while 8:00 PM earns 1 hour. On approval, the eligible OT time is assigned to the employee’s final project at the 7:00 PM cutoff. Approved offset can be used for supported Late correction, exact-minute Early Out, or a one-day Leave Using Offset when at least 9 unreserved approved hours are available. Super Admin can make audited manpower-time adjustments for past records.',
-    tl: 'Ang Offset ay approved time credit mula sa eligible work pagkatapos ng 7:00 PM. Kailangan munang ma-approve ang earned request bago maging usable balance. Buong oras lang ang binibilang: 7:59 PM ay 0 oras, habang 8:00 PM ay 1 oras. Kapag na-approve, ang eligible OT time ay ia-assign sa huling project ng employee sa 7:00 PM cutoff. Puwede itong gamitin sa supported Late correction, exact-minute Early Out, o one-day Leave Using Offset kapag may at least 9 unreserved approved hours. Puwede ring gumawa ang Super Admin ng audited manpower-time adjustment para sa past records.',
+    en: 'Offset is approved time credit from eligible work after 7:00 PM. Earned requests must be approved before becoming usable balance. Only completed whole hours count: 7:59 PM earns 0 hours, while 8:00 PM earns 1 hour. On approval, the eligible OT time is assigned to the employee’s final project at the 7:00 PM cutoff. During the active payroll cutoff only (1–15 or 16–month-end), approved Offset can correct Late, exact-minute Early Out, or one full Absent day for 9 hours. A one-day Leave Using Offset also needs 9 unreserved approved hours. Super Admin can make audited manpower-time adjustments for past records.',
+    tl: 'Ang Offset ay approved time credit mula sa eligible work pagkatapos ng 7:00 PM. Kailangan munang ma-approve ang earned request bago maging usable balance. Buong oras lang ang binibilang: 7:59 PM ay 0 oras, habang 8:00 PM ay 1 oras. Kapag na-approve, ang eligible OT time ay ia-assign sa huling project ng employee sa 7:00 PM cutoff. Sa active payroll cutoff lang (1–15 o 16–month-end), puwedeng gamitin ang approved Offset para sa Late, exact-minute Early Out, o isang full-day Absent na 9 oras. Ang one-day Leave Using Offset ay kailangan din ng 9 unreserved approved hours. Puwede ring gumawa ang Super Admin ng audited manpower-time adjustment para sa past records.',
   },
   {
     terms: ['earn offset', 'how offset earned', '7 pm offset', '7:30 pm offset', 'after 7 pm', 'after 7:30 pm', 'paano maka offset', 'paano kumita offset'],
@@ -29,8 +29,13 @@ const ENTRIES: Entry[] = [
   },
   {
     terms: ['offset late', 'use offset for late', 'late using offset', 'scrub late', 'offset applied'],
-    en: 'An eligible Late record can use 1 approved offset hour. The request goes to HR, the hour is deducted only after HR approval, and the attendance tag changes to Offset.',
-    tl: 'Ang eligible Late record ay puwedeng gumamit ng 1 approved offset hour. Pupunta muna ang request sa HR, mababawas lang ang hour kapag approved, at magiging Offset ang attendance tag.',
+    en: 'An eligible Late record in the active payroll cutoff can use the exact number of approved offset minutes needed after 9:00 AM. The request goes to HR, is deducted only after approval, and the attendance tag changes to Offset.',
+    tl: 'Ang eligible Late record sa active payroll cutoff ay puwedeng gumamit ng eksaktong approved Offset minutes na kailangan pagkatapos ng 9:00 AM. Pupunta muna ang request sa HR, mababawas lang pagkatapos ma-approve, at magiging Offset ang attendance tag.',
+  },
+  {
+    terms: ['offset absent', 'use offset for absent', 'scrub absent', 'absent using offset', 'absent offset'],
+    en: 'An Absent record in the active payroll cutoff can be scrubbed with 9 unreserved approved Offset hours. The request is reserved while pending, deducted only after HR approval, and then changes the attendance tag to Offset.',
+    tl: 'Ang Absent record sa active payroll cutoff ay puwedeng i-scrub gamit ang 9 unreserved approved Offset hours. Reserved lang ito habang Pending, mababawas lang pagkatapos ma-approve ng HR, at magiging Offset ang attendance tag.',
   },
   {
     terms: ['leave using offset', 'offset leave', 'leave with offset', '9 hours leave', '9 hrs leave', 'offset funded leave'],
@@ -39,8 +44,8 @@ const ENTRIES: Entry[] = [
   },
   {
     terms: ['offset history', 'history offset', 'earned offset history', 'used offset history', 'offset records'],
-    en: 'The employee Offset module uses one combined Offset History for earned offset, Late usage, Early Out usage, Offset Leave charges, and refunds, shown in one chronological list.',
-    tl: 'Isang combined Offset History ang ginagamit para sa earned offset, Late usage, Early Out usage, Offset Leave charges, at refunds sa iisang chronological list.',
+    en: 'The employee Offset module uses one combined Offset History for earned offset, Late usage, Early Out usage, Absent usage, Offset Leave charges, and refunds, shown in one chronological list.',
+    tl: 'Isang combined Offset History ang ginagamit para sa earned offset, Late usage, Early Out usage, Absent usage, Offset Leave charges, at refunds sa iisang chronological list.',
   },
   {
     terms: ['early time out', 'early timeout', 'time out early', 'maagang time out', 'offset early out', 'offset early time out', 'use offset early out'],
