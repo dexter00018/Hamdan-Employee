@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarDays, CalendarPlus, CalendarX2, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, Clock3, Eraser, FileText, Info, LogOut, Send } from 'lucide-react';
+import { CalendarDays, CalendarX2, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, Clock3, Eraser, FileText, Info, Leaf, LogOut, Send } from 'lucide-react';
 import ModalShell from '@/components/shared/ModalShell';
 import { supabase } from '@/lib/supabase';
 
@@ -13,7 +13,7 @@ type EarlyOutRecord = { id: string; log_date: string; time_out: string | null; e
 type UsageRequest = { id: string; attendance_log_id: string; hours: number; required_minutes: number | null; usage_type: 'late' | 'absent'; status: string; created_at: string; reviewed_at: string | null; hr_notes: string | null };
 type EarlyOutRequest = { id: string; attendance_log_id: string; required_minutes: number; status: string; created_at: string; reviewed_at: string | null; hr_notes: string | null };
 type OffsetLeave = { id: string; leave_type: string; start_date: string; status: string; offset_minutes_required: number; offset_charged_at: string | null; offset_refunded_at: string | null; reviewed_at: string | null; created_at: string };
-type HistoryItem = { id: string; createdAt: string; title: string; detail: string; status: string; workDate: string; reviewedAt: string | null };
+type HistoryItem = { id: string; createdAt: string; title: string; detail: string; status: string; workDate: string; reviewedAt: string | null; kind: 'earned' | 'late' | 'early' | 'absent' | 'leave' };
 type UsePanel = 'late' | 'early' | 'absent' | null;
 
 const REQUIRED_LEAVE_MINUTES = 9 * 60;
@@ -24,6 +24,14 @@ const statusClass = (status: string) => {
   if (status === 'Approved') return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/35 dark:text-emerald-300';
   if (status === 'Rejected' || status === 'Cancelled') return 'bg-rose-50 text-rose-700 dark:bg-rose-950/35 dark:text-rose-300';
   return 'bg-amber-50 text-amber-700 dark:bg-amber-950/35 dark:text-amber-300';
+};
+
+const historyTone = (kind: HistoryItem['kind']) => {
+  if (kind === 'early') return { card: 'bg-orange-50/70 dark:bg-orange-950/15', tile: 'bg-orange-100 dark:bg-orange-900/25', text: 'text-orange-700 dark:text-orange-300' };
+  if (kind === 'late') return { card: 'bg-sky-50/70 dark:bg-sky-950/15', tile: 'bg-sky-100 dark:bg-sky-900/25', text: 'text-sky-700 dark:text-cyan-300' };
+  if (kind === 'absent') return { card: 'bg-rose-50/70 dark:bg-rose-950/15', tile: 'bg-rose-100 dark:bg-rose-900/25', text: 'text-rose-700 dark:text-rose-300' };
+  if (kind === 'earned') return { card: 'bg-cyan-50/70 dark:bg-cyan-950/15', tile: 'bg-cyan-100 dark:bg-cyan-900/25', text: 'text-cyan-700 dark:text-cyan-300' };
+  return { card: 'bg-emerald-50/70 dark:bg-emerald-950/15', tile: 'bg-emerald-100 dark:bg-emerald-900/25', text: 'text-emerald-700 dark:text-emerald-300' };
 };
 
 function formatOffsetMinutes(totalMinutes: number) {
@@ -102,6 +110,20 @@ function currentPayrollCutoff() {
   };
 }
 
+function recentAttendanceRange() {
+  const today = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+  const year = Number(today.slice(0, 4));
+  const month = Number(today.slice(5, 7));
+  const previousMonthStart = new Date(Date.UTC(year, month - 2, 1));
+  const endDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return {
+    start: `${previousMonthStart.getUTCFullYear()}-${String(previousMonthStart.getUTCMonth() + 1).padStart(2, '0')}-01`,
+    end: `${year}-${String(month).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`,
+  };
+}
+
 function earlyOutMinutes(record: EarlyOutRecord, cutoffHour: number) {
   if (!record.time_out) return 0;
   const actual = Date.parse(record.time_out);
@@ -135,6 +157,7 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const cutoff = useMemo(() => currentPayrollCutoff(), []);
+  const recordRange = useMemo(() => recentAttendanceRange(), []);
 
   const fetchOffsetData = useCallback(async () => {
     if (!userId) return;
@@ -145,8 +168,8 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
       supabase.from('offset_transactions').select('kind,hours,minutes').eq('user_id', userId),
       // Keep the linked attendance row for history even after an approved Offset
       // changes its status away from "Late". The Late button filters below.
-      supabase.from('attendance_logs').select('id,log_date,time_in,status').eq('user_id', userId).gte('log_date', cutoff.start).lte('log_date', cutoff.end).order('log_date', { ascending: false }),
-      supabase.from('attendance_logs').select('id,log_date,time_out,early_out_offset_minutes').eq('user_id', userId).gte('log_date', cutoff.start).lte('log_date', cutoff.end).not('time_out', 'is', null).order('log_date', { ascending: false }),
+      supabase.from('attendance_logs').select('id,log_date,time_in,status').eq('user_id', userId).gte('log_date', recordRange.start).lte('log_date', recordRange.end).order('log_date', { ascending: false }),
+      supabase.from('attendance_logs').select('id,log_date,time_out,early_out_offset_minutes').eq('user_id', userId).gte('log_date', recordRange.start).lte('log_date', recordRange.end).not('time_out', 'is', null).order('log_date', { ascending: false }),
       supabase.from('offset_usage_requests').select('id,attendance_log_id,hours,required_minutes,usage_type,status,created_at,reviewed_at,hr_notes').eq('user_id', userId).order('created_at', { ascending: false }),
       supabase.from('early_out_offset_requests').select('id,attendance_log_id,required_minutes,status,created_at,reviewed_at,hr_notes').eq('user_id', userId).order('created_at', { ascending: false }),
       supabase.from('leave_requests').select('id,leave_type,start_date,status,offset_minutes_required,offset_charged_at,offset_refunded_at,reviewed_at,created_at').eq('user_id', userId).eq('funding_source', 'offset').order('created_at', { ascending: false }),
@@ -181,7 +204,7 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
     setOffsetLeaves((leaveRes.data || []) as OffsetLeave[]);
     if (typeof settingRes.data?.value === 'number') setCutoffHour(settingRes.data.value);
     setLoading(false);
-  }, [userId, cutoff.start, cutoff.end]);
+  }, [userId, recordRange.start, recordRange.end]);
 
   useEffect(() => {
     if (!open || !userId) return;
@@ -210,14 +233,15 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
   const reservedMinutes = pendingUseMinutes + pendingEarlyOutMinutes + pendingLeaveMinutes;
   const availableToRequestMinutes = Math.max(0, approvedBalanceMinutes - reservedMinutes);
 
-  const requestedUsageLogIds = useMemo(() => new Set(usageRequests.map((request) => request.attendance_log_id)), [usageRequests]);
-  const requestedEarlyLogIds = useMemo(() => new Set(earlyOutRequests.map((request) => request.attendance_log_id)), [earlyOutRequests]);
-  const eligibleLateRecords = useMemo(() => lateRecords.filter((record) => record.status.toLowerCase() === 'late' && !requestedUsageLogIds.has(record.id)), [lateRecords, requestedUsageLogIds]);
-  const eligibleAbsentRecords = useMemo(() => lateRecords.filter((record) => record.status.toLowerCase() === 'absent' && !requestedUsageLogIds.has(record.id)), [lateRecords, requestedUsageLogIds]);
-  const eligibleEarlyRecords = useMemo(() => earlyOutRecords
+  const requestedUsageByLogId = useMemo(() => new Map(usageRequests.map((request) => [request.attendance_log_id, request])), [usageRequests]);
+  const requestedEarlyByLogId = useMemo(() => new Map(earlyOutRequests.map((request) => [request.attendance_log_id, request])), [earlyOutRequests]);
+  const isCurrentCutoffRecord = useCallback((logDate: string) => logDate >= cutoff.start && logDate <= cutoff.end, [cutoff.start, cutoff.end]);
+  const displayedLateRecords = useMemo(() => lateRecords.filter((record) => record.status.toLowerCase() === 'late'), [lateRecords]);
+  const displayedAbsentRecords = useMemo(() => lateRecords.filter((record) => record.status.toLowerCase() === 'absent'), [lateRecords]);
+  const displayedEarlyRecords = useMemo(() => earlyOutRecords
     .map((record) => ({ ...record, requiredMinutes: earlyOutMinutes(record, cutoffHour) }))
-    .filter((record) => record.requiredMinutes > 0 && record.early_out_offset_minutes <= 0 && !requestedEarlyLogIds.has(record.id)),
-    [earlyOutRecords, cutoffHour, requestedEarlyLogIds]
+    .filter((record) => record.requiredMinutes > 0),
+    [earlyOutRecords, cutoffHour]
   );
 
   const lateRecordMap = useMemo(() => new Map(lateRecords.map((record) => [record.id, record])), [lateRecords]);
@@ -228,7 +252,7 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
     const leaveItems = offsetLeaves.map((leave) => ({
       id: `leave-${leave.id}`, createdAt: leave.created_at, title: `${leave.leave_type} Leave · ${leave.start_date}`,
       detail: leave.offset_refunded_at ? '9h refunded' : leave.offset_charged_at ? '9h deducted' : '9h reserved', status: leave.status,
-      workDate: dateLabel(leave.start_date), reviewedAt: leave.reviewed_at,
+      workDate: dateLabel(leave.start_date), reviewedAt: leave.reviewed_at, kind: 'leave' as const,
     }));
     const lateItems = usageRequests.map((request) => {
       const record = lateRecordMap.get(request.attendance_log_id);
@@ -238,7 +262,7 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
       return {
         id: `${request.usage_type}-${request.id}`, createdAt: request.created_at, title: `${isAbsent ? 'Absent' : 'Late'}${record?.log_date ? ` · ${record.log_date}` : ''}`,
         detail: isAbsent ? `Full day · ${usageText}` : `Original ${timeLabel(record?.time_in)} · ${usageText}`, status: request.status,
-        workDate: record?.log_date ? dateLabel(record.log_date) : '—', reviewedAt: request.reviewed_at,
+        workDate: record?.log_date ? dateLabel(record.log_date) : '—', reviewedAt: request.reviewed_at, kind: isAbsent ? 'absent' as const : 'late' as const,
       };
     });
     const earlyItems = earlyOutRequests.map((request) => {
@@ -247,12 +271,12 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
       return {
         id: `early-${request.id}`, createdAt: request.created_at, title: `Early Out${record?.log_date ? ` · ${record.log_date}` : ''}`,
         detail: `Original out ${timeLabel(record?.time_out)} · ${usageText}`, status: request.status,
-        workDate: record?.log_date ? dateLabel(record.log_date) : '—', reviewedAt: request.reviewed_at,
+        workDate: record?.log_date ? dateLabel(record.log_date) : '—', reviewedAt: request.reviewed_at, kind: 'early' as const,
       };
     });
     const earnedItems = requests.map((request) => ({
       id: `earned-${request.id}`, createdAt: request.created_at, title: `OT / Earned Offset · ${request.eligible_hours}h`,
-      detail: earnedOffsetDetail(request), status: request.status, workDate: eventDateLabel(request.scheduled_end_at), reviewedAt: request.reviewed_at,
+      detail: earnedOffsetDetail(request), status: request.status, workDate: eventDateLabel(request.scheduled_end_at), reviewedAt: request.reviewed_at, kind: 'earned' as const,
     }));
     return [...leaveItems, ...lateItems, ...earlyItems, ...earnedItems].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [offsetLeaves, usageRequests, earlyOutRequests, requests, lateRecordMap, earlyRecordMap]);
@@ -284,12 +308,12 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
     window.dispatchEvent(new Event('employee:open-offset-leave'));
   };
 
-  const activeRecords = usePanel === 'early' ? eligibleEarlyRecords : usePanel === 'absent' ? eligibleAbsentRecords : eligibleLateRecords;
+  const activeRecords = usePanel === 'early' ? displayedEarlyRecords : usePanel === 'absent' ? displayedAbsentRecords : displayedLateRecords;
   const listPages = Math.max(1, Math.ceil(activeRecords.length / LIST_PAGE_SIZE));
   const safeListPage = Math.min(listPage, listPages - 1);
-  const visibleLate = eligibleLateRecords.slice(safeListPage * LIST_PAGE_SIZE, (safeListPage + 1) * LIST_PAGE_SIZE);
-  const visibleAbsent = eligibleAbsentRecords.slice(safeListPage * LIST_PAGE_SIZE, (safeListPage + 1) * LIST_PAGE_SIZE);
-  const visibleEarly = eligibleEarlyRecords.slice(safeListPage * LIST_PAGE_SIZE, (safeListPage + 1) * LIST_PAGE_SIZE);
+  const visibleLate = displayedLateRecords.slice(safeListPage * LIST_PAGE_SIZE, (safeListPage + 1) * LIST_PAGE_SIZE);
+  const visibleAbsent = displayedAbsentRecords.slice(safeListPage * LIST_PAGE_SIZE, (safeListPage + 1) * LIST_PAGE_SIZE);
+  const visibleEarly = displayedEarlyRecords.slice(safeListPage * LIST_PAGE_SIZE, (safeListPage + 1) * LIST_PAGE_SIZE);
   const historyPages = Math.max(1, Math.ceil(historyItems.length / HISTORY_PAGE_SIZE));
   const safeHistoryPage = Math.min(historyPage, historyPages - 1);
   const visibleHistory = historyItems.slice(safeHistoryPage * HISTORY_PAGE_SIZE, (safeHistoryPage + 1) * HISTORY_PAGE_SIZE);
@@ -310,25 +334,28 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
               <p className="mt-4 inline-flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-300"><CalendarDays size={17} className="text-sky-600 dark:text-cyan-300" /> Current payroll cutoff: {cutoff.label}</p>
             </div>
             <div className="grid grid-cols-2 gap-2 border-t border-sky-100 pt-4 sm:grid-cols-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0 dark:border-slate-600">
-              <button type="button" onClick={openOffsetLeave} disabled={!canFileOffsetLeave} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-emerald-100 px-4 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-200 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:opacity-100 dark:bg-emerald-900/30 dark:text-emerald-200 dark:hover:bg-emerald-900/45 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"><CalendarPlus size={17} /> Leave</button>
-              <button type="button" onClick={() => setUsePanel((value) => value === 'early' ? null : 'early')} disabled={eligibleEarlyRecords.length === 0} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-orange-100 px-4 text-xs font-extrabold text-orange-700 transition hover:bg-orange-200 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:opacity-100 dark:bg-orange-900/30 dark:text-orange-200 dark:hover:bg-orange-900/45 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"><LogOut size={17} /> Early Out</button>
-              <button type="button" onClick={() => setUsePanel((value) => value === 'absent' ? null : 'absent')} disabled={eligibleAbsentRecords.length === 0} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-rose-100 px-4 text-xs font-extrabold text-rose-700 transition hover:bg-rose-200 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:opacity-100 dark:bg-rose-900/30 dark:text-rose-200 dark:hover:bg-rose-900/45 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"><CalendarX2 size={17} /> Absent</button>
-              <button type="button" onClick={() => setUsePanel((value) => value === 'late' ? null : 'late')} disabled={eligibleLateRecords.length === 0} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full border-2 border-sky-600 bg-white/80 px-4 text-xs font-extrabold text-sky-700 shadow-sm transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-200 disabled:text-slate-400 disabled:opacity-100 dark:border-cyan-400 dark:bg-slate-800/60 dark:text-cyan-200 dark:hover:bg-slate-800 dark:disabled:border-slate-700 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"><Eraser size={17} /> Late</button>
+              <button type="button" onClick={openOffsetLeave} disabled={!canFileOffsetLeave} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-emerald-100 px-4 text-xs font-extrabold text-emerald-800 transition hover:bg-emerald-200 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:opacity-100 dark:bg-emerald-900/30 dark:text-emerald-200 dark:hover:bg-emerald-900/45 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"><Leaf size={18} strokeWidth={2.5} /> Leave</button>
+              <button type="button" onClick={() => setUsePanel((value) => value === 'early' ? null : 'early')} disabled={displayedEarlyRecords.length === 0} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-orange-100 px-4 text-xs font-extrabold text-orange-700 transition hover:bg-orange-200 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:opacity-100 dark:bg-orange-900/30 dark:text-orange-200 dark:hover:bg-orange-900/45 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"><LogOut size={17} /> Early Out</button>
+              <button type="button" onClick={() => setUsePanel((value) => value === 'absent' ? null : 'absent')} disabled={displayedAbsentRecords.length === 0} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-rose-100 px-4 text-xs font-extrabold text-rose-700 transition hover:bg-rose-200 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:opacity-100 dark:bg-rose-900/30 dark:text-rose-200 dark:hover:bg-rose-900/45 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"><CalendarX2 size={17} /> Absent</button>
+              <button type="button" onClick={() => setUsePanel((value) => value === 'late' ? null : 'late')} disabled={displayedLateRecords.length === 0} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full border-2 border-sky-600 bg-white/80 px-4 text-xs font-extrabold text-sky-700 shadow-sm transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-200 disabled:text-slate-400 disabled:opacity-100 dark:border-cyan-400 dark:bg-slate-800/60 dark:text-cyan-200 dark:hover:bg-slate-800 dark:disabled:border-slate-700 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"><Eraser size={17} /> Late</button>
             </div>
           </div>
         </section>
 
         {usePanel === 'early' && (
           <section className="rounded-[26px] border border-orange-100 bg-gradient-to-br from-orange-50/80 to-white p-4 shadow-sm dark:border-orange-950/50 dark:from-orange-950/20 dark:to-[#27312e]">
-            <div className="mb-4 flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-orange-100 text-orange-600 dark:bg-orange-900/35 dark:text-orange-300"><LogOut size={21} /></span><div><h3 className="text-base font-extrabold text-slate-900 dark:text-white">Early Out · Current payroll cutoff</h3><p className="text-xs text-slate-500 dark:text-slate-300">Exact minutes to {cutoffHour}:00</p></div></div>
+            <div className="mb-4 flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-orange-100 text-orange-600 dark:bg-orange-900/35 dark:text-orange-300"><LogOut size={21} /></span><div><h3 className="text-base font-extrabold text-slate-900 dark:text-white">Early Out Records</h3><p className="text-xs text-slate-500 dark:text-slate-300">All recent records shown · Only current cutoff can be submitted</p></div></div>
             <div className="space-y-2.5">
               {visibleEarly.map((record) => {
                 const busy = submittingId === `early-${record.id}`;
                 const enough = availableToRequestMinutes >= record.requiredMinutes;
+                const existingRequest = requestedEarlyByLogId.get(record.id);
+                const canSubmit = isCurrentCutoffRecord(record.log_date) && record.early_out_offset_minutes <= 0 && !existingRequest && enough;
+                const actionLabel = busy ? 'Submitting…' : !isCurrentCutoffRecord(record.log_date) ? 'Outside cutoff' : existingRequest ? existingRequest.status === 'Pending' ? 'Pending HR' : 'Already requested' : record.early_out_offset_minutes > 0 ? 'Already applied' : enough ? 'Submit to HR' : `Need ${formatOffsetMinutes(record.requiredMinutes)}`;
                 const tile = dateTile(record.log_date);
                 return <div key={record.id} className="flex items-center justify-between gap-3 rounded-2xl border border-white bg-white/90 px-3 py-3 shadow-sm dark:border-slate-700 dark:bg-slate-800/80">
                   <div className="flex min-w-0 items-center gap-3"><span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-orange-50 text-center leading-none dark:bg-orange-900/25"><span className="block text-[9px] font-extrabold tracking-wide text-orange-600 dark:text-orange-300">{tile.month}</span><span className="block text-lg font-black text-slate-700 dark:text-white">{tile.day}</span></span><div className="min-w-0"><p className="text-sm font-extrabold text-slate-900 dark:text-white">{dateLabel(record.log_date)}</p><p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-300"><Clock3 className="mr-1 inline" size={14} /> Out {timeLabel(record.time_out)} <span className="mx-1.5 text-slate-300">•</span> Uses {formatOffsetMinutes(record.requiredMinutes)}</p></div></div>
-                  <button type="button" disabled={busy || !enough} onClick={() => submitEarly(record.id)} className="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-xl bg-orange-600 px-3.5 text-[11px] font-extrabold text-white shadow-sm transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none disabled:opacity-100 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"><Send size={15} /> {busy ? 'Submitting…' : enough ? 'Submit to HR' : `Need ${formatOffsetMinutes(record.requiredMinutes)}`}</button>
+                  <button type="button" disabled={busy || !canSubmit} onClick={() => submitEarly(record.id)} className="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-xl bg-orange-600 px-3.5 text-[11px] font-extrabold text-white shadow-sm transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none disabled:opacity-100 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"><Send size={15} /> {actionLabel}</button>
                 </div>;
               })}
             </div>
@@ -338,16 +365,19 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
 
         {usePanel === 'late' && (
           <section className="rounded-[26px] border border-sky-100 bg-gradient-to-br from-slate-50 to-sky-50/60 p-4 shadow-sm dark:border-slate-700 dark:from-[#303632] dark:to-[#27312e]">
-            <div className="mb-4 flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-sky-100 text-sky-700 dark:bg-sky-900/35 dark:text-cyan-300"><Clock3 size={21} /></span><div><h3 className="text-base font-extrabold text-slate-900 dark:text-white">Late · Current payroll cutoff</h3><p className="text-xs text-slate-500 dark:text-slate-300">Exact late minutes after 9:00 AM</p></div></div>
+            <div className="mb-4 flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-sky-100 text-sky-700 dark:bg-sky-900/35 dark:text-cyan-300"><Clock3 size={21} /></span><div><h3 className="text-base font-extrabold text-slate-900 dark:text-white">Late Records</h3><p className="text-xs text-slate-500 dark:text-slate-300">All recent records shown · Only current cutoff can be submitted</p></div></div>
             <div className="space-y-2.5">
               {visibleLate.map((record) => {
                 const busy = submittingId === `late-${record.id}`;
                 const requiredMinutes = lateMinutes(record);
                 const enough = availableToRequestMinutes >= requiredMinutes;
+                const existingRequest = requestedUsageByLogId.get(record.id);
+                const canSubmit = isCurrentCutoffRecord(record.log_date) && !existingRequest && enough;
+                const actionLabel = busy ? 'Submitting…' : !isCurrentCutoffRecord(record.log_date) ? 'Outside cutoff' : existingRequest ? existingRequest.status === 'Pending' ? 'Pending HR' : 'Already requested' : enough ? 'Submit to HR' : `Need ${formatOffsetMinutes(requiredMinutes)}`;
                 const tile = dateTile(record.log_date);
                 return <div key={record.id} className="flex items-center justify-between gap-3 rounded-2xl border border-white bg-white/90 px-3 py-3 shadow-sm dark:border-slate-700 dark:bg-slate-800/80">
                   <div className="flex min-w-0 items-center gap-3"><span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-sky-50 text-center leading-none dark:bg-sky-900/25"><span className="block text-[9px] font-extrabold tracking-wide text-sky-700 dark:text-cyan-300">{tile.month}</span><span className="block text-lg font-black text-slate-700 dark:text-white">{tile.day}</span></span><div className="min-w-0"><p className="text-sm font-extrabold text-slate-900 dark:text-white">{dateLabel(record.log_date)}</p><p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-300"><Clock3 className="mr-1 inline" size={14} /> In {timeLabel(record.time_in)} <span className="mx-1.5 text-slate-300">•</span> Uses {formatOffsetMinutes(requiredMinutes)}</p></div></div>
-                  <button type="button" disabled={busy || !enough} onClick={() => submitAttendanceOffset(record.id, 'late')} className="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-800 to-sky-700 px-3.5 text-[11px] font-extrabold text-white shadow-sm transition hover:from-cyan-900 hover:to-sky-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:bg-none disabled:text-slate-400 disabled:shadow-none disabled:opacity-100 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"><Send size={15} /> {busy ? 'Submitting…' : enough ? 'Submit to HR' : `Need ${formatOffsetMinutes(requiredMinutes)}`}</button>
+                  <button type="button" disabled={busy || !canSubmit} onClick={() => submitAttendanceOffset(record.id, 'late')} className="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-800 to-sky-700 px-3.5 text-[11px] font-extrabold text-white shadow-sm transition hover:from-cyan-900 hover:to-sky-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:bg-none disabled:text-slate-400 disabled:shadow-none disabled:opacity-100 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"><Send size={15} /> {actionLabel}</button>
                 </div>;
               })}
             </div>
@@ -357,15 +387,18 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
 
         {usePanel === 'absent' && (
           <section className="rounded-[26px] border border-rose-100 bg-gradient-to-br from-rose-50/80 to-white p-4 shadow-sm dark:border-rose-950/50 dark:from-rose-950/20 dark:to-[#27312e]">
-            <div className="mb-4 flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-rose-100 text-rose-700 dark:bg-rose-900/35 dark:text-rose-300"><CalendarX2 size={21} /></span><div><h3 className="text-base font-extrabold text-slate-900 dark:text-white">Absent · Current payroll cutoff</h3><p className="text-xs text-slate-500 dark:text-slate-300">One full absence uses 9h of approved Offset</p></div></div>
+            <div className="mb-4 flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-rose-100 text-rose-700 dark:bg-rose-900/35 dark:text-rose-300"><CalendarX2 size={21} /></span><div><h3 className="text-base font-extrabold text-slate-900 dark:text-white">Absent Records</h3><p className="text-xs text-slate-500 dark:text-slate-300">All recent records shown · Only current cutoff can be submitted</p></div></div>
             <div className="space-y-2.5">
               {visibleAbsent.map((record) => {
                 const busy = submittingId === `absent-${record.id}`;
                 const enough = availableToRequestMinutes >= REQUIRED_LEAVE_MINUTES;
+                const existingRequest = requestedUsageByLogId.get(record.id);
+                const canSubmit = isCurrentCutoffRecord(record.log_date) && !existingRequest && enough;
+                const actionLabel = busy ? 'Submitting…' : !isCurrentCutoffRecord(record.log_date) ? 'Outside cutoff' : existingRequest ? existingRequest.status === 'Pending' ? 'Pending HR' : 'Already requested' : enough ? 'Submit to HR' : 'Need 9h';
                 const tile = dateTile(record.log_date);
                 return <div key={record.id} className="flex items-center justify-between gap-3 rounded-2xl border border-white bg-white/90 px-3 py-3 shadow-sm dark:border-slate-700 dark:bg-slate-800/80">
                   <div className="flex min-w-0 items-center gap-3"><span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-rose-50 text-center leading-none dark:bg-rose-900/25"><span className="block text-[9px] font-extrabold tracking-wide text-rose-700 dark:text-rose-300">{tile.month}</span><span className="block text-lg font-black text-slate-700 dark:text-white">{tile.day}</span></span><div className="min-w-0"><p className="text-sm font-extrabold text-slate-900 dark:text-white">{dateLabel(record.log_date)}</p><p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-300">Full day <span className="mx-1.5 text-slate-300">•</span> Uses 9h</p></div></div>
-                  <button type="button" disabled={busy || !enough} onClick={() => submitAttendanceOffset(record.id, 'absent')} className="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-xl bg-rose-700 px-3.5 text-[11px] font-extrabold text-white shadow-sm transition hover:bg-rose-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none disabled:opacity-100 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"><Send size={15} /> {busy ? 'Submitting…' : enough ? 'Submit to HR' : 'Need 9h'}</button>
+                  <button type="button" disabled={busy || !canSubmit} onClick={() => submitAttendanceOffset(record.id, 'absent')} className="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-xl bg-rose-700 px-3.5 text-[11px] font-extrabold text-white shadow-sm transition hover:bg-rose-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none disabled:opacity-100 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"><Send size={15} /> {actionLabel}</button>
                 </div>;
               })}
             </div>
@@ -380,7 +413,8 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
           {loading ? <p className="py-4 text-center text-xs text-slate-500">Loading…</p> : visibleHistory.length ? (
             <div className="space-y-2.5">{visibleHistory.map((item) => {
               const tile = dateTile(item.workDate);
-              return <div key={item.id} className="flex items-center justify-between gap-3 rounded-2xl border border-white bg-emerald-50/55 px-3 py-3 shadow-sm dark:border-slate-700 dark:bg-emerald-950/15"><div className="flex min-w-0 items-center gap-3"><span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-white text-center leading-none shadow-sm dark:bg-slate-800"><span className="block text-[9px] font-extrabold tracking-wide text-emerald-600 dark:text-emerald-300">{tile.month}</span><span className="block text-lg font-black text-slate-700 dark:text-white">{tile.day}</span></span><div className="min-w-0"><p className="text-sm font-extrabold text-slate-900 dark:text-white">{item.title}</p><p className="mt-1 text-xs font-medium text-slate-600 dark:text-slate-300">Work date: {item.workDate} <span className="mx-1 text-slate-300">•</span> {historyReviewLabel(item)}</p><p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{item.detail}</p></div></div><span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1.5 text-[10px] font-extrabold ${statusClass(item.status)}`}>{item.status === 'Approved' && <CheckCircle2 size={13} />}{item.status}</span></div>;
+              const tone = historyTone(item.kind);
+              return <div key={item.id} className={`flex items-center justify-between gap-3 rounded-2xl border border-white px-3 py-3 shadow-sm dark:border-slate-700 ${tone.card}`}><div className="flex min-w-0 items-center gap-3"><span className={`grid h-12 w-12 shrink-0 place-items-center rounded-xl text-center leading-none ${tone.tile}`}><span className={`block text-[9px] font-extrabold tracking-wide ${tone.text}`}>{tile.month}</span><span className="block text-lg font-black text-slate-700 dark:text-white">{tile.day}</span></span><div className="min-w-0"><p className="text-sm font-extrabold text-slate-900 dark:text-white">{item.title}</p><p className="mt-1 text-xs font-medium text-slate-600 dark:text-slate-300">Work date: {item.workDate} <span className="mx-1 text-slate-300">•</span> {historyReviewLabel(item)}</p><p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{item.detail}</p></div></div><span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1.5 text-[10px] font-extrabold ${statusClass(item.status)}`}>{item.status === 'Approved' && <CheckCircle2 size={13} />}{item.status}</span></div>;
             })}</div>
           ) : <p className="rounded-2xl bg-slate-50 px-3 py-5 text-center text-xs font-medium text-slate-500 dark:bg-slate-800/60">No offset history.</p>}
           {historyPages > 1 && <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3 dark:border-slate-700"><button onClick={() => setHistoryPage((p) => Math.max(0, p - 1))} disabled={safeHistoryPage === 0} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-500 disabled:opacity-35 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"><ChevronLeft size={15} /> Previous</button><span className="text-xs font-semibold text-slate-400">Page {safeHistoryPage + 1} of {historyPages}</span><button onClick={() => setHistoryPage((p) => Math.min(historyPages - 1, p + 1))} disabled={safeHistoryPage >= historyPages - 1} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-500 disabled:opacity-35 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">Next <ChevronRight size={15} /></button></div>}
