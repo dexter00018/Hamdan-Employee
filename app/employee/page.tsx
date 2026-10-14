@@ -10,6 +10,7 @@ import EmployeeWorkClock from '@/components/employee/EmployeeWorkClock';
 import EmployeeAskAI from '@/components/employee/EmployeeAskAI';
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
@@ -86,6 +87,7 @@ const FALLBACK_LEAVE_CREDITS = 10;
 const FALLBACK_TIME_OUT_REMINDER_HOUR = 19;
 
 export default function EmployeeDashboard() {
+  const router = useRouter();
   const { verify, verificationDialog } = useVerificationDialog();
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [offsetModalOpen, setOffsetModalOpen] = useState(false);
@@ -295,16 +297,12 @@ export default function EmployeeDashboard() {
   // History filter (month picker, e.g. "2026-07:H1") -- defaults to the
   // current cutoff period so employees land on "this cutoff" instead of
   // their entire history.
-  const [monthFilter, setMonthFilter] = useState(() => {
+  const [monthFilter] = useState(() => {
     const now = new Date();
     const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     const half = now.getDate() <= 15 ? 'H1' : 'H2';
     return `${ym}:${half}`;
   });
-
-  // Collapsed by default so the dashboard opens short and uncluttered;
-  // the employee taps to expand when they actually want to look at it.
-  const [attendanceHistoryOpen, setAttendanceHistoryOpen] = useState(false);
 
   // Announcements
   const [announcement, setAnnouncement] = useState<string>('');
@@ -1679,27 +1677,10 @@ export default function EmployeeDashboard() {
     return Array.from(months).sort().reverse();
   }, [availableCutoffs]);
 
-  const [selectedYm, selectedHalf] = monthFilter ? (monthFilter.split(':') as [string, string]) : ['', ''];
-
   const formatMonthOnly = (ym: string) => {
     const [y, m] = ym.split('-').map(Number);
     return new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   };
-
-  const handleMonthChange = (ym: string) => {
-    if (!ym) { setMonthFilter(''); return; }
-    setMonthFilter(`${ym}:${selectedHalf || 'H1'}`);
-  };
-
-  const handleHalfChange = (half: 'ALL' | 'H1' | 'H2') => {
-    const ym = selectedYm || currentCutoffKey.split(':')[0];
-    setMonthFilter(`${ym}:${half}`);
-  };
-
-  const filteredHistory = useMemo(() => {
-    if (!monthFilter) return history;
-    return history.filter(log => matchesCutoff(log.log_date, monthFilter));
-  }, [history, monthFilter]);
 
   const formatMonthLabel = (key: string) => {
     const [ym, half] = key.split(':');
@@ -1890,85 +1871,6 @@ export default function EmployeeDashboard() {
     return `${hour}:00 ${period}`;
   })();
 
-  // --- Export Attendance History ---
-  // Both exports respect whatever the employee currently has the history
-  // filtered to (monthFilter) via filteredHistory.
-  const exportFileLabel = () => {
-    const idPart = profile?.employee_id ? `-${profile.employee_id}` : '';
-    const periodPart = monthFilter ? `-${monthFilter.replace(':', '-')}` : '-all';
-    return `attendance${idPart}${periodPart}`;
-  };
-
-  const exportAttendanceCSV = () => {
-    const escapeCsv = (val: string) => `"${(val ?? '').replace(/"/g, '""')}"`;
-    const headers = ['Date', 'Day', 'Status', 'Time In', 'Time Out'];
-    const rows = filteredHistory.map((log) => {
-      const weekday = new Date(log.log_date).toLocaleDateString('en-US', { weekday: 'long' });
-      const timeIn = log.time_in ? new Date(log.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }) : '';
-      const timeOut = log.time_out ? new Date(log.time_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }) : '';
-      return [log.log_date, weekday, log.status ?? '', timeIn, timeOut];
-    });
-    const csv = [headers, ...rows].map((r) => r.map(escapeCsv).join(',')).join('\r\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${exportFileLabel()}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  // Opens a print-formatted view in a new tab and triggers the browser's
-  // print dialog -- the employee can "Save as PDF" from there. Avoids
-  // needing a PDF-generation library as a project dependency.
-  const exportAttendancePDF = () => {
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      alert('Please allow pop-ups to export as PDF.');
-      return;
-    }
-    const rowsHtml = filteredHistory.map((log) => {
-      const weekday = new Date(log.log_date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-      const timeIn = log.time_in ? new Date(log.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }) : '--:--';
-      const timeOut = log.time_out ? new Date(log.time_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }) : '--:--';
-      return `<tr><td>${weekday}</td><td>${log.log_date}</td><td><span class="tag ${(log.status ?? '').toLowerCase()}">${log.status ?? ''}</span></td><td>${timeIn}</td><td>${timeOut}</td></tr>`;
-    }).join('');
-
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>${exportFileLabel()}</title>
-          <style>
-            * { box-sizing: border-box; }
-            body { font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; color: #1e293b; padding: 32px; }
-            h1 { font-size: 18px; margin: 0 0 2px; }
-            .sub { color: #64748b; font-size: 12px; margin: 0 0 20px; }
-            table { width: 100%; border-collapse: collapse; font-size: 12px; }
-            th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #e2e8f0; }
-            th { color: #64748b; text-transform: uppercase; font-size: 10px; letter-spacing: 0.05em; }
-            .tag { padding: 3px 8px; border-radius: 999px; font-weight: bold; font-size: 10px; text-transform: uppercase; }
-            .tag.present { background: #e4fbea; color: #0c7a34; }
-            .tag.late { background: #ffeee2; color: #c23f0e; }
-            .tag.absent { background: #ffe1e1; color: #b91c1c; }
-            .tag.sick.leave, .tag.vacation.leave, .tag.emergency.leave { background: #f3ecfd; color: #6d28d9; }
-            @media print { body { padding: 0; } }
-          </style>
-        </head>
-        <body>
-          <h1>${profile?.full_name || 'Employee'} -- Attendance History</h1>
-          <p class="sub">${profile?.employee_id ? `ID: ${profile.employee_id} · ` : ''}${monthFilter ? formatMonthLabel(monthFilter) : 'All records'} · Generated ${new Date().toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'long', day: 'numeric', year: 'numeric' })}</p>
-          <table>
-            <thead><tr><th>Day</th><th>Date</th><th>Status</th><th>Time In</th><th>Time Out</th></tr></thead>
-            <tbody>${rowsHtml || '<tr><td colspan="5">No records.</td></tr>'}</tbody>
-          </table>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => printWindow.print(), 300);
-  };
-
   // Formats "HH:MM" (24h) into a readable 12h time, e.g. "8:05 AM" --
   // used on the dispute confirmation screen.
   const formatTimeLocal = (hhmm: string) => {
@@ -1985,8 +1887,7 @@ export default function EmployeeDashboard() {
   };
 
   const openAttendanceFromNav = () => {
-    setAttendanceHistoryOpen(true);
-    window.setTimeout(() => scrollToEmployeeSection('employee-attendance-history'), 0);
+    router.push('/employee/attendance');
   };
 
   const openProfileFromNav = () => {
@@ -1999,7 +1900,7 @@ export default function EmployeeDashboard() {
   };
 
   const openAttendanceCalendar = () => {
-    setAttendanceCalendarMonth(selectedYm || currentCutoffKey.split(':')[0]);
+    setAttendanceCalendarMonth(monthFilter.split(':')[0] || currentCutoffKey.split(':')[0]);
     setSelectedAttendanceCalendarDate(null);
     setAttendanceCalendarOpen(true);
     fetchCompanyHolidays();
@@ -2436,156 +2337,7 @@ export default function EmployeeDashboard() {
               hasTimeInToday={Boolean(todayLog?.time_in)}
             />
 
-            {/* Attendance History -- collapsed by default; tap the header to expand. */}
-            <div id="employee-attendance-history" className="card-style scroll-mt-4 !p-4">
-              <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setAttendanceHistoryOpen((v) => !v)}
-                className="flex-1 flex items-center justify-between gap-2 text-left"
-              >
-                <h3 className="mb-0 text-sm">
-                  Attendance History
-                  {!attendanceHistoryOpen && (
-                    <span className="block text-[10px] font-medium text-slate-400 normal-case tracking-normal mt-0.5">
-                      {monthFilter ? formatMonthLabel(monthFilter) : `${filteredHistory.length} record${filteredHistory.length === 1 ? '' : 's'}`}
-                    </span>
-                  )}
-                </h3>
-                <svg
-                  width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                  className={`text-slate-400 flex-shrink-0 transition-transform ${attendanceHistoryOpen ? 'rotate-180' : ''}`}
-                >
-                  <polyline points="6 9 12 15 18 9"/>
-                </svg>
-              </button>
-                <button
-                  type="button"
-                  onClick={openAttendanceCalendar}
-                  className="px-3 py-2 rounded-full bg-blue-50 text-blue-600 text-[10px] font-bold hover:bg-blue-100 transition flex-shrink-0"
-                >
-                  Calendar
-                </button>
-              </div>
-
-              {attendanceHistoryOpen && (
-                <>
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2 mt-4 mb-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <select className="input-field !py-1.5 !text-xs !min-h-0 w-auto" value={selectedYm} onChange={(e) => handleMonthChange(e.target.value)}>
-                        <option value="">All months</option>
-                        {availableMonths.map((ym) => <option key={ym} value={ym}>{formatMonthOnly(ym)}</option>)}
-                      </select>
-                      {selectedYm && (
-                        <div className="flex flex-wrap rounded-2xl bg-slate-100 p-0.5">
-                          <button
-                            type="button"
-                            onClick={() => handleHalfChange('ALL')}
-                            className={`px-3 py-1 rounded-full text-[11px] font-bold transition whitespace-nowrap ${selectedHalf === 'ALL' ? 'bg-white shadow text-slate-900' : 'text-slate-400'}`}
-                          >
-                            Whole Month
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleHalfChange('H1')}
-                            className={`px-3 py-1 rounded-full text-[11px] font-bold transition whitespace-nowrap ${selectedHalf === 'H1' ? 'bg-white shadow text-slate-900' : 'text-slate-400'}`}
-                          >
-                            1st Half
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleHalfChange('H2')}
-                            className={`px-3 py-1 rounded-full text-[11px] font-bold transition whitespace-nowrap ${selectedHalf === 'H2' ? 'bg-white shadow text-slate-900' : 'text-slate-400'}`}
-                          >
-                            2nd Half
-                          </button>
-                        </div>
-                      )}
-                      {monthFilter && <button onClick={() => setMonthFilter('')} className="text-slate-400 text-xs font-bold hover:text-slate-600">Clear</button>}
-                    </div>
-                  </div>
-                  {filteredHistory.length > 0 && (
-                    <div className="flex items-center justify-end gap-2 mb-3">
-                      <span className="text-slate-400 text-[10px] font-bold uppercase tracking-wide mr-1">Export:</span>
-                      <button
-                        type="button"
-                        onClick={exportAttendanceCSV}
-                        className="inline-flex items-center gap-1 bg-slate-100 text-slate-600 text-[11px] font-bold px-3 py-1.5 rounded-full hover:bg-slate-200 transition"
-                      >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                        CSV
-                      </button>
-                      <button
-                        type="button"
-                        onClick={exportAttendancePDF}
-                        className="inline-flex items-center gap-1 bg-slate-100 text-slate-600 text-[11px] font-bold px-3 py-1.5 rounded-full hover:bg-slate-200 transition"
-                      >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                        PDF
-                      </button>
-                    </div>
-                  )}
-                  <div className="space-y-2">
-                    {initLoading && <LoadingRow label="Loading..." />}
-                    {!initLoading && filteredHistory.length === 0 && <p className="text-slate-400 text-xs">No records{monthFilter ? ' for this selected period' : ''}.</p>}
-                    {filteredHistory.map((log, index) => (
-                      <div key={index} className="grid grid-cols-[minmax(0,1fr)_76px] items-start gap-x-2 gap-y-1 rounded-xl border border-slate-100 bg-slate-50 p-3 sm:grid-cols-[minmax(0,1fr)_76px_minmax(0,1fr)] sm:gap-2">
-                        <div className="min-w-0">
-                          <div className="font-medium text-slate-900 text-xs">{new Date(log.log_date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</div>
-                          <div className="text-slate-400 text-[10px]">{log.log_date}</div>
-                        </div>
-                        <div className="flex flex-col items-center justify-self-center"><span className={`${attendanceStatusDisplay(log).className} inline-flex min-w-[76px] items-center justify-center whitespace-nowrap`}>{attendanceStatusDisplay(log).label}</span></div>
-                          <div className="col-span-2 min-w-0 border-t border-slate-200 pt-1.5 sm:col-span-1 sm:col-start-3 sm:row-start-1 sm:border-t-0 sm:pt-0 sm:text-right">
-                            <div className="flex flex-wrap items-center gap-x-1 font-semibold text-slate-700 text-xs sm:justify-end">
-                              <span>{log.time_in ? new Date(log.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }) : '--:--'}</span>
-                              {log.time_out && <><span className="text-slate-400">–</span><span>{new Date(log.time_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}</span></>}
-                            </div>
-                            {/* Single "Dispute" button -- lets the employee pick Time In or
-                                Time Out on the choice screen, instead of two separate,
-                                cramped buttons. Only one pending dispute is allowed per
-                                date, so a single pending badge covers either type. */}
-                            <div className="mt-1.5 flex justify-end">
-                              {(() => {
-                                const canDisputeTimeOut = !log.time_out && log.time_in;
-                                const canDisputeLate = log.status?.toLowerCase() === 'late';
-                                const isPending = hasPendingDispute(log.log_date, 'TimeIn') || hasPendingDispute(log.log_date, 'TimeOut');
-
-                                if (isPending) {
-                                  return (
-                                    <span className="inline-flex items-center gap-1 text-orange-600 text-[9px] font-bold uppercase tracking-wide">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-orange-500 flex-shrink-0" />
-                                      Dispute Pending
-                                    </span>
-                                  );
-                                }
-
-                                if (canDisputeTimeOut || canDisputeLate) {
-                                  return (
-                                    <button
-                                      type="button"
-                                      onClick={() => openDisputeModal(log.id, log.log_date, canDisputeLate ? 'TimeIn' : 'TimeOut', false)}
-                                      className="inline-flex items-center gap-1 bg-blue-50 text-blue-600 text-[9px] font-bold uppercase tracking-wide px-3 py-1 rounded-full hover:bg-blue-100 transition whitespace-nowrap"
-                                    >
-                                      Dispute
-                                    </button>
-                                  );
-                                }
-
-                                // No time-in at all that day -- nothing to dispute yet.
-                                if (!log.time_out && !log.time_in) {
-                                  return <span className="text-slate-400 text-[9px] uppercase tracking-wide">No time out</span>;
-                                }
-
-                                return null;
-                              })()}
-                            </div>
-                          </div>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
+            {/* Full attendance records now live on the dedicated Attendance page. */}
 
           </div>
         </div>
