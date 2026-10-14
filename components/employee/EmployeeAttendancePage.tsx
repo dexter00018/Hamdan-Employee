@@ -48,6 +48,11 @@ function shiftMonth(month: string, amount: number) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
+const monthNames = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
 function formatDate(date: string) {
   const [year, month, day] = date.split("-").map(Number);
   return new Date(year, month - 1, day).toLocaleDateString("en-US", {
@@ -139,6 +144,9 @@ export default function EmployeeAttendancePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
+  const [monthPickerYear, setMonthPickerYear] = useState(() =>
+    Number(manilaMonth().slice(0, 4)),
+  );
   const [darkMode, setDarkMode] = useState(false);
   const pageSize = 8;
 
@@ -259,14 +267,10 @@ export default function EmployeeAttendancePage() {
     };
   }, [employeeId]);
 
-  const months = useMemo(() => {
-    const values = new Set(
-      records.map((record) => record.log_date.slice(0, 7)),
-    );
-    values.add(manilaMonth());
-    values.add(selectedMonth);
-    return Array.from(values).sort().reverse();
-  }, [records, selectedMonth]);
+  const pickerMonths = useMemo(
+    () => monthNames.map((_, index) => `${monthPickerYear}-${String(index + 1).padStart(2, "0")}`),
+    [monthPickerYear],
+  );
 
   const selectedRecords = useMemo(
     () => records.filter((record) => record.log_date.startsWith(selectedMonth)),
@@ -454,7 +458,7 @@ export default function EmployeeAttendancePage() {
           onLogout={handleLogout}
         />
         <section className="min-w-0">
-          <header className="mb-4 flex flex-col gap-4 rounded-[1.75rem] bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.06)] dark:bg-[#292f2b] sm:flex-row sm:items-center sm:justify-between">
+          <header className="mb-3 flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)] dark:bg-[#292f2b] sm:flex-row sm:items-center sm:justify-between">
             <div>
               <button
                 type="button"
@@ -463,49 +467,29 @@ export default function EmployeeAttendancePage() {
               >
                 <ChevronLeft size={15} /> Dashboard
               </button>
-              <h1 className="text-2xl font-black tracking-tight sm:text-3xl">
+              <h1 className="text-2xl font-black tracking-tight">
                 Attendance
               </h1>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">
                 Your daily time records
               </p>
             </div>
-            <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
-              <div className="relative min-w-0 sm:min-w-[184px]">
+            <div className="grid w-full grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-2 sm:w-auto sm:min-w-[380px]">
+              <div className="min-w-0">
                 <button
                   type="button"
-                  aria-haspopup="listbox"
+                  aria-haspopup="dialog"
                   aria-expanded={monthPickerOpen}
-                  onClick={() => setMonthPickerOpen((isOpen) => !isOpen)}
-                  className="flex min-h-11 w-full items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-left text-xs font-bold shadow-sm transition hover:bg-slate-50 dark:border-[#465049] dark:bg-[#343b36] dark:text-white dark:hover:bg-[#3d463f]"
+                  onClick={() => {
+                    setMonthPickerYear(Number(selectedMonth.slice(0, 4)));
+                    setMonthPickerOpen(true);
+                  }}
+                  className="flex h-10 w-full items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-left text-xs font-bold shadow-sm transition hover:bg-slate-50 dark:border-[#465049] dark:bg-[#343b36] dark:text-white dark:hover:bg-[#3d463f]"
                 >
                   <CalendarDays size={16} className="shrink-0 text-green-700 dark:text-green-300" />
                   <span className="min-w-0 flex-1 truncate">{formatMonth(selectedMonth)}</span>
-                  <ChevronDown size={16} className={`shrink-0 transition ${monthPickerOpen ? "rotate-180" : ""}`} />
+                  <ChevronDown size={16} className="shrink-0" />
                 </button>
-                {monthPickerOpen && (
-                  <div role="listbox" aria-label="Reporting month" className="absolute right-0 z-30 mt-2 max-h-64 w-full min-w-[190px] overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-xl dark:border-[#465049] dark:bg-[#292f2b]">
-                    {months.map((month) => {
-                      const selected = month === selectedMonth;
-                      return (
-                        <button
-                          key={month}
-                          type="button"
-                          role="option"
-                          aria-selected={selected}
-                          onClick={() => {
-                            setSelectedMonth(month);
-                            setPage(1);
-                            setMonthPickerOpen(false);
-                          }}
-                          className={`flex min-h-10 w-full items-center rounded-lg px-3 text-left text-xs font-semibold transition ${selected ? "bg-green-50 text-green-800 dark:bg-[#263b2f] dark:text-[#9be7ae]" : "text-slate-700 hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-[#343b36]"}`}
-                        >
-                          {formatMonth(month)}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
               </div>
               <button
                 type="button"
@@ -513,36 +497,106 @@ export default function EmployeeAttendancePage() {
                   setSelectedMonth(manilaMonth());
                   setPage(1);
                 }}
-                className="min-h-11 rounded-xl bg-green-700 px-4 text-xs font-bold text-white transition hover:bg-green-800"
+                className="h-10 rounded-xl bg-green-700 px-3 text-xs font-bold text-white transition hover:bg-green-800"
               >
                 Today
               </button>
-              <div className="col-span-2 flex justify-end gap-2 sm:contents">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedMonth((month) => shiftMonth(month, -1));
-                    setPage(1);
-                  }}
-                  className="grid h-11 w-11 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 dark:border-[#465049] dark:bg-[#343b36] dark:text-slate-200 dark:hover:bg-[#3d463f]"
-                  aria-label="Previous month"
-                >
-                  <ChevronLeft size={18} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedMonth((month) => shiftMonth(month, 1));
-                    setPage(1);
-                  }}
-                  className="grid h-11 w-11 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 dark:border-[#465049] dark:bg-[#343b36] dark:text-slate-200 dark:hover:bg-[#3d463f]"
-                  aria-label="Next month"
-                >
-                  <ChevronRight size={18} />
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedMonth((month) => shiftMonth(month, -1));
+                  setPage(1);
+                }}
+                className="grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 dark:border-[#465049] dark:bg-[#343b36] dark:text-slate-200 dark:hover:bg-[#3d463f]"
+                aria-label="Previous month"
+              >
+                <ChevronLeft size={17} />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedMonth((month) => shiftMonth(month, 1));
+                  setPage(1);
+                }}
+                className="grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 dark:border-[#465049] dark:bg-[#343b36] dark:text-slate-200 dark:hover:bg-[#3d463f]"
+                aria-label="Next month"
+              >
+                <ChevronRight size={17} />
+              </button>
             </div>
           </header>
+          {monthPickerOpen && (
+            <div
+              className="fixed inset-0 z-50 flex items-start justify-center bg-slate-950/20 px-4 pt-24 backdrop-blur-[1px]"
+              onClick={(event) => {
+                if (event.target === event.currentTarget) setMonthPickerOpen(false);
+              }}
+            >
+              <section
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="reporting-month-title"
+                className="w-full max-w-[520px] rounded-2xl bg-white p-5 shadow-2xl dark:bg-[#292f2b]"
+              >
+                <div className="grid grid-cols-[40px_1fr_40px] items-center">
+                  <button
+                    type="button"
+                    onClick={() => setMonthPickerYear((year) => year - 1)}
+                    className="grid h-10 w-10 place-items-center rounded-xl text-slate-600 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-[#343b36]"
+                    aria-label="Previous year"
+                  >
+                    <ChevronLeft size={18} />
+                  </button>
+                  <div className="text-center">
+                    <h2 id="reporting-month-title" className="text-sm font-black">Choose a reporting month</h2>
+                    <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-300">Select a month in {monthPickerYear}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setMonthPickerYear((year) => year + 1)}
+                    className="grid h-10 w-10 place-items-center rounded-xl text-slate-600 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-[#343b36]"
+                    aria-label="Next year"
+                  >
+                    <ChevronRight size={18} />
+                  </button>
+                </div>
+                <div className="mt-5 grid grid-cols-4 gap-2 sm:gap-3">
+                  {pickerMonths.map((month, index) => {
+                    const selected = month === selectedMonth;
+                    return (
+                      <button
+                        key={month}
+                        type="button"
+                        aria-pressed={selected}
+                        onClick={() => {
+                          setSelectedMonth(month);
+                          setPage(1);
+                          setMonthPickerOpen(false);
+                        }}
+                        className={`h-10 rounded-xl text-sm font-bold transition ${selected ? "bg-green-700 text-white shadow-lg shadow-green-700/20" : "text-slate-700 hover:bg-slate-100 dark:text-slate-100 dark:hover:bg-[#343b36]"}`}
+                      >
+                        {monthNames[index]}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4 text-xs dark:border-[#465049]">
+                  <p className="text-slate-500 dark:text-slate-300">Showing data for <b className="text-slate-800 dark:text-white">{formatMonth(selectedMonth)}</b></p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedMonth(manilaMonth());
+                      setPage(1);
+                      setMonthPickerOpen(false);
+                    }}
+                    className="font-bold text-green-700 underline underline-offset-4 dark:text-green-300"
+                  >
+                    This month
+                  </button>
+                </div>
+              </section>
+            </div>
+          )}
           {error && (
             <div
               role="alert"
@@ -551,7 +605,7 @@ export default function EmployeeAttendancePage() {
               Unable to load attendance: {error}
             </div>
           )}
-          <section className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <section className="mb-3 grid grid-cols-2 gap-2 lg:grid-cols-4 lg:gap-3">
             {summaryCards.map((card) => (
               <button
                 key={card.key}
@@ -562,12 +616,12 @@ export default function EmployeeAttendancePage() {
                   );
                   setPage(1);
                 }}
-                className={`rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 ${card.tone} ${filter === card.key ? "ring-2 ring-offset-2 ring-green-500 dark:ring-offset-[#202521]" : ""}`}
+                className={`rounded-xl border p-3 text-left transition hover:-translate-y-0.5 ${card.tone} ${filter === card.key ? "ring-2 ring-offset-2 ring-green-500 dark:ring-offset-[#202521]" : ""}`}
               >
-                <span className="grid h-9 w-9 place-items-center rounded-xl bg-white/70 text-lg font-black shadow-sm dark:bg-black/10">
+                <span className="grid h-8 w-8 place-items-center rounded-lg bg-white/70 text-base font-black shadow-sm dark:bg-black/10">
                   {card.icon}
                 </span>
-                <p className="mt-3 text-2xl font-black leading-none">
+                <p className="mt-2 text-xl font-black leading-none">
                   {card.value}
                 </p>
                 <p className="mt-1 text-xs font-bold uppercase tracking-wide">
