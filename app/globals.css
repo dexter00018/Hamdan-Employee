@@ -794,8 +794,8 @@
     linear-gradient(150deg, #fff9db, #ffedd5 55%, #ecfccb);
 }
 
-#employee-dashboard-top.seasonal-theme:not(.seasonal-christmas) .seasonal-content > header,
-#hr-dashboard-top.seasonal-theme:not(.seasonal-christmas) .seasonal-content > header {
+#employee-dashboard-top.seasonal-theme:not(.seasonal-christmas):not(.seasonal-halloween) .seasonal-content > header,
+#hr-dashboard-top.seasonal-theme:not(.seasonal-christmas):not(.seasonal-halloween) .seasonal-content > header {
   border-color: var(--theme-border) !important;
   background-color: rgba(255, 255, 255, .91) !important;
   background-image:
@@ -803,8 +803,8 @@
     repeating-linear-gradient(135deg, transparent 0 .6rem, color-mix(in srgb, var(--theme-accent) 5%, transparent) .6rem .75rem) !important;
   box-shadow: 0 10px 28px color-mix(in srgb, var(--theme-primary) 10%, transparent), inset 0 3px 0 color-mix(in srgb, var(--theme-accent) 78%, transparent) !important;
 }
-#employee-dashboard-top.seasonal-theme:not(.seasonal-christmas) .seasonal-content > header::after,
-#hr-dashboard-top.seasonal-theme:not(.seasonal-christmas) .seasonal-content > header::after {
+#employee-dashboard-top.seasonal-theme:not(.seasonal-christmas):not(.seasonal-halloween) .seasonal-content > header::after,
+#hr-dashboard-top.seasonal-theme:not(.seasonal-christmas):not(.seasonal-halloween) .seasonal-content > header::after {
   content: '';
   position: absolute;
   inset: auto 0 0;
@@ -812,8 +812,8 @@
   background: repeating-linear-gradient(90deg, var(--theme-primary) 0 1.4rem, var(--theme-accent) 1.4rem 1.8rem, var(--theme-secondary) 1.8rem 3.2rem, var(--theme-accent) 3.2rem 3.6rem);
   opacity: .82;
 }
-#employee-dashboard-top.seasonal-theme:not(.seasonal-christmas) .card-style:not(.card-dark),
-#hr-dashboard-top.seasonal-theme:not(.seasonal-christmas) .card-style:not(.card-dark) {
+#employee-dashboard-top.seasonal-theme:not(.seasonal-christmas):not(.seasonal-halloween) .card-style:not(.card-dark),
+#hr-dashboard-top.seasonal-theme:not(.seasonal-christmas):not(.seasonal-halloween) .card-style:not(.card-dark) {
   border-color: var(--theme-border) !important;
   background-image:
     linear-gradient(45deg, color-mix(in srgb, var(--theme-accent) 3.5%, transparent) 25%, transparent 25%, transparent 75%, color-mix(in srgb, var(--theme-accent) 3.5%, transparent) 75%),
@@ -865,8 +865,8 @@
 .dark #hr-dashboard-top.seasonal-rainy { background-color: #0d1920; background-image: repeating-linear-gradient(112deg, transparent 0 1.5rem, rgba(56, 189, 248, .055) 1.5rem 1.58rem), linear-gradient(160deg, #0d1920, #10252a); }
 .dark #employee-dashboard-top.seasonal-sunny,
 .dark #hr-dashboard-top.seasonal-sunny { background-color: #1c170b; background-image: radial-gradient(circle at 88% 4%, rgba(234, 179, 8, .2) 0 5rem, transparent 8rem), linear-gradient(150deg, #1c170b, #23180d 55%, #142012); }
-.dark #employee-dashboard-top.seasonal-theme:not(.seasonal-christmas) .seasonal-content > header,
-.dark #hr-dashboard-top.seasonal-theme:not(.seasonal-christmas) .seasonal-content > header { background-color: rgba(41, 47, 43, .95) !important; }
+.dark #employee-dashboard-top.seasonal-theme:not(.seasonal-christmas):not(.seasonal-halloween) .seasonal-content > header,
+.dark #hr-dashboard-top.seasonal-theme:not(.seasonal-christmas):not(.seasonal-halloween) .seasonal-content > header { background-color: rgba(41, 47, 43, .95) !important; }
 
 /* Recognizable, non-interactive props for the non-Christmas themes. */
 .seasonal-props {
@@ -1213,8 +1213,8 @@ html.dark [class~="to-orange-700"] { --tw-gradient-to: #442c20 !important; }
 #hr-dashboard-top.seasonal-halloween .seasonal-content > header,
 #employee-dashboard-top.seasonal-halloween .dashboard-sidebar,
 #hr-dashboard-top.seasonal-halloween aside:has(nav[aria-label$="desktop navigation"]),
-#employee-dashboard-top.seasonal-halloween .card-style,
-#hr-dashboard-top.seasonal-halloween .card-style,
+#employee-dashboard-top.seasonal-halloween .card-style:not(:where([role="dialog"], [role="dialog"] *)),
+#hr-dashboard-top.seasonal-halloween .card-style:not(:where([role="dialog"], [role="dialog"] *)),
 #employee-dashboard-top.seasonal-halloween .employee-quick-actions > button {
   color: var(--halloween-text) !important;
   border-color: rgba(251, 122, 24, .6) !important;
@@ -1268,20 +1268,44 @@ html.dark [class~="to-orange-700"] { --tw-gradient-to: #442c20 !important; }
 #employee-dashboard-top.seasonal-halloween .employee-quick-actions > button > * { z-index: 1; }
 #employee-dashboard-top.seasonal-halloween .seasonal-content,
 #hr-dashboard-top.seasonal-halloween .seasonal-content { color: var(--halloween-text); }
-#employee-dashboard-top.seasonal-halloween .seasonal-content .text-slate-950,
-#employee-dashboard-top.seasonal-halloween .seasonal-content .text-slate-900,
-#employee-dashboard-top.seasonal-halloween .seasonal-content .text-slate-800,
-#hr-dashboard-top.seasonal-halloween .seasonal-content .text-slate-950,
-#hr-dashboard-top.seasonal-halloween .seasonal-content .text-slate-900,
-#hr-dashboard-top.seasonal-halloween .seasonal-content .text-slate-800 { color: #fbf8ff !important; }
-#employee-dashboard-top.seasonal-halloween .seasonal-content .text-slate-700,
-#employee-dashboard-top.seasonal-halloween .seasonal-content .text-slate-600,
-#employee-dashboard-top.seasonal-halloween .seasonal-content .text-slate-500,
-#hr-dashboard-top.seasonal-halloween .seasonal-content .text-slate-700,
-#hr-dashboard-top.seasonal-halloween .seasonal-content .text-slate-600,
-#hr-dashboard-top.seasonal-halloween .seasonal-content .text-slate-500 { color: #d8ccdf !important; }
-#employee-dashboard-top.seasonal-halloween .seasonal-content .label-branded,
-#hr-dashboard-top.seasonal-halloween .seasonal-content .label-branded { color: #ffc966 !important; }
+#employee-dashboard-top.seasonal-halloween .seasonal-content :is(h1, h2, h3):not(:where([role="dialog"] *)),
+#hr-dashboard-top.seasonal-halloween .seasonal-content :is(h1, h2, h3):not(:where([role="dialog"] *)) { color: #fbf8ff !important; }
+#employee-dashboard-top.seasonal-halloween .seasonal-content .text-slate-400:not(:where([role="dialog"] *)),
+#hr-dashboard-top.seasonal-halloween .seasonal-content .text-slate-400:not(:where([role="dialog"] *)) { color: #c8bdcf !important; }
+#employee-dashboard-top.seasonal-halloween .dashboard-sidebar > button.bg-slate-50 {
+  background: #251c31 !important;
+  border: 1px solid #58415f;
+}
+#employee-dashboard-top.seasonal-halloween .seasonal-content > header button,
+#hr-dashboard-top.seasonal-halloween .seasonal-content > header button {
+  background: #251c31 !important;
+  color: #e6dcea !important;
+  border-color: #58415f !important;
+}
+#employee-dashboard-top.seasonal-halloween .seasonal-content > header button:hover,
+#hr-dashboard-top.seasonal-halloween .seasonal-content > header button:hover {
+  background: #352642 !important;
+}
+#employee-dashboard-top.seasonal-halloween .dashboard-primary-content.grid .text-orange-600 {
+  color: #ffb36b !important;
+}
+#employee-dashboard-top.seasonal-halloween .dashboard-sidebar > button.text-red-700 { color: #ffb1ac !important; }
+#employee-dashboard-top.seasonal-halloween .dashboard-sidebar nav button:hover {
+  background: #352642 !important;
+  color: #fbf8ff !important;
+}
+#employee-dashboard-top.seasonal-halloween .dashboard-sidebar nav button[aria-current="page"] {
+  background: #173d2b !important;
+  color: #b9f6ce !important;
+}
+#employee-dashboard-top.seasonal-halloween .seasonal-content :is(.text-slate-950, .text-slate-900, .text-slate-800):not(:where([role="dialog"] *)),
+#hr-dashboard-top.seasonal-halloween .seasonal-content :is(.text-slate-950, .text-slate-900, .text-slate-800):not(:where([role="dialog"] *)) { color: #fbf8ff !important; }
+#employee-dashboard-top.seasonal-halloween .seasonal-content :is(.text-slate-700, .text-slate-600, .text-slate-500):not(:where([role="dialog"] *)),
+#hr-dashboard-top.seasonal-halloween .seasonal-content :is(.text-slate-700, .text-slate-600, .text-slate-500):not(:where([role="dialog"] *)) { color: #d8ccdf !important; }
+#employee-dashboard-top.seasonal-halloween .seasonal-content .label-branded:not(:where([role="dialog"] *)),
+#hr-dashboard-top.seasonal-halloween .seasonal-content .label-branded:not(:where([role="dialog"] *)) { color: #ffc966 !important; }
+#employee-dashboard-top.seasonal-halloween .seasonal-content [role="dialog"],
+#hr-dashboard-top.seasonal-halloween .seasonal-content [role="dialog"] { color: var(--color-slate-700); }
 #employee-dashboard-top.seasonal-halloween nav[aria-label$="mobile navigation"],
 #hr-dashboard-top.seasonal-halloween nav[aria-label$="mobile navigation"] {
   border-top-color: rgba(251, 122, 24, .65) !important;
