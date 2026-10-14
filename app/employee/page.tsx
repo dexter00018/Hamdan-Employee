@@ -2433,6 +2433,7 @@ export default function EmployeeDashboard() {
               onHelpdesk={() => { setSupportModalOpen(true); fetchSupportRequests(); }}
               designation={profile?.designation}
               ready={!initLoading}
+              hasTimeInToday={Boolean(todayLog?.time_in)}
             />
 
             {/* Attendance History -- collapsed by default; tap the header to expand. */}
@@ -2528,16 +2529,16 @@ export default function EmployeeDashboard() {
                     {initLoading && <LoadingRow label="Loading..." />}
                     {!initLoading && filteredHistory.length === 0 && <p className="text-slate-400 text-xs">No records{monthFilter ? ' for this selected period' : ''}.</p>}
                     {filteredHistory.map((log, index) => (
-                      <div key={index} className="grid grid-cols-[minmax(0,1fr)_76px_minmax(0,1fr)] items-start gap-2 rounded-xl border border-slate-100 bg-slate-50 p-3">
+                      <div key={index} className="grid grid-cols-[minmax(0,1fr)_76px] items-start gap-x-2 gap-y-1 rounded-xl border border-slate-100 bg-slate-50 p-3 sm:grid-cols-[minmax(0,1fr)_76px_minmax(0,1fr)] sm:gap-2">
                         <div className="min-w-0">
                           <div className="font-medium text-slate-900 text-xs">{new Date(log.log_date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</div>
                           <div className="text-slate-400 text-[10px]">{log.log_date}</div>
                         </div>
                         <div className="flex flex-col items-center justify-self-center"><span className={`${attendanceStatusDisplay(log).className} inline-flex min-w-[76px] items-center justify-center whitespace-nowrap`}>{attendanceStatusDisplay(log).label}</span></div>
-                          <div className="min-w-0 text-right">
-                            <div className="whitespace-nowrap font-semibold text-slate-700 text-xs">
-                              {log.time_in ? new Date(log.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }) : '--:--'}
-                              {log.time_out && <> – {new Date(log.time_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}</>}
+                          <div className="col-span-2 min-w-0 border-t border-slate-200 pt-1.5 sm:col-span-1 sm:col-start-3 sm:row-start-1 sm:border-t-0 sm:pt-0 sm:text-right">
+                            <div className="flex flex-wrap items-center gap-x-1 font-semibold text-slate-700 text-xs sm:justify-end">
+                              <span>{log.time_in ? new Date(log.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }) : '--:--'}</span>
+                              {log.time_out && <><span className="text-slate-400">–</span><span>{new Date(log.time_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}</span></>}
                             </div>
                             {/* Single "Dispute" button -- lets the employee pick Time In or
                                 Time Out on the choice screen, instead of two separate,

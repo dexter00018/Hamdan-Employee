@@ -28,6 +28,7 @@ type Props = {
   onHelpdesk: () => void;
   designation: string | null | undefined;
   ready: boolean;
+  hasTimeInToday: boolean;
 };
 
 export default function EmployeeQuickActions({
@@ -41,13 +42,14 @@ export default function EmployeeQuickActions({
   onHelpdesk,
   designation,
   ready,
+  hasTimeInToday,
 }: Props) {
   const [manpowerOpen, setManpowerOpen] = useState(false);
   const manpowerPromptCheckedRef = useRef(false);
   const manpowerRestricted = ['IT MANAGER', 'HR MANAGER'].includes((designation || '').trim().toUpperCase());
 
   useEffect(() => {
-    if (!ready || manpowerRestricted || manpowerPromptCheckedRef.current) return;
+    if (!ready || !hasTimeInToday || manpowerRestricted || manpowerPromptCheckedRef.current) return;
     manpowerPromptCheckedRef.current = true;
     let cancelled = false;
 
@@ -66,7 +68,7 @@ export default function EmployeeQuickActions({
 
     void promptForManpowerWhenNeeded();
     return () => { cancelled = true; };
-  }, [ready, manpowerRestricted]);
+  }, [ready, hasTimeInToday, manpowerRestricted]);
 
   const actions = [
     { label: 'Manpower Tracker', icon: TimerReset, action: () => setManpowerOpen(true), tone: 'from-green-500 to-emerald-700 shadow-green-500/20', disabled: manpowerRestricted, title: manpowerRestricted ? 'Manpower Tracker is not assigned to this designation.' : undefined },
