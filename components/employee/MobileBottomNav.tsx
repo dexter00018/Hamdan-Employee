@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import {
   Home,
   Clock,
@@ -16,7 +17,6 @@ type MobileTab =
   | 'profile';
 
 type MobileBottomNavProps = {
-  activeItem?: MobileTab;
   actionCount?: number;
   onHome: () => void;
   onAttendance: () => void;
@@ -26,7 +26,6 @@ type MobileBottomNavProps = {
 };
 
 export default function MobileBottomNav({
-  activeItem = 'home',
   actionCount = 0,
   onHome,
   onAttendance,
@@ -34,7 +33,15 @@ export default function MobileBottomNav({
   onActionCenter,
   onProfile,
 }: MobileBottomNavProps) {
-  const activeTab = activeItem;
+  const [activeTab, setActiveTab] = useState<MobileTab>('home');
+
+  const handleClick = (
+    tab: MobileTab,
+    action: () => void
+  ) => {
+    setActiveTab(tab);
+    action();
+  };
 
   const navItems = [
     {
@@ -105,7 +112,7 @@ export default function MobileBottomNav({
             <button
               key={item.key}
               type="button"
-              onClick={item.action}
+              onClick={() => handleClick(item.key, item.action)}
               className={`
                 relative
                 flex

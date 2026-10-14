@@ -2,12 +2,6 @@
 
 import { getAttendanceStatusDisplay } from "@/lib/attendance-status-display";
 import EmployeeDesktopSidebar from "@/components/employee/EmployeeDesktopSidebar";
-import EmployeePortalLayout, { EMPLOYEE_PORTAL_SHELL_CLASSNAME } from "@/components/employee/EmployeePortalLayout";
-import MobileBottomNav from "@/components/employee/MobileBottomNav";
-import SeasonalDecor from "@/components/seasonal/SeasonalDecor";
-import { DEFAULT_APP_SETTINGS, normalizeAppSettings, type AppSettingsValues } from "@/lib/app-settings";
-import { resolveSeasonalTheme, SEASONAL_THEME_PRESENTATION } from "@/lib/seasonal-theme";
-import { EMPLOYEE_APPEARANCE_KEYS, readEmployeeAppearance, saveEmployeeAppearance } from "@/lib/employee/portal-appearance";
 import { applyPortalTheme } from "@/lib/portal-theme";
 import { supabase } from "@/lib/supabase";
 import {
@@ -154,9 +148,6 @@ export default function EmployeeAttendancePage() {
     Number(manilaMonth().slice(0, 4)),
   );
   const [darkMode, setDarkMode] = useState(false);
-  const [appearance, setAppearance] = useState<AppSettingsValues>({ ...DEFAULT_APP_SETTINGS });
-  const seasonalTheme = useMemo(() => resolveSeasonalTheme(appearance, 'employee'), [appearance]);
-  const seasonalPresentation = SEASONAL_THEME_PRESENTATION[seasonalTheme.variant];
   const pageSize = 8;
 
   const applyTheme = useCallback((nextDark: boolean) => {
@@ -170,8 +161,6 @@ export default function EmployeeAttendancePage() {
   }, []);
 
   useEffect(() => {
-    const cached = readEmployeeAppearance();
-    if (cached) queueMicrotask(() => setAppearance((current) => ({ ...current, ...cached })));
     queueMicrotask(() =>
       setDarkMode(document.documentElement.classList.contains("dark")),
     );
@@ -206,8 +195,9 @@ export default function EmployeeAttendancePage() {
         .order("log_date", { ascending: false }),
       supabase
         .from("app_settings")
-        .select("key, value")
-        .in("key", EMPLOYEE_APPEARANCE_KEYS),
+        .select("value")
+        .eq("key", "time_out_reminder_hour")
+        .maybeSingle(),
     ]);
 
     if (profileResult.error) setError(profileResult.error.message);
@@ -220,12 +210,8 @@ export default function EmployeeAttendancePage() {
     if (recordsResult.error) setError(recordsResult.error.message);
     else setRecords((recordsResult.data || []) as AttendanceLog[]);
 
-    if (!settingResult.error) {
-      const settings = normalizeAppSettings(settingResult.data);
-      setAppearance(settings);
-      saveEmployeeAppearance(settings);
-      if (typeof settings.time_out_reminder_hour === "number") setTimeOutHour(settings.time_out_reminder_hour);
-    }
+    if (typeof settingResult.data?.value === "number")
+      setTimeOutHour(settingResult.data.value);
     setLoading(false);
   }, []);
 
@@ -374,8 +360,6 @@ export default function EmployeeAttendancePage() {
     window.location.replace("/");
   };
 
-  const openDashboardTool = (tool: string) => router.push(`/employee?tool=${tool}`);
-
   const renderRecord = (record: AttendanceLog, mobile = false) => {
     const category = categoryFor(record, timeOutHour);
     const status = getAttendanceStatusDisplay({
@@ -451,9 +435,8 @@ export default function EmployeeAttendancePage() {
   };
 
   return (
-    <main id="employee-dashboard-top" className={`${EMPLOYEE_PORTAL_SHELL_CLASSNAME} employee-attendance text-slate-900 dark:text-white ${seasonalTheme.active ? `seasonal-theme seasonal-${seasonalTheme.variant} seasonal-${seasonalTheme.intensity}` : ''}`}>
-      {seasonalTheme.active && seasonalTheme.snowEnabled ? <SeasonalDecor variant={seasonalTheme.variant} intensity={seasonalTheme.intensity} particle={seasonalPresentation.particle} /> : null}
-      <EmployeePortalLayout sidebar={
+    <main className="min-h-screen bg-slate-50 p-3 pb-24 text-slate-900 transition-colors dark:bg-[#202521] dark:text-white md:p-5 lg:p-6">
+      <div className="mx-auto grid max-w-[1500px] gap-5 lg:grid-cols-[228px_minmax(0,1fr)]">
         <EmployeeDesktopSidebar
           employeeName={employeeName}
           designation={designation}
@@ -463,18 +446,18 @@ export default function EmployeeAttendancePage() {
           activeItem="My Attendance"
           onDashboard={() => router.push("/employee")}
           onAttendance={() => undefined}
-          onLeave={() => openDashboardTool("leave")}
-          onDisputes={() => openDashboardTool("disputes")}
-          onPayslips={() => openDashboardTool("payslips")}
-          onDocuments={() => openDashboardTool("documents")}
-          onActionCenter={() => openDashboardTool("actions")}
-          onCommute={() => openDashboardTool("commute")}
-          onHelpdesk={() => openDashboardTool("helpdesk")}
-          onProfile={() => openDashboardTool("profile")}
+          onLeave={() => router.push("/employee")}
+          onDisputes={() => router.push("/employee")}
+          onPayslips={() => router.push("/employee")}
+          onDocuments={() => router.push("/employee")}
+          onActionCenter={() => router.push("/employee")}
+          onCommute={() => router.push("/employee")}
+          onHelpdesk={() => router.push("/employee")}
+          onProfile={() => router.push("/employee")}
           onToggleTheme={() => applyTheme(!darkMode)}
           onLogout={handleLogout}
         />
-      }>
+        <section className="min-w-0">
           <header className="mb-3 flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)] dark:bg-[#292f2b] sm:flex-row sm:items-center sm:justify-between">
             <div>
               <button
@@ -622,7 +605,7 @@ export default function EmployeeAttendancePage() {
               Unable to load attendance: {error}
             </div>
           )}
-          <section className="attendance-data-theme mb-3 grid grid-cols-2 gap-2 lg:grid-cols-4 lg:gap-3">
+          <section className="mb-3 grid grid-cols-2 gap-2 lg:grid-cols-4 lg:gap-3">
             {summaryCards.map((card) => (
               <button
                 key={card.key}
@@ -647,7 +630,7 @@ export default function EmployeeAttendancePage() {
               </button>
             ))}
           </section>
-          <section className="attendance-data-theme overflow-hidden rounded-[1.75rem] bg-white shadow-[0_8px_30px_rgba(15,23,42,0.06)] dark:bg-[#292f2b]">
+          <section className="overflow-hidden rounded-[1.75rem] bg-white shadow-[0_8px_30px_rgba(15,23,42,0.06)] dark:bg-[#292f2b]">
             <div className="flex flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-[#465049]">
               <div>
                 <h2 className="text-base font-black">
@@ -755,15 +738,8 @@ export default function EmployeeAttendancePage() {
               </div>
             </footer>
           </section>
-      </EmployeePortalLayout>
-      <MobileBottomNav
-        activeItem="attendance"
-        onHome={() => router.push("/employee")}
-        onAttendance={() => undefined}
-        onLeave={() => openDashboardTool("leave")}
-        onActionCenter={() => openDashboardTool("actions")}
-        onProfile={() => openDashboardTool("profile")}
-      />
+        </section>
+      </div>
     </main>
   );
 }
