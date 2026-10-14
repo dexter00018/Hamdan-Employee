@@ -1932,6 +1932,26 @@ export default function EmployeeDashboard() {
           box-shadow: 0 4px 18px rgba(15, 23, 42, .045);
         }
         .dark .employee-dashboard .card-style { border-color: #414944 !important; }
+        @media (min-width: 1024px) {
+          .employee-dashboard .seasonal-content {
+            display: grid;
+            grid-template-columns: 228px minmax(0, 1fr);
+            align-items: start;
+            column-gap: 1.25rem;
+            row-gap: 1rem;
+          }
+          .employee-dashboard .dashboard-primary-content,
+          .employee-dashboard .dashboard-main-content { grid-column: 2; }
+          .employee-dashboard .employee-main-layout { display: contents !important; }
+          .employee-dashboard .employee-main-layout > .dashboard-sidebar {
+            grid-column: 1;
+            grid-row: 1 / span 20;
+            align-self: stretch;
+            position: sticky;
+            top: 0;
+            height: 100vh;
+          }
+        }
         .seasonal-theme {
           background-color: #eef8f1;
           background-image: radial-gradient(circle at 8% 2%, rgba(220,38,38,.16), transparent 22rem), radial-gradient(circle at 92% 8%, rgba(22,163,74,.2), transparent 25rem);
@@ -2099,10 +2119,10 @@ export default function EmployeeDashboard() {
         }
       `}</style>
       {seasonalTheme.active && seasonalTheme.snowEnabled ? <SeasonalDecor variant={seasonalTheme.variant} intensity={seasonalTheme.intensity} particle={seasonalPresentation.particle} /> : null}
-      <div className="seasonal-content mx-auto max-w-[1600px] space-y-3 md:space-y-4">
+      <div className="seasonal-content mx-auto max-w-[1600px] space-y-3 md:space-y-4 lg:space-y-0">
 
         {/* Header */}
-        <header className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_4px_18px_rgba(15,23,42,0.04)] dark:bg-[#292f2b] sm:p-4">
+        <header className="dashboard-primary-content flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_4px_18px_rgba(15,23,42,0.04)] dark:bg-[#292f2b] sm:p-4">
           <div className="min-w-0">
             <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#16a34a] lg:hidden">Hamdan Engineering</p>
             <h1 className="mt-0.5 truncate text-xl font-bold leading-tight sm:text-2xl">{profile?.full_name || 'Employee'}</h1>
@@ -2130,14 +2150,14 @@ export default function EmployeeDashboard() {
           </div>
         </header>
 
-        {seasonalTheme.active && seasonalTheme.bannerEnabled && dismissedSeasonalBanner !== seasonalTheme.variant ? <section className={`relative overflow-hidden rounded-2xl border border-amber-300/50 bg-gradient-to-r px-4 py-3 text-white shadow-lg ${seasonalPresentation.bannerTone}`} aria-label="Seasonal greeting"><span className="absolute -right-3 -top-5 text-6xl text-white/10" aria-hidden="true">{seasonalPresentation.symbol}</span><div className="flex items-center gap-3"><span className="grid h-9 w-9 flex-none place-items-center rounded-xl bg-white/15 text-lg ring-1 ring-white/20" aria-hidden="true">{seasonalPresentation.symbol}</span><div className="min-w-0 flex-1"><p className="text-[9px] font-black uppercase tracking-[0.18em] text-amber-200">{seasonalPresentation.label}</p><p className="truncate text-sm font-bold">{seasonalPresentation.greeting}</p></div><button type="button" onClick={() => setDismissedSeasonalBanner(seasonalTheme.variant)} className="grid h-9 w-9 flex-none place-items-center rounded-full bg-white/10 text-lg text-white/80 transition hover:bg-white/20" aria-label="Dismiss seasonal greeting">×</button></div></section> : null}
+        {seasonalTheme.active && seasonalTheme.bannerEnabled && dismissedSeasonalBanner !== seasonalTheme.variant ? <section className={`dashboard-primary-content relative overflow-hidden rounded-2xl border border-amber-300/50 bg-gradient-to-r px-4 py-3 text-white shadow-lg ${seasonalPresentation.bannerTone}`} aria-label="Seasonal greeting"><span className="absolute -right-3 -top-5 text-6xl text-white/10" aria-hidden="true">{seasonalPresentation.symbol}</span><div className="flex items-center gap-3"><span className="grid h-9 w-9 flex-none place-items-center rounded-xl bg-white/15 text-lg ring-1 ring-white/20" aria-hidden="true">{seasonalPresentation.symbol}</span><div className="min-w-0 flex-1"><p className="text-[9px] font-black uppercase tracking-[0.18em] text-amber-200">{seasonalPresentation.label}</p><p className="truncate text-sm font-bold">{seasonalPresentation.greeting}</p></div><button type="button" onClick={() => setDismissedSeasonalBanner(seasonalTheme.variant)} className="grid h-9 w-9 flex-none place-items-center rounded-full bg-white/10 text-lg text-white/80 transition hover:bg-white/20" aria-label="Dismiss seasonal greeting">×</button></div></section> : null}
 
-        {message && <div className={`p-3 rounded-xl text-xs font-bold ${message.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{message}</div>}
+        {message && <div className={`dashboard-primary-content p-3 rounded-xl text-xs font-bold ${message.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{message}</div>}
 
-        <EmployeeAskAI key={currentUserId || 'signed-out'} />
+        <div className="dashboard-primary-content"><EmployeeAskAI key={currentUserId || 'signed-out'} /></div>
 
         {/* Attendance overview -- compact on mobile, full four-card row on larger screens. */}
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
+        <div className="dashboard-primary-content grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
           <EmployeeSummaryCard label="Present" value={summary.present} icon={CheckCircle2} tone="green" onClick={() => setSummaryDetailType('present')} />
           <EmployeeSummaryCard label="Late" value={summary.late} icon={Clock3} tone="orange" detail={`${formatLateDuration(summary.totalLateMinutes)} total`} onClick={() => setSummaryDetailType('late')} />
           <EmployeeSummaryCard label="Early Out" value={summary.earlyOut} icon={CornerUpLeft} tone="yellow" onClick={openAttendanceFromNav} />
@@ -2145,7 +2165,7 @@ export default function EmployeeDashboard() {
         </div>
 
         {/* Main layout */}
-        <div className="grid grid-cols-1 gap-3 sm:gap-4 md:gap-5 lg:grid-cols-5">
+        <div className="employee-main-layout grid grid-cols-1 gap-3 sm:gap-4 md:gap-5 lg:grid-cols-5">
           <EmployeeDesktopSidebar
             employeeName={profile?.full_name || 'Employee'}
             designation={profile?.designation || 'Employee'}
@@ -2233,7 +2253,7 @@ export default function EmployeeDashboard() {
           </div>
 
           {/* Main Content */}
-          <div className="space-y-4 lg:col-span-4 md:space-y-5">
+          <div className="dashboard-main-content space-y-4 lg:col-span-4 md:space-y-5">
 
             {/* Clock + Time buttons */}
             {!attendanceRecordingEnabled ? <div role="status" className="rounded-2xl border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:!text-white">Attendance recording is temporarily unavailable.</div> : null}
