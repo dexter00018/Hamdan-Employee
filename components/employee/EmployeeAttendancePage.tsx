@@ -435,8 +435,8 @@ export default function EmployeeAttendancePage() {
   };
 
   return (
-    <main className="min-h-screen bg-slate-50 p-3 pb-24 text-slate-900 transition-colors dark:bg-[#202521] dark:text-white md:p-5 lg:p-6">
-      <div className="mx-auto grid max-w-[1500px] gap-5 lg:grid-cols-[228px_minmax(0,1fr)]">
+    <main className="dashboard-shell employee-attendance min-h-screen bg-slate-50 p-3 pb-24 text-slate-900 transition-colors dark:bg-[#202521] dark:text-white md:p-5 lg:p-8">
+      <div className="mx-auto grid max-w-[1600px] gap-5 lg:grid-cols-[228px_minmax(0,1fr)]">
         <EmployeeDesktopSidebar
           employeeName={employeeName}
           designation={designation}

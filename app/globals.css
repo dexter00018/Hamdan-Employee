@@ -995,6 +995,22 @@
 }
 @media (prefers-reduced-motion: reduce) { .new-year-firework { animation: none; } }
 /* Shared desktop frame: keep navigation close to content on ultrawide screens. */
+@media (min-width: 1024px) {
+  html:has(.employee-desktop-sidebar) { scrollbar-gutter: stable; }
+  html:has(.employee-desktop-sidebar),
+  html:has(.employee-desktop-sidebar) body,
+  .employee-dashboard,
+  .employee-attendance { overflow-x: clip; }
+  .dashboard-sidebar.employee-desktop-sidebar {
+    position: sticky;
+    top: 2rem;
+    width: 228px;
+    min-width: 228px;
+    height: calc(100dvh - 4rem);
+    max-height: calc(100dvh - 4rem);
+  }
+  .employee-desktop-sidebar nav { min-height: 0; overflow-y: auto; }
+}
 .dashboard-shell {
   width: 100%;
   max-width: 1920px;

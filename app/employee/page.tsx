@@ -1947,9 +1947,6 @@ export default function EmployeeDashboard() {
             grid-column: 1;
             grid-row: 1 / span 20;
             align-self: stretch;
-            position: sticky;
-            top: 0;
-            height: 100vh;
           }
         }
         .seasonal-theme {

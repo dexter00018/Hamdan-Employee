@@ -51,7 +51,7 @@ export default function EmployeeDesktopSidebar(props: Props) {
   ];
 
   return (
-    <aside className="dashboard-sidebar sticky top-2 hidden h-[calc(100vh-1rem)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_30px_rgba(15,23,42,0.06)] dark:border-[#465049] dark:bg-[#292f2b] lg:flex">
+    <aside className="dashboard-sidebar employee-desktop-sidebar hidden flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_30px_rgba(15,23,42,0.06)] dark:border-[#465049] dark:bg-[#292f2b] lg:flex">
       <div className="shrink-0 border-b border-slate-100 px-2 pb-3 dark:border-[#465049]">
         <p className="text-base font-extrabold tracking-tight text-slate-900 dark:text-white">HAMDAN</p>
         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#16a34a]">Engineering</p>
