@@ -1202,7 +1202,6 @@ html.dark [class~="to-orange-700"] { --tw-gradient-to: #442c20 !important; }
   --halloween-gold: #ffc13d;
   --halloween-violet: #a855f7;
   --halloween-text: #f8f5ff;
-  color: var(--halloween-text);
   background-color: var(--halloween-ink) !important;
   background-image:
     radial-gradient(circle at 77% 7%, rgba(255, 180, 52, .85) 0 4.8rem, rgba(255, 116, 24, .21) 5rem 8rem, transparent 13rem),
@@ -1267,20 +1266,22 @@ html.dark [class~="to-orange-700"] { --tw-gradient-to: #442c20 !important; }
   background: radial-gradient(ellipse at 12% 100%, #1b1028 0 .8rem, transparent .9rem), radial-gradient(ellipse at 42% 100%, #28102e 0 1.1rem, transparent 1.2rem), radial-gradient(ellipse at 74% 100%, #25101f 0 .9rem, transparent 1rem);
 }
 #employee-dashboard-top.seasonal-halloween .employee-quick-actions > button > * { z-index: 1; }
-#employee-dashboard-top.seasonal-halloween .text-slate-950,
-#employee-dashboard-top.seasonal-halloween .text-slate-900,
-#employee-dashboard-top.seasonal-halloween .text-slate-800,
-#hr-dashboard-top.seasonal-halloween .text-slate-950,
-#hr-dashboard-top.seasonal-halloween .text-slate-900,
-#hr-dashboard-top.seasonal-halloween .text-slate-800 { color: #fbf8ff !important; }
-#employee-dashboard-top.seasonal-halloween .text-slate-700,
-#employee-dashboard-top.seasonal-halloween .text-slate-600,
-#employee-dashboard-top.seasonal-halloween .text-slate-500,
-#hr-dashboard-top.seasonal-halloween .text-slate-700,
-#hr-dashboard-top.seasonal-halloween .text-slate-600,
-#hr-dashboard-top.seasonal-halloween .text-slate-500 { color: #d8ccdf !important; }
-#employee-dashboard-top.seasonal-halloween .label-branded,
-#hr-dashboard-top.seasonal-halloween .label-branded { color: #ffc966 !important; }
+#employee-dashboard-top.seasonal-halloween .seasonal-content,
+#hr-dashboard-top.seasonal-halloween .seasonal-content { color: var(--halloween-text); }
+#employee-dashboard-top.seasonal-halloween .seasonal-content .text-slate-950,
+#employee-dashboard-top.seasonal-halloween .seasonal-content .text-slate-900,
+#employee-dashboard-top.seasonal-halloween .seasonal-content .text-slate-800,
+#hr-dashboard-top.seasonal-halloween .seasonal-content .text-slate-950,
+#hr-dashboard-top.seasonal-halloween .seasonal-content .text-slate-900,
+#hr-dashboard-top.seasonal-halloween .seasonal-content .text-slate-800 { color: #fbf8ff !important; }
+#employee-dashboard-top.seasonal-halloween .seasonal-content .text-slate-700,
+#employee-dashboard-top.seasonal-halloween .seasonal-content .text-slate-600,
+#employee-dashboard-top.seasonal-halloween .seasonal-content .text-slate-500,
+#hr-dashboard-top.seasonal-halloween .seasonal-content .text-slate-700,
+#hr-dashboard-top.seasonal-halloween .seasonal-content .text-slate-600,
+#hr-dashboard-top.seasonal-halloween .seasonal-content .text-slate-500 { color: #d8ccdf !important; }
+#employee-dashboard-top.seasonal-halloween .seasonal-content .label-branded,
+#hr-dashboard-top.seasonal-halloween .seasonal-content .label-branded { color: #ffc966 !important; }
 #employee-dashboard-top.seasonal-halloween nav[aria-label$="mobile navigation"],
 #hr-dashboard-top.seasonal-halloween nav[aria-label$="mobile navigation"] {
   border-top-color: rgba(251, 122, 24, .65) !important;
