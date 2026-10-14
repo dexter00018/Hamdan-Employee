@@ -46,8 +46,18 @@ export default function SeasonalDecor({ variant, intensity, particle }: Props) {
   if (variant === 'halloween') {
     return (
       <div className="seasonal-props halloween-props" aria-hidden="true">
+        <div className="halloween-haze" />
+        <div className="halloween-moon" />
         <div className="halloween-web halloween-web-left" />
         <div className="halloween-web halloween-web-right" />
+        <div className="halloween-bats">
+          {Array.from({ length: intensity === 'festive' ? 9 : 6 }, (_, index) => (
+            <i key={index} className={`halloween-bat halloween-bat-${index + 1}`} />
+          ))}
+        </div>
+        <div className="halloween-graveyard" />
+        <i className="halloween-ghost halloween-ghost-left" />
+        <i className="halloween-ghost halloween-ghost-right" />
         <i className="halloween-pumpkin halloween-pumpkin-left" />
         <i className="halloween-pumpkin halloween-pumpkin-right" />
       </div>
