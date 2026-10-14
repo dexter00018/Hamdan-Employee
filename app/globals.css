@@ -1225,6 +1225,17 @@ html.dark [class~="to-orange-700"] { --tw-gradient-to: #442c20 !important; }
     repeating-linear-gradient(135deg, transparent 0 1rem, rgba(255, 193, 61, .035) 1rem 1.08rem) !important;
   box-shadow: 0 0 0 1px rgba(168, 85, 247, .13), 0 14px 34px rgba(0, 0, 0, .42), inset 0 1px 0 rgba(255, 202, 104, .18) !important;
 }
+#employee-dashboard-top.seasonal-halloween .seasonal-content > header .text-slate-500,
+#hr-dashboard-top.seasonal-halloween .seasonal-content > header .text-slate-500 {
+  color: #d8ccdf !important;
+}
+#employee-dashboard-top.seasonal-halloween .employee-quick-actions > button {
+  color: var(--halloween-text) !important;
+}
+#employee-dashboard-top.seasonal-halloween .employee-quick-actions > button .text-slate-700,
+#employee-dashboard-top.seasonal-halloween .employee-quick-actions > button .text-slate-100 {
+  color: #f5efff !important;
+}
 #employee-dashboard-top.seasonal-halloween .seasonal-content > header::after,
 #hr-dashboard-top.seasonal-halloween .seasonal-content > header::after {
   height: .3rem;

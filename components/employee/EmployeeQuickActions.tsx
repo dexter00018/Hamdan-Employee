@@ -91,7 +91,7 @@ export default function EmployeeQuickActions({
             <p className="mt-0.5 text-xs text-slate-500">Employee tools</p>
           </div>
         </div>
-        <div className="grid grid-cols-4 gap-2 sm:grid-cols-5 sm:gap-3">
+        <div className="employee-quick-actions grid grid-cols-4 gap-2 sm:grid-cols-5 sm:gap-3">
           {actions.map(({ label, icon: Icon, action, tone, disabled, title }) => (
             <button
               key={label}
