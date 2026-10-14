@@ -4,8 +4,8 @@ import dynamic from 'next/dynamic';
 import { useEffect, useRef, useState } from 'react';
 import {
   CalendarDays,
+  CalendarClock,
   CircleAlert,
-  CloudSun,
   Clock3,
   HandCoins,
   Headphones,
@@ -18,7 +18,7 @@ import { supabase } from '@/lib/supabase';
 const ManpowerTrackerModal = dynamic(() => import('@/components/employee/modals/ManpowerTrackerModal'));
 
 type Props = {
-  onWeather: () => void;
+  onAttendanceHistory: () => void;
   onLeave: () => void;
   onDisputes: () => void;
   onPayslips: () => void;
@@ -32,7 +32,7 @@ type Props = {
 };
 
 export default function EmployeeQuickActions({
-  onWeather,
+  onAttendanceHistory,
   onLeave,
   onDisputes,
   onPayslips,
@@ -73,7 +73,7 @@ export default function EmployeeQuickActions({
   const actions = [
     { label: 'Manpower Tracker', icon: TimerReset, action: () => setManpowerOpen(true), tone: 'from-green-500 to-emerald-700 shadow-green-500/20', disabled: manpowerRestricted, title: manpowerRestricted ? 'Manpower Tracker is not assigned to this designation.' : undefined },
     { label: 'Employee Directory', icon: IdCard, action: onDirectory, tone: 'from-emerald-500 to-green-600 shadow-green-500/20' },
-    { label: 'Weather', icon: CloudSun, action: onWeather, tone: 'from-sky-400 to-cyan-600 shadow-cyan-500/20' },
+    { label: 'Attendance History', icon: CalendarClock, action: onAttendanceHistory, tone: 'from-sky-500 to-blue-600 shadow-blue-500/20' },
     { label: 'My Leave', icon: Plane, action: onLeave, tone: 'from-teal-500 to-emerald-600 shadow-emerald-500/20' },
     { label: 'Disputes', icon: CircleAlert, action: onDisputes, tone: 'from-orange-500 to-rose-500 shadow-orange-500/20' },
     { label: 'Payslips', icon: HandCoins, action: onPayslips, tone: 'from-amber-400 to-orange-500 shadow-amber-500/20' },

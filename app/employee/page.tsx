@@ -353,10 +353,6 @@ export default function EmployeeDashboard() {
     }
   };
 
-  const openCommuteChecker = () => {
-    setCommuteModalOpen(true);
-  };
-
   // Office network check -- Time In is only enabled  // Office network check -- Time In is only enabled when the request is
   // coming from the office's known public IP. See
   // app/api/check-office-network/route.ts for how this is determined.
@@ -2324,7 +2320,7 @@ export default function EmployeeDashboard() {
 
             {/* Quick Actions */}
             <EmployeeQuickActions
-              onWeather={openCommuteChecker}
+              onAttendanceHistory={openAttendanceFromNav}
               onLeave={() => setLeaveChoiceModalOpen(true)}
               onDisputes={() => { setSelectedMyDisputeDetail(null); setMyDisputesModalOpen(true); fetchMyDisputes(); }}
               onPayslips={() => { setPayslipsModalOpen(true); fetchPayslips(); }}

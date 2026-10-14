@@ -1,16 +1,17 @@
 "use client";
 
 import { getAttendanceStatusDisplay } from "@/lib/attendance-status-display";
+import EmployeeDesktopSidebar from "@/components/employee/EmployeeDesktopSidebar";
+import { applyPortalTheme } from "@/lib/portal-theme";
 import { supabase } from "@/lib/supabase";
 import {
   CalendarDays,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock3,
-  LogOut,
   Search,
   SlidersHorizontal,
-  UserRound,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -128,6 +129,7 @@ export default function EmployeeAttendancePage() {
   const [employeeId, setEmployeeId] = useState<string | null>(null);
   const [employeeName, setEmployeeName] = useState("Employee");
   const [designation, setDesignation] = useState("Employee");
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [records, setRecords] = useState<AttendanceLog[]>([]);
   const [timeOutHour, setTimeOutHour] = useState(19);
   const [selectedMonth, setSelectedMonth] = useState(manilaMonth);
@@ -136,7 +138,25 @@ export default function EmployeeAttendancePage() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [monthPickerOpen, setMonthPickerOpen] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
   const pageSize = 8;
+
+  const applyTheme = useCallback((nextDark: boolean) => {
+    applyPortalTheme(nextDark);
+    try {
+      localStorage.setItem("theme", nextDark ? "dark" : "light");
+    } catch {
+      // Theme persistence is optional when browser storage is unavailable.
+    }
+    setDarkMode(nextDark);
+  }, []);
+
+  useEffect(() => {
+    queueMicrotask(() =>
+      setDarkMode(document.documentElement.classList.contains("dark")),
+    );
+  }, []);
 
   // This route fetches once on entry. Attendance changes reach it through the
   // employee-scoped Realtime subscription below, never through timed polling.
@@ -155,7 +175,7 @@ export default function EmployeeAttendancePage() {
     const [profileResult, recordsResult, settingResult] = await Promise.all([
       supabase
         .from("profiles")
-        .select("full_name, designation")
+        .select("full_name, designation, avatar_url")
         .eq("id", user.id)
         .single(),
       supabase
@@ -176,6 +196,7 @@ export default function EmployeeAttendancePage() {
     else {
       setEmployeeName(profileResult.data?.full_name || "Employee");
       setDesignation(profileResult.data?.designation || "Employee");
+      setAvatarUrl(profileResult.data?.avatar_url || null);
     }
 
     if (recordsResult.error) setError(recordsResult.error.message);
@@ -412,48 +433,26 @@ export default function EmployeeAttendancePage() {
   return (
     <main className="min-h-screen bg-slate-50 p-3 pb-24 text-slate-900 transition-colors dark:bg-[#202521] dark:text-white md:p-5 lg:p-6">
       <div className="mx-auto grid max-w-[1500px] gap-5 lg:grid-cols-[228px_minmax(0,1fr)]">
-        <aside className="dashboard-sidebar hidden h-[calc(100vh-3rem)] flex-col rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-[0_8px_30px_rgba(15,23,42,0.06)] dark:border-[#465049] dark:bg-[#292f2b] lg:flex">
-          <div className="border-b border-slate-100 px-2 pb-4 dark:border-[#465049]">
-            <p className="text-base font-extrabold tracking-tight">HAMDAN</p>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#16a34a]">
-              Engineering
-            </p>
-          </div>
-          <nav aria-label="Attendance navigation" className="mt-3 space-y-1">
-            <button
-              type="button"
-              onClick={() => router.push("/employee")}
-              className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-xs font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-[#343b36]"
-            >
-              <ChevronLeft size={17} /> Dashboard
-            </button>
-            <div className="flex items-center gap-3 rounded-xl bg-green-50 px-3 py-2.5 text-xs font-bold text-green-700 dark:bg-[#263b2f] dark:text-[#8ee6a7]">
-              <CalendarDays size={17} /> My Attendance
-            </div>
-          </nav>
-          <div className="mt-auto border-t border-slate-100 pt-4 dark:border-[#465049]">
-            <div className="flex items-center gap-3 rounded-xl bg-slate-50 p-2 dark:bg-[#343b36]">
-              <span className="grid h-9 w-9 place-items-center rounded-full bg-white text-slate-500 dark:bg-[#292f2b]">
-                <UserRound size={17} />
-              </span>
-              <span className="min-w-0">
-                <span className="block truncate text-xs font-bold">
-                  {employeeName}
-                </span>
-                <span className="block truncate text-[10px] text-slate-500">
-                  {designation}
-                </span>
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="mt-2 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-xs font-semibold text-red-700 hover:bg-red-50 dark:text-red-300 dark:hover:bg-[#44292b]"
-            >
-              <LogOut size={17} /> Log Out
-            </button>
-          </div>
-        </aside>
+        <EmployeeDesktopSidebar
+          employeeName={employeeName}
+          designation={designation}
+          avatarUrl={avatarUrl}
+          darkMode={darkMode}
+          actionCount={0}
+          activeItem="My Attendance"
+          onDashboard={() => router.push("/employee")}
+          onAttendance={() => undefined}
+          onLeave={() => router.push("/employee")}
+          onDisputes={() => router.push("/employee")}
+          onPayslips={() => router.push("/employee")}
+          onDocuments={() => router.push("/employee")}
+          onActionCenter={() => router.push("/employee")}
+          onCommute={() => router.push("/employee")}
+          onHelpdesk={() => router.push("/employee")}
+          onProfile={() => router.push("/employee")}
+          onToggleTheme={() => applyTheme(!darkMode)}
+          onLogout={handleLogout}
+        />
         <section className="min-w-0">
           <header className="mb-4 flex flex-col gap-4 rounded-[1.75rem] bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.06)] dark:bg-[#292f2b] sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -471,28 +470,43 @@ export default function EmployeeAttendancePage() {
                 Your daily time records
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <label className="flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold shadow-sm dark:border-[#465049] dark:bg-[#343b36]">
-                <CalendarDays
-                  size={16}
-                  className="text-green-700 dark:text-green-300"
-                />
-                <select
-                  aria-label="Reporting month"
-                  value={selectedMonth}
-                  onChange={(event) => {
-                    setSelectedMonth(event.target.value);
-                    setPage(1);
-                  }}
-                  className="min-w-[138px] bg-transparent outline-none"
+            <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
+              <div className="relative min-w-0 sm:min-w-[184px]">
+                <button
+                  type="button"
+                  aria-haspopup="listbox"
+                  aria-expanded={monthPickerOpen}
+                  onClick={() => setMonthPickerOpen((isOpen) => !isOpen)}
+                  className="flex min-h-11 w-full items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-left text-xs font-bold shadow-sm transition hover:bg-slate-50 dark:border-[#465049] dark:bg-[#343b36] dark:text-white dark:hover:bg-[#3d463f]"
                 >
-                  {months.map((month) => (
-                    <option key={month} value={month}>
-                      {formatMonth(month)}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  <CalendarDays size={16} className="shrink-0 text-green-700 dark:text-green-300" />
+                  <span className="min-w-0 flex-1 truncate">{formatMonth(selectedMonth)}</span>
+                  <ChevronDown size={16} className={`shrink-0 transition ${monthPickerOpen ? "rotate-180" : ""}`} />
+                </button>
+                {monthPickerOpen && (
+                  <div role="listbox" aria-label="Reporting month" className="absolute right-0 z-30 mt-2 max-h-64 w-full min-w-[190px] overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-xl dark:border-[#465049] dark:bg-[#292f2b]">
+                    {months.map((month) => {
+                      const selected = month === selectedMonth;
+                      return (
+                        <button
+                          key={month}
+                          type="button"
+                          role="option"
+                          aria-selected={selected}
+                          onClick={() => {
+                            setSelectedMonth(month);
+                            setPage(1);
+                            setMonthPickerOpen(false);
+                          }}
+                          className={`flex min-h-10 w-full items-center rounded-lg px-3 text-left text-xs font-semibold transition ${selected ? "bg-green-50 text-green-800 dark:bg-[#263b2f] dark:text-[#9be7ae]" : "text-slate-700 hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-[#343b36]"}`}
+                        >
+                          {formatMonth(month)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={() => {
@@ -503,28 +517,30 @@ export default function EmployeeAttendancePage() {
               >
                 Today
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedMonth((month) => shiftMonth(month, -1));
-                  setPage(1);
-                }}
-                className="grid h-11 w-11 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 dark:border-[#465049] dark:bg-[#343b36] dark:text-slate-200"
-                aria-label="Previous month"
-              >
-                <ChevronLeft size={18} />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedMonth((month) => shiftMonth(month, 1));
-                  setPage(1);
-                }}
-                className="grid h-11 w-11 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 dark:border-[#465049] dark:bg-[#343b36] dark:text-slate-200"
-                aria-label="Next month"
-              >
-                <ChevronRight size={18} />
-              </button>
+              <div className="col-span-2 flex justify-end gap-2 sm:contents">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedMonth((month) => shiftMonth(month, -1));
+                    setPage(1);
+                  }}
+                  className="grid h-11 w-11 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 dark:border-[#465049] dark:bg-[#343b36] dark:text-slate-200 dark:hover:bg-[#3d463f]"
+                  aria-label="Previous month"
+                >
+                  <ChevronLeft size={18} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedMonth((month) => shiftMonth(month, 1));
+                    setPage(1);
+                  }}
+                  className="grid h-11 w-11 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 dark:border-[#465049] dark:bg-[#343b36] dark:text-slate-200 dark:hover:bg-[#3d463f]"
+                  aria-label="Next month"
+                >
+                  <ChevronRight size={18} />
+                </button>
+              </div>
             </div>
           </header>
           {error && (
@@ -594,7 +610,7 @@ export default function EmployeeAttendancePage() {
                       setFilter(event.target.value as AttendanceFilter);
                       setPage(1);
                     }}
-                    className="bg-transparent text-xs font-bold outline-none"
+                    className="bg-transparent text-xs font-bold outline-none dark:[color-scheme:dark]"
                   >
                     <option value="all">All status</option>
                     <option value="present">Present</option>
