@@ -15,7 +15,7 @@ import { supabase } from '@/lib/supabase';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
 import Spinner, { LoadingRow } from '@/components/Spinner';
-import { Bell, CalendarX2, CheckCircle2, Clock3, UserRound } from 'lucide-react';
+import { Bell, CheckCircle2, Clock3, CornerUpLeft, RefreshCw, UserRound } from 'lucide-react';
 import { APP_SETTING_DEFINITIONS, DEFAULT_APP_SETTINGS, normalizeAppSettings, type AppSettingsValues } from '@/lib/app-settings';
 import { resolveSeasonalTheme, SEASONAL_THEME_PRESENTATION } from '@/lib/seasonal-theme';
 import { useVerificationDialog } from '@/components/shared/useVerificationDialog';
@@ -1625,9 +1625,11 @@ export default function EmployeeDashboard() {
     const totalLateMinutes = lateLogs
       .filter(l => l.time_in)
       .reduce((sum, l) => sum + getMinutesLate(l.time_in), 0);
+    const earlyOutLogs = cutoffLogs.filter(l => Number(l.early_out_offset_minutes || 0) > 0);
+    const offsetLogs = cutoffLogs.filter(l => Number(l.late_offset_minutes || 0) > 0);
     // presentLogs/lateLogs/absentLogs carried along so the stat cards can
     // list the exact dates behind each number when tapped.
-    return { present: presentLogs.length, late: lateLogs.length, leave: leaveLogs.length, absent: absentLogs.length, onTime, totalLateMinutes, presentLogs, lateLogs, leaveLogs, absentLogs };
+    return { present: presentLogs.length, late: lateLogs.length, earlyOut: earlyOutLogs.length, offset: offsetLogs.length, leave: leaveLogs.length, absent: absentLogs.length, onTime, totalLateMinutes, presentLogs, lateLogs, leaveLogs, absentLogs };
   }, [history, summaryCutoffKey, lateCutoffHour, lateCutoffMinute]);
 
   // Which stat card's detail list is currently open (null = none).
@@ -1887,12 +1889,7 @@ export default function EmployeeDashboard() {
   };
 
   const openProfileFromNav = () => {
-    if (window.matchMedia('(max-width: 1023px)').matches) {
-      setMobileToolsOpen(true);
-      return;
-    }
-    setShowGovIdsSection(true);
-    window.setTimeout(() => scrollToEmployeeSection('employee-profile'), 0);
+    setGovernmentIdsModalOpen(true);
   };
 
   const openAttendanceCalendar = () => {
@@ -2102,7 +2099,7 @@ export default function EmployeeDashboard() {
         }
       `}</style>
       {seasonalTheme.active && seasonalTheme.snowEnabled ? <SeasonalDecor variant={seasonalTheme.variant} intensity={seasonalTheme.intensity} particle={seasonalPresentation.particle} /> : null}
-      <div className="seasonal-content mx-auto max-w-[1600px] space-y-4 md:space-y-6">
+      <div className="seasonal-content mx-auto max-w-[1600px] space-y-3 md:space-y-4">
 
         {/* Header */}
         <header className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_4px_18px_rgba(15,23,42,0.04)] dark:bg-[#292f2b] sm:p-4">
@@ -2139,11 +2136,12 @@ export default function EmployeeDashboard() {
 
         <EmployeeAskAI key={currentUserId || 'signed-out'} />
 
-        {/* Mobile summary cards -- tap any of these to see which dates were counted. */}
-        <div className="grid grid-cols-3 gap-2 sm:gap-3">
+        {/* Attendance overview -- compact on mobile, full four-card row on larger screens. */}
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
           <EmployeeSummaryCard label="Present" value={summary.present} icon={CheckCircle2} tone="green" onClick={() => setSummaryDetailType('present')} />
           <EmployeeSummaryCard label="Late" value={summary.late} icon={Clock3} tone="orange" detail={`${formatLateDuration(summary.totalLateMinutes)} total`} onClick={() => setSummaryDetailType('late')} />
-          <EmployeeSummaryCard label="Absent" value={summary.absent} icon={CalendarX2} tone="red" onClick={() => setSummaryDetailType('absent')} />
+          <EmployeeSummaryCard label="Early Out" value={summary.earlyOut} icon={CornerUpLeft} tone="yellow" onClick={openAttendanceFromNav} />
+          <EmployeeSummaryCard label="Offset" value={summary.offset} icon={RefreshCw} tone="purple" onClick={openAttendanceFromNav} />
         </div>
 
         {/* Main layout */}
@@ -2168,7 +2166,7 @@ export default function EmployeeDashboard() {
             onLogout={handleLogout}
           />
           {/* Profile Sidebar */}
-          <div id="employee-profile" className="hidden scroll-mt-4 lg:col-span-1 lg:block">
+          <div id="employee-profile" className="hidden scroll-mt-4 lg:col-span-1">
             <div className="card-style lg:sticky lg:top-6 !p-4">
               <div className="flex items-center gap-3 lg:flex-col lg:text-center lg:gap-0">
                 <div className="w-14 h-14 lg:w-20 lg:h-20 lg:mx-auto lg:mb-3 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 flex-shrink-0">
@@ -2235,13 +2233,13 @@ export default function EmployeeDashboard() {
           </div>
 
           {/* Main Content */}
-          <div className="space-y-4 lg:col-span-3 md:space-y-5">
+          <div className="space-y-4 lg:col-span-4 md:space-y-5">
 
             {/* Clock + Time buttons */}
             {!attendanceRecordingEnabled ? <div role="status" className="rounded-2xl border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:!text-white">Attendance recording is temporarily unavailable.</div> : null}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <EmployeeWorkClock todayLog={todayLog} endHour={timeOutReminderHour} />
-              <div className="flex flex-col justify-center gap-2 sm:min-h-40">
+              <div className="card-style flex flex-col justify-center gap-2 !p-3 sm:min-h-40 sm:!p-4">
                 {!todayLog ? (
                   <button onClick={handleTimeIn} disabled={!attendanceRecordingEnabled || loading || initLoading || checkingNetwork || officeNetworkAllowed === false} className="btn-primary !py-3">
                     {loading ? <span className="flex items-center justify-center gap-2"><Spinner size="sm"/>Processing...</span> : checkingNetwork ? <span className="flex items-center justify-center gap-2"><Spinner size="sm"/>Checking...</span> : officeNetworkAllowed === false ? (officeNetworkIssue === 'unavailable' ? 'Attendance Unavailable' : 'Not on Office Network') : 'Time In'}
@@ -2285,11 +2283,11 @@ export default function EmployeeDashboard() {
                 doesn't shove everything below it down -- this was a measurable
                 contributor to this page's Cumulative Layout Shift score. */}
             {announcementLoading ? (
-              <div className="card-style !p-4 min-h-[120px] flex items-center"><LoadingRow label="Loading announcement..." /></div>
+              <div className="card-style !p-3 min-h-[100px] flex items-center"><LoadingRow label="Loading announcement..." /></div>
             ) : announcementError ? (
-              <div className="card-style flex min-h-[120px] items-center !p-4 border border-red-100"><p className="text-red-500 text-sm">{announcementError}</p></div>
+              <div className="card-style flex min-h-[100px] items-center !p-3 border border-red-100"><p className="text-red-500 text-sm">{announcementError}</p></div>
             ) : announcement ? (
-              <div className="card-dark min-h-[120px] !p-4">
+              <div className="card-dark min-h-[100px] !p-3">
                 <div className="flex items-start gap-3">
                   <div className="flex-shrink-0 w-8 h-8 rounded-xl bg-green-500 flex items-center justify-center text-sm">📣</div>
                   <div className="flex-1 min-w-0">
@@ -2313,7 +2311,7 @@ export default function EmployeeDashboard() {
                 </div>
               </div>
             ) : (
-              <div className="card-style flex min-h-[120px] items-center justify-center !p-3 border-2 border-dashed border-slate-200 text-center">
+              <div className="card-style flex min-h-[100px] items-center justify-center !p-3 border-2 border-dashed border-slate-200 text-center">
                 <p className="text-slate-400 text-xs">No announcements right now.</p>
               </div>
             )}
