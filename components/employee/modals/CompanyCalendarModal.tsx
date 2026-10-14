@@ -1,22 +1,39 @@
 'use client';
 
 import type { LucideIcon } from 'lucide-react';
-import { CalendarDays, Flag, Gift, Landmark, PartyPopper, Sparkles, TreePine } from 'lucide-react';
+import { BookOpen, BriefcaseBusiness, CalendarDays, Flag, Gift, Landmark, Medal, MoonStar, PartyPopper } from 'lucide-react';
 import { LoadingRow } from '@/components/Spinner';
 import EmptyState from '@/components/shared/EmptyState';
 import ModalShell from '@/components/shared/ModalShell';
 
 type Holiday = { id: string | number; name: string; holiday_date: string };
 type Props = { open: boolean; onClose: () => void; loading: boolean; holidays: Holiday[]; upcoming: Holiday[]; past: Holiday[]; formatDate: (date: string) => string; daysUntil: (date: string) => number };
-type HolidayVisual = { Icon: LucideIcon; accent: string; label: string; christmas?: boolean };
+type HolidayVisual = { Icon: LucideIcon; accent: string; label: string };
+
+function normalizeHolidayName(name: string) {
+  return name
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[’']/g, '')
+    .replace(/[-_]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 function getHolidayVisual(name: string): HolidayVisual {
-  const holiday = name.toLowerCase();
-  if (holiday.includes('christmas')) return { Icon: TreePine, accent: 'text-emerald-700 dark:text-emerald-300', label: 'Christmas', christmas: true };
+  const holiday = normalizeHolidayName(name);
+
   if (holiday.includes('new year')) return { Icon: PartyPopper, accent: 'text-amber-700 dark:text-amber-300', label: 'New Year' };
-  if (holiday.includes('independence') || holiday.includes('national heroes') || holiday.includes('bonifacio') || holiday.includes('rizal')) return { Icon: Landmark, accent: 'text-blue-700 dark:text-blue-300', label: 'National holiday' };
-  if (holiday.includes('easter') || holiday.includes('holy week') || holiday.includes('good friday') || holiday.includes('black saturday')) return { Icon: Sparkles, accent: 'text-violet-700 dark:text-violet-300', label: 'Holiday' };
-  if (holiday.includes('national') || holiday.includes('day')) return { Icon: Flag, accent: 'text-rose-700 dark:text-rose-300', label: 'National holiday' };
+  if (holiday.includes('araw ng kagitingan') || holiday.includes('day of valor')) return { Icon: Medal, accent: 'text-amber-700 dark:text-amber-300', label: 'Day of Valor' };
+  if (holiday.includes('labor day')) return { Icon: BriefcaseBusiness, accent: 'text-orange-700 dark:text-orange-300', label: 'Labor Day' };
+  if (holiday.includes('independence day')) return { Icon: Flag, accent: 'text-blue-700 dark:text-blue-300', label: 'Independence Day' };
+  if (holiday.includes('national heroes day') || holiday.includes('bonifacio day')) return { Icon: Landmark, accent: 'text-blue-700 dark:text-blue-300', label: 'National holiday' };
+  if (holiday.includes('christmas day')) return { Icon: Gift, accent: 'text-emerald-700 dark:text-emerald-300', label: 'Christmas Day' };
+  if (holiday.includes('rizal day')) return { Icon: BookOpen, accent: 'text-violet-700 dark:text-violet-300', label: 'Rizal Day' };
+  if (holiday.includes('eidl fitr') || holiday.includes('eidul fitr') || holiday.includes('eid al fitr')) return { Icon: MoonStar, accent: 'text-sky-700 dark:text-sky-300', label: 'Eid al-Fitr' };
+  if (holiday.includes('eidl adha') || holiday.includes('eidul adha') || holiday.includes('eid al adha')) return { Icon: MoonStar, accent: 'text-sky-700 dark:text-sky-300', label: 'Eid al-Adha' };
+
   return { Icon: CalendarDays, accent: 'text-indigo-700 dark:text-indigo-300', label: 'Company holiday' };
 }
 
@@ -52,8 +69,6 @@ export default function CompanyCalendarModal({ open, onClose, loading, holidays,
               aria-label={`${nextVisual.label} illustration`}
             >
               <NextIcon className="h-10 w-10" strokeWidth={1.7} aria-hidden="true" />
-              {nextVisual.christmas && <Gift className="absolute bottom-3 right-2 h-5 w-5 text-rose-500 dark:text-rose-300" strokeWidth={2} aria-hidden="true" />}
-              {nextVisual.christmas && <Sparkles className="absolute right-3 top-2 h-4 w-4 text-amber-500 dark:text-amber-300" strokeWidth={2} aria-hidden="true" />}
             </div>
           </div>
         </section>}
@@ -63,3 +78,4 @@ export default function CompanyCalendarModal({ open, onClose, loading, holidays,
     </ModalShell>
   );
 }
+
