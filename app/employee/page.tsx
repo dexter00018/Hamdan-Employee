@@ -5,11 +5,14 @@ import MobileBottomNav from '@/components/employee/MobileBottomNav';
 import EmployeeSummaryCard from '@/components/employee/EmployeeSummaryCard';
 import EmployeeQuickActions from '@/components/employee/EmployeeQuickActions';
 import EmployeeDesktopSidebar from '@/components/employee/EmployeeDesktopSidebar';
+import EmployeePortalLayout, { EMPLOYEE_PORTAL_SHELL_CLASSNAME } from '@/components/employee/EmployeePortalLayout';
 import MobileAllToolsSheet from '@/components/employee/MobileAllToolsSheet';
 import EmployeeWorkClock from '@/components/employee/EmployeeWorkClock';
 import EmployeeAskAI from '@/components/employee/EmployeeAskAI';
 
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { Suspense, useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import EmployeeNavigationIntent from '@/components/employee/EmployeeNavigationIntent';
+import { readEmployeeAppearance, saveEmployeeAppearance } from '@/lib/employee/portal-appearance';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import Image from 'next/image';
@@ -109,6 +112,11 @@ export default function EmployeeDashboard() {
   const seasonalTheme = useMemo(() => resolveSeasonalTheme(seasonalSettings, 'employee'), [seasonalSettings]);
   const seasonalPresentation = SEASONAL_THEME_PRESENTATION[seasonalTheme.variant];
 
+  useEffect(() => {
+    const cached = readEmployeeAppearance();
+    if (cached) queueMicrotask(() => setSeasonalSettings((current) => ({ ...current, ...cached })));
+  }, []);
+
   const fetchAppSettings = async () => {
     const { data, error } = await supabase
       .from('app_settings')
@@ -124,7 +132,9 @@ export default function EmployeeDashboard() {
     if (typeof map.default_leave_credits === 'number') setFallbackLeaveCredits(map.default_leave_credits);
     if (typeof map.time_out_reminder_hour === 'number') setTimeOutReminderHour(map.time_out_reminder_hour);
     if (typeof map.attendance_recording_enabled === 'boolean') setAttendanceRecordingEnabled(map.attendance_recording_enabled);
-    setSeasonalSettings(normalizeAppSettings(data));
+    const normalized = normalizeAppSettings(data);
+    setSeasonalSettings(normalized);
+    saveEmployeeAppearance(normalized);
   };
 
   // --- Dark Mode ---
@@ -1916,7 +1926,21 @@ export default function EmployeeDashboard() {
   }
 
   return (
-    <main id="employee-dashboard-top" className={`dashboard-shell employee-dashboard relative min-h-screen overflow-x-hidden p-3 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:p-4 sm:pb-[calc(6rem+env(safe-area-inset-bottom))] md:p-6 md:pb-[calc(6rem+env(safe-area-inset-bottom))] lg:p-8 ${seasonalTheme.active ? `seasonal-theme seasonal-${seasonalTheme.variant} seasonal-${seasonalTheme.intensity}` : ''}`}>
+    <main id="employee-dashboard-top" className={`${EMPLOYEE_PORTAL_SHELL_CLASSNAME} employee-dashboard ${seasonalTheme.active ? `seasonal-theme seasonal-${seasonalTheme.variant} seasonal-${seasonalTheme.intensity}` : ''}`}>
+      <Suspense fallback={null}>
+        <EmployeeNavigationIntent ready={!initLoading} onOpen={(tool) => {
+          switch (tool) {
+            case 'leave': setLeaveChoiceModalOpen(true); break;
+            case 'disputes': setSelectedMyDisputeDetail(null); setMyDisputesModalOpen(true); void fetchMyDisputes(); break;
+            case 'payslips': setPayslipsModalOpen(true); void fetchPayslips(); break;
+            case 'documents': setDocumentsModalOpen(true); void fetchEmployeeDocuments(); break;
+            case 'actions': setActionCenterModalOpen(true); break;
+            case 'commute': setCommuteModalOpen(true); break;
+            case 'helpdesk': setSupportModalOpen(true); void fetchSupportRequests(); break;
+            case 'profile': setGovernmentIdsModalOpen(true); break;
+          }
+        }} />
+      </Suspense>
       <style jsx global>{`
         /* DARK MODE — neutral dark gray, not pure black. */
         .dark { color-scheme: dark; }
@@ -1932,26 +1956,6 @@ export default function EmployeeDashboard() {
           box-shadow: 0 4px 18px rgba(15, 23, 42, .045);
         }
         .dark .employee-dashboard .card-style { border-color: #414944 !important; }
-        @media (min-width: 1024px) {
-          .employee-dashboard .seasonal-content {
-            display: grid;
-            grid-template-columns: 228px minmax(0, 1fr);
-            align-items: start;
-            column-gap: 1.25rem;
-            row-gap: 1rem;
-          }
-          .employee-dashboard .dashboard-primary-content,
-          .employee-dashboard .dashboard-main-content { grid-column: 2; }
-          .employee-dashboard .employee-main-layout { display: contents !important; }
-          .employee-dashboard .employee-main-layout > .dashboard-sidebar {
-            grid-column: 1;
-            grid-row: 1 / span 20;
-            align-self: stretch;
-            position: sticky;
-            top: 0;
-            height: 100vh;
-          }
-        }
         .seasonal-theme {
           background-color: #eef8f1;
           background-image: radial-gradient(circle at 8% 2%, rgba(220,38,38,.16), transparent 22rem), radial-gradient(circle at 92% 8%, rgba(22,163,74,.2), transparent 25rem);
@@ -2119,7 +2123,27 @@ export default function EmployeeDashboard() {
         }
       `}</style>
       {seasonalTheme.active && seasonalTheme.snowEnabled ? <SeasonalDecor variant={seasonalTheme.variant} intensity={seasonalTheme.intensity} particle={seasonalPresentation.particle} /> : null}
-      <div className="seasonal-content mx-auto max-w-[1600px] space-y-3 md:space-y-4 lg:space-y-0">
+      <EmployeePortalLayout sidebar={
+        <EmployeeDesktopSidebar
+          employeeName={profile?.full_name || 'Employee'}
+          designation={profile?.designation || 'Employee'}
+          avatarUrl={profile?.avatar_url}
+          darkMode={darkMode}
+          actionCount={employeeActionCount}
+          onDashboard={() => scrollToEmployeeSection('employee-dashboard-top')}
+          onAttendance={openAttendanceFromNav}
+          onLeave={() => setLeaveChoiceModalOpen(true)}
+          onDisputes={() => { setSelectedMyDisputeDetail(null); setMyDisputesModalOpen(true); fetchMyDisputes(); }}
+          onPayslips={() => { setPayslipsModalOpen(true); fetchPayslips(); }}
+          onDocuments={() => { setDocumentsModalOpen(true); fetchEmployeeDocuments(); }}
+          onActionCenter={() => setActionCenterModalOpen(true)}
+          onCommute={() => setCommuteModalOpen(true)}
+          onHelpdesk={() => { setSupportModalOpen(true); fetchSupportRequests(); }}
+          onProfile={openProfileFromNav}
+          onToggleTheme={toggleTheme}
+          onLogout={handleLogout}
+        />
+      }>
 
         {/* Header */}
         <header className="dashboard-primary-content flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_4px_18px_rgba(15,23,42,0.04)] dark:bg-[#292f2b] sm:p-4">
@@ -2165,26 +2189,7 @@ export default function EmployeeDashboard() {
         </div>
 
         {/* Main layout */}
-        <div className="employee-main-layout grid grid-cols-1 gap-3 sm:gap-4 md:gap-5 lg:grid-cols-5">
-          <EmployeeDesktopSidebar
-            employeeName={profile?.full_name || 'Employee'}
-            designation={profile?.designation || 'Employee'}
-            avatarUrl={profile?.avatar_url}
-            darkMode={darkMode}
-            actionCount={employeeActionCount}
-            onDashboard={() => scrollToEmployeeSection('employee-dashboard-top')}
-            onAttendance={openAttendanceFromNav}
-            onLeave={() => setLeaveChoiceModalOpen(true)}
-            onDisputes={() => { setSelectedMyDisputeDetail(null); setMyDisputesModalOpen(true); fetchMyDisputes(); }}
-            onPayslips={() => { setPayslipsModalOpen(true); fetchPayslips(); }}
-            onDocuments={() => { setDocumentsModalOpen(true); fetchEmployeeDocuments(); }}
-            onActionCenter={() => setActionCenterModalOpen(true)}
-            onCommute={() => setCommuteModalOpen(true)}
-            onHelpdesk={() => { setSupportModalOpen(true); fetchSupportRequests(); }}
-            onProfile={openProfileFromNav}
-            onToggleTheme={toggleTheme}
-            onLogout={handleLogout}
-          />
+        <div className="employee-main-layout grid grid-cols-1 gap-3 sm:gap-4 md:gap-5">
           {/* Profile Sidebar */}
           <div id="employee-profile" className="hidden scroll-mt-4 lg:col-span-1">
             <div className="card-style lg:sticky lg:top-6 !p-4">
@@ -2253,7 +2258,7 @@ export default function EmployeeDashboard() {
           </div>
 
           {/* Main Content */}
-          <div className="dashboard-main-content space-y-4 lg:col-span-4 md:space-y-5">
+          <div className="dashboard-main-content space-y-4 md:space-y-5">
 
             {/* Clock + Time buttons */}
             {!attendanceRecordingEnabled ? <div role="status" className="rounded-2xl border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:!text-white">Attendance recording is temporarily unavailable.</div> : null}
@@ -2355,7 +2360,7 @@ export default function EmployeeDashboard() {
 
           </div>
         </div>
-      </div>
+      </EmployeePortalLayout>
 
       {summaryDetailType && <SummaryDetailModal attendanceStatusDisplay={attendanceStatusDisplay} formatMonthLabel={formatMonthLabel} setSummaryDetailType={setSummaryDetailType} summaryCutoffKey={summaryCutoffKey} summaryDetailInfo={summaryDetailInfo} summaryDetailType={summaryDetailType} />}
 
