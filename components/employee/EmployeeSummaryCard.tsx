@@ -30,19 +30,19 @@ export default function EmployeeSummaryCard({ label, value, icon: Icon, tone, on
     <button
       type="button"
       onClick={onClick}
-      className={`group relative min-h-[104px] overflow-hidden rounded-2xl border p-3 text-left shadow-[0_8px_24px_rgba(15,23,42,0.06)] transition duration-200 hover:-translate-y-0.5 hover:shadow-lg sm:min-h-[112px] sm:p-4 ${surfaces[tone]}`}
+      className={`group relative min-h-[104px] min-w-0 overflow-hidden rounded-2xl border p-2.5 text-left shadow-[0_8px_24px_rgba(15,23,42,0.06)] transition duration-200 hover:-translate-y-0.5 hover:shadow-lg sm:min-h-[112px] sm:p-4 ${surfaces[tone]}`}
       aria-label={`View ${label.toLowerCase()} details`}
     >
-      <div className="flex items-center justify-between gap-3">
-        <span className={`relative grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br text-white shadow-lg ${tones[tone]}`}>
+      <div className="flex items-center justify-between gap-2 sm:gap-3">
+        <span className={`relative grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-gradient-to-br text-white shadow-lg sm:h-9 sm:w-9 ${tones[tone]}`}>
           <span className="absolute inset-[3px] rounded-[13px] border border-white/25" aria-hidden="true" />
           <Icon aria-hidden="true" size={17} strokeWidth={2.2} />
         </span>
-        <span className="stat-number text-xl text-slate-900 dark:text-white sm:text-2xl">{value}</span>
+        <span className="stat-number text-lg text-slate-900 dark:text-white sm:text-2xl">{value}</span>
       </div>
       <div className="mt-2 min-w-0">
         <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">{label}</p>
-        {detail ? <p className="mt-0.5 truncate text-[9px] font-bold text-orange-600 dark:text-orange-300 sm:text-[10px]">{detail}</p> : null}
+        {detail ? <p className={`mt-0.5 truncate text-[9px] font-bold sm:text-[10px] ${tone === 'red' ? 'text-red-600 dark:text-red-300' : 'text-orange-600 dark:text-orange-300'}`}>{detail}</p> : null}
       </div>
       <span className={`absolute inset-x-4 bottom-0 h-0.5 rounded-t-full bg-gradient-to-r ${tones[tone].split(' shadow-')[0]}`} aria-hidden="true" />
     </button>

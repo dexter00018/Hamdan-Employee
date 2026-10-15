@@ -1266,7 +1266,8 @@ html.dark [class~="to-orange-700"] { --tw-gradient-to: #442c20 !important; }
 }
 #employee-dashboard-top.seasonal-halloween .dashboard-primary-content.grid > button:nth-child(1) { border-color: rgba(74, 222, 128, .68) !important; }
 #employee-dashboard-top.seasonal-halloween .dashboard-primary-content.grid > button:nth-child(2) { border-color: rgba(251, 122, 24, .78) !important; }
-#employee-dashboard-top.seasonal-halloween .dashboard-primary-content.grid > button:nth-child(3) { border-color: rgba(255, 193, 61, .78) !important; }
+#employee-dashboard-top.seasonal-halloween .dashboard-primary-content.grid > button:nth-child(3) { border-color: rgba(248, 113, 113, .78) !important; }
+#employee-dashboard-top.seasonal-halloween .dashboard-primary-content.grid .text-red-600 { color: #fda4af !important; }
 #employee-dashboard-top.seasonal-halloween .dashboard-primary-content.grid > button:nth-child(4) { border-color: rgba(192, 132, 252, .76) !important; }
 #employee-dashboard-top.seasonal-halloween .dashboard-main-content > .grid > div {
   border-color: rgba(251, 122, 24, .55) !important;

@@ -15,7 +15,7 @@ import { supabase } from '@/lib/supabase';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
 import Spinner, { LoadingRow } from '@/components/Spinner';
-import { Bell, CheckCircle2, Clock3, CornerUpLeft, RefreshCw, UserRound } from 'lucide-react';
+import { Bell, CheckCircle2, CircleX, Clock3, UserRound } from 'lucide-react';
 import { APP_SETTING_DEFINITIONS, DEFAULT_APP_SETTINGS, normalizeAppSettings, type AppSettingsValues } from '@/lib/app-settings';
 import { resolveSeasonalTheme, SEASONAL_THEME_PRESENTATION } from '@/lib/seasonal-theme';
 import { useVerificationDialog } from '@/components/shared/useVerificationDialog';
@@ -1625,11 +1625,9 @@ export default function EmployeeDashboard() {
     const totalLateMinutes = lateLogs
       .filter(l => l.time_in)
       .reduce((sum, l) => sum + getMinutesLate(l.time_in), 0);
-    const earlyOutLogs = cutoffLogs.filter(l => Number(l.early_out_offset_minutes || 0) > 0);
-    const offsetLogs = cutoffLogs.filter(l => Number(l.late_offset_minutes || 0) > 0);
     // presentLogs/lateLogs/absentLogs carried along so the stat cards can
     // list the exact dates behind each number when tapped.
-    return { present: presentLogs.length, late: lateLogs.length, earlyOut: earlyOutLogs.length, offset: offsetLogs.length, leave: leaveLogs.length, absent: absentLogs.length, onTime, totalLateMinutes, presentLogs, lateLogs, leaveLogs, absentLogs };
+    return { present: presentLogs.length, late: lateLogs.length, leave: leaveLogs.length, absent: absentLogs.length, onTime, totalLateMinutes, presentLogs, lateLogs, leaveLogs, absentLogs };
   }, [history, summaryCutoffKey, lateCutoffHour, lateCutoffMinute]);
 
   // Which stat card's detail list is currently open (null = none).
@@ -2153,12 +2151,11 @@ export default function EmployeeDashboard() {
 
         <div className="dashboard-primary-content"><EmployeeAskAI key={currentUserId || 'signed-out'} /></div>
 
-        {/* Attendance overview -- compact on mobile, full four-card row on larger screens. */}
-        <div className="dashboard-primary-content grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
+        {/* Current-cutoff attendance overview stays on one row, including mobile. */}
+        <div aria-label={`Attendance overview for ${formatMonthLabel(summaryCutoffKey)}`} className="dashboard-primary-content grid grid-cols-3 gap-2 sm:gap-3">
           <EmployeeSummaryCard label="Present" value={summary.present} icon={CheckCircle2} tone="green" onClick={() => setSummaryDetailType('present')} />
           <EmployeeSummaryCard label="Late" value={summary.late} icon={Clock3} tone="orange" detail={`${formatLateDuration(summary.totalLateMinutes)} total`} onClick={() => setSummaryDetailType('late')} />
-          <EmployeeSummaryCard label="Early Out" value={summary.earlyOut} icon={CornerUpLeft} tone="yellow" onClick={openAttendanceFromNav} />
-          <EmployeeSummaryCard label="Offset" value={summary.offset} icon={RefreshCw} tone="purple" onClick={openAttendanceFromNav} />
+          <EmployeeSummaryCard label="Absent" value={summary.absent} icon={CircleX} tone="red" detail="This cutoff" onClick={() => setSummaryDetailType('absent')} />
         </div>
 
         {/* Main layout */}
