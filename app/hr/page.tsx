@@ -4,11 +4,18 @@ import HRDesktopSidebar from '@/components/hr/HRDesktopSidebar';
 import HRMobileBottomNav from '@/components/hr/HRMobileBottomNav';
 import HRMobileToolsSheet from '@/components/hr/HRMobileToolsSheet';
 import MonthCalendarPicker from '@/components/hr/MonthCalendarPicker';
+import HRDashboardHeader from '@/components/hr/HRDashboardHeader';
+import HRDashboardStats from '@/components/hr/HRDashboardStats';
+import HRDashboardAnnouncement from '@/components/hr/HRDashboardAnnouncement';
+import HRDashboardPending from '@/components/hr/HRDashboardPending';
+import HRDashboardQuickActions from '@/components/hr/HRDashboardQuickActions';
+import HRDashboardAnalytics from '@/components/hr/HRDashboardAnalytics';
+import hrStyles from '@/components/hr/hr-dashboard.module.css';
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { AlertTriangle, BadgeAlert, Bell, CalendarCheck2, CalendarClock, CalendarDays, CalendarRange, CheckCircle2, ChevronRight, Clock3, Coins, ContactRound, FileChartColumn, FolderDown, Headphones, LifeBuoy, Megaphone, Moon, RefreshCw, Search, Sun, UserRound } from 'lucide-react';
+import { BadgeAlert, CalendarCheck2, CalendarDays, CalendarRange, CheckCircle2, ChevronRight, Coins, ContactRound, FileChartColumn, FolderDown, LifeBuoy, Megaphone, RefreshCw, Search } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { supabase } from '@/lib/supabase';
 import { LoadingRow } from '@/components/Spinner';
@@ -628,6 +635,7 @@ export default function HRDashboard() {
   const [incomingRequestAlert, setIncomingRequestAlert] = useState<{ type: 'dispute' | 'leave'; title: string; detail: string } | null>(null);
   const [employeesListOpen, setEmployeesListOpen] = useState(false);
   const [attendanceHistoryOpen, setAttendanceHistoryOpen] = useState(false);
+  const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [holidaysOpen, setHolidaysOpen] = useState(false);
   const PAGE_SIZE = 10;
   const [employeesPage, setEmployeesPage] = useState(1);
@@ -2002,6 +2010,7 @@ export default function HRDashboard() {
   };
   const openAttendanceChartDetail = (kind: 'attendance' | 'late' | 'leave' | 'absent', row: { start?: string; end?: string; label?: string }) => {
     if (!row.start || !row.end) return;
+    setAnalyticsOpen(false);
     setAttendanceInsightRange({ start: row.start, end: row.end, label: row.label || 'Selected period' });
     setAttendanceInsightModal(kind);
   };
@@ -2120,35 +2129,50 @@ export default function HRDashboard() {
   const openLeaveCalendar = () => { setSelectedCalendarDate(null); setLeaveCalendarOpen(true); };
   const openHolidays = () => { if (!holidaysOpen) toggleHolidays(); };
   const openAttendanceLog = () => { setAttendanceHistoryOpen(true); scrollToDashboardSection('attendance-history'); };
+  const openAttendanceSummary = (kind: 'attendance' | 'late' | 'leave' | 'absent') => {
+    setAnalyticsOpen(false);
+    setAttendanceInsightRange(null);
+    setAttendanceInsightModal(kind);
+  };
+
+  const analyticsContent = (
+    <div className={hrStyles.analytics}>
+          <section className="card-style min-w-0 !p-4" aria-labelledby="attendance-trend-title">
+            <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 id="attendance-trend-title" className="text-base font-semibold">Attendance Trend</h2><p className="mt-0.5 text-xs text-slate-500">Attendance records across the selected period</p></div><div className="flex flex-wrap items-center justify-end gap-2"><MonthCalendarPicker value={attendanceChartMonth} onChange={setAttendanceChartMonth} /><div className="flex items-center gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">{(['daily', 'weekly', 'monthly'] as const).map((mode) => <button type="button" key={mode} onClick={() => setAttendanceChartMode(mode)} className={`rounded-lg px-2.5 py-1.5 text-[10px] font-bold capitalize transition ${attendanceChartMode === mode ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white' : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>{mode}</button>)}</div></div></div>
+            <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-semibold text-slate-500"><span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-green-600" />Present</span><span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-amber-500" />Late</span><span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-blue-500" />Leave</span><span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-rose-500" />Absent</span></div>
+            <div className="attendance-analytics-chart mt-2 h-64 min-w-0">{attendanceTrendData.some((row) => row.present || row.late || row.leave || row.absent) ? <ResponsiveContainer width="100%" height="100%"><BarChart data={attendanceTrendData} tabIndex={-1} style={{ outline: 'none' }} margin={{ top: 10, right: 6, left: -18, bottom: 0 }} barCategoryGap={attendanceChartMode === 'daily' ? '18%' : '28%'}><CartesianGrid stroke={chartLineColor} strokeDasharray="4 4" vertical={false} />{attendanceChartMode === 'daily' && attendanceTrendData.filter((row) => row.isWeekend).map((row) => <ReferenceArea key={row.key} x1={row.label} x2={row.label} fill="#94a3b8" fillOpacity={darkMode ? 0.22 : 0.14} stroke="none" />)}<XAxis dataKey="label" interval={attendanceChartMode === 'daily' ? 2 : 0} tick={({ x, y, payload }: { x?: string | number; y?: string | number; payload?: { value?: string } }) => { const label = String(payload?.value ?? ''); const weekend = attendanceTrendData.find((row) => row.label === label)?.isWeekend; return <text x={x} y={(Number(y) || 0) + 14} textAnchor="middle" fontSize={10} fontWeight={weekend ? 700 : 500} fill={weekend ? (darkMode ? '#cbd5e1' : '#475569') : chartTextColor}>{label}</text>; }} tickLine={false} axisLine={{ stroke: chartLineColor }} /><YAxis domain={[0, Math.max(1, profiles.length)]} tick={{ fontSize: 10, fill: chartTextColor }} tickLine={false} axisLine={false} allowDecimals={false} /><Tooltip content={attendanceTooltipContent} cursor={{ fill: darkMode ? 'rgba(148,163,184,.16)' : 'rgba(148,163,184,.08)' }} /><Bar dataKey="present" name="Present" stackId="attendance" fill="#16a34a" isAnimationActive animationDuration={550} className="cursor-pointer" onClick={(row: any) => openAttendanceChartDetail('attendance', row)} /><Bar dataKey="late" name="Late" stackId="attendance" fill="#f59e0b" isAnimationActive animationDuration={550} className="cursor-pointer" onClick={(row: any) => openAttendanceChartDetail('late', row)} /><Bar dataKey="leave" name="Leave" stackId="attendance" fill="#3b82f6" isAnimationActive animationDuration={550} className="cursor-pointer" onClick={(row: any) => openAttendanceChartDetail('leave', row)} /><Bar dataKey="absent" name="Absent" stackId="attendance" fill="#f43f5e" radius={[5, 5, 0, 0]} isAnimationActive animationDuration={550} className="cursor-pointer" onClick={(row: any) => openAttendanceChartDetail('absent', row)} /></BarChart></ResponsiveContainer> : <div className="grid h-full place-items-center text-center text-sm text-slate-400">No attendance records for this period.</div>}</div>
+          </section>
+
+          <section className="card-style min-w-0 !p-4" aria-labelledby="attendance-distribution-title">
+            <div className="flex items-start justify-between gap-3"><div><h2 id="attendance-distribution-title" className="text-base font-semibold">Attendance Overview</h2><p className="mt-0.5 text-xs text-slate-500">Current-month attendance logs</p></div><button type="button" onClick={() => openAttendanceSummary('attendance')} className="inline-flex min-h-9 items-center gap-1 rounded-full px-2 text-[10px] font-bold text-green-700 hover:bg-green-50 dark:text-green-300">Details <ChevronRight size={14}/></button></div>
+            <div className="attendance-analytics-chart relative mx-auto mt-2 h-48 max-w-[290px]" aria-label="Current-month attendance record distribution">{attendanceChartData.length > 0 ? <ResponsiveContainer width="100%" height="100%"><PieChart style={{ outline: 'none' }}><Pie data={attendanceChartData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={52} outerRadius={76} paddingAngle={4} stroke="none" isAnimationActive animationDuration={620} onMouseLeave={() => setActiveAttendanceSlice(undefined)} rootTabIndex={-1}>{attendanceChartData.map((item, index) => <Cell key={item.key} fill={item.color} opacity={activeAttendanceSlice === undefined || activeAttendanceSlice === index ? 1 : 0.32} onMouseEnter={() => setActiveAttendanceSlice(index)} />)}</Pie></PieChart></ResponsiveContainer> : <div className="grid h-full place-items-center text-center text-sm text-slate-400">No attendance records<br />this month.</div>}{attendanceChartData.length > 0 && <div className="pointer-events-none absolute inset-0 grid place-items-center text-center"><p className="stat-number text-3xl leading-none text-slate-900 dark:text-white">{attendanceInsights.current.logs.length}</p></div>}</div>
+            {attendanceChartData.length > 0 && <div className="mt-1 grid grid-cols-2 gap-1.5">{attendanceChartData.map((item) => <button type="button" key={item.key} onClick={() => openAttendanceSummary(item.key as 'attendance' | 'late' | 'leave' | 'absent')} className="flex items-center justify-between rounded-xl px-2 py-1.5 text-left text-[11px] transition hover:bg-slate-50 dark:hover:bg-slate-800"><span className="flex min-w-0 items-center gap-2 text-slate-600 dark:text-slate-300"><i className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: item.color }} /><span className="truncate">{item.name}</span></span><b className="tabular-nums text-slate-800 dark:text-white">{item.value} · {Math.round(item.value / attendanceInsights.current.logs.length * 100)}%</b></button>)}</div>}
+          </section>
+        </div>
+  );
 
   return (
-    <main id="hr-dashboard-top" className={`dashboard-shell hr-dashboard relative min-h-screen overflow-x-hidden bg-slate-50 p-3 pb-24 text-slate-950 transition-colors dark:bg-[#111512] dark:text-slate-100 sm:p-4 sm:pb-24 md:p-6 lg:py-6 lg:pl-[260px] lg:pr-6 ${seasonalTheme.active ? `seasonal-theme seasonal-${seasonalTheme.variant} seasonal-${seasonalTheme.intensity}` : ''}`}>
+    <main id="hr-dashboard-top" data-attendance-open={attendanceHistoryOpen} className={`dashboard-shell hr-dashboard relative min-h-screen overflow-x-hidden transition-colors ${hrStyles.dashboard} ${seasonalTheme.active ? `seasonal-theme seasonal-${seasonalTheme.variant} seasonal-${seasonalTheme.intensity}` : ''}`}>
       {seasonalTheme.active && seasonalTheme.snowEnabled ? <SeasonalDecor variant={seasonalTheme.variant} intensity={seasonalTheme.intensity} particle={seasonalPresentation.particle} /> : null}
-      <HRDesktopSidebar darkMode={darkMode} leaveRequestCount={pendingLeaveCount} disputeCount={pendingDisputesCount} onDashboard={() => scrollToDashboardSection('hr-dashboard-top')} onAttendance={openAttendanceLog} onEmployees={() => setEmployeesListOpen(true)} onLeave={() => { setSelectedLeaveDetail(null); setLeaveHistoryModalOpen(true); }} onDisputes={() => { setSelectedDisputeDetail(null); setDisputesHistoryModalOpen(true); }} onPayslips={() => setEmployeesListOpen(true)} onDocuments={openDocuments} onAnnouncements={() => setAnnouncementOpen(true)} onHolidays={openHolidays} onReports={openReports} onHelpdesk={openHelpdesk} onToggleTheme={toggleTheme} onLogout={handleLogout} />
-      <div className="seasonal-content relative z-[3] max-w-7xl mx-auto space-y-3 sm:space-y-4 md:space-y-5">
-        {/* Header */}
-        <header className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_4px_18px_rgba(15,23,42,0.05)] dark:border-slate-700 dark:bg-[#292f2b] sm:p-4">
-          <div className="min-w-0"><p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-green-700 dark:text-green-300">Hamdan Engineering</p><h1 className="mt-0.5 truncate text-xl font-bold leading-tight text-slate-950 dark:text-white sm:text-2xl">HR Dashboard</h1><p className="mt-1 hidden text-xs text-slate-600 dark:text-slate-300 sm:block">People, attendance, and employee operations.</p></div>
-          <div className="flex flex-none items-center gap-1.5">
-            <button type="button" onClick={toggleTheme} className="grid h-11 w-11 place-items-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:!text-white dark:hover:bg-slate-800 lg:hidden" aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}>{darkMode ? <Sun size={18}/> : <Moon size={18}/>}</button>
-            <button type="button" onClick={() => setActionCenterOpen(true)} className="relative grid h-11 w-11 place-items-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:!text-white dark:hover:bg-slate-800" aria-label={`Open notifications, ${pendingHrActionCount} pending HR actions`}><Bell size={18}/>{pendingHrActionCount ? <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[9px] font-black text-white">{pendingHrActionCount > 9 ? '9+' : pendingHrActionCount}</span> : null}</button>
-            <button type="button" onClick={() => setMobileToolsOpen(true)} className="grid h-11 w-11 place-items-center rounded-full border border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:!text-white lg:hidden" aria-label="Open HR tools"><UserRound size={18}/></button>
-          </div>
-        </header>
+      <HRDesktopSidebar attendanceOpen={attendanceHistoryOpen} darkMode={darkMode} leaveRequestCount={pendingLeaveCount} disputeCount={pendingDisputesCount} onDashboard={() => { setAttendanceHistoryOpen(false); scrollToDashboardSection('hr-dashboard-top'); }} onAttendance={openAttendanceLog} onEmployees={() => setEmployeesListOpen(true)} onLeave={() => { setSelectedLeaveDetail(null); setLeaveHistoryModalOpen(true); }} onDisputes={() => { setSelectedDisputeDetail(null); setDisputesHistoryModalOpen(true); }} onPayslips={() => setEmployeesListOpen(true)} onDocuments={openDocuments} onAnnouncements={() => setAnnouncementOpen(true)} onHolidays={openHolidays} onReports={openReports} onHelpdesk={openHelpdesk} onToggleTheme={toggleTheme} onLogout={handleLogout} />
+      <div className={`seasonal-content relative z-[3] ${hrStyles.content}`}>
+        <HRDashboardHeader darkMode={darkMode} pendingCount={pendingHrActionCount} onToggleTheme={toggleTheme} onNotifications={() => setActionCenterOpen(true)} onTools={() => setMobileToolsOpen(true)} />
 
         {incomingRequestAlert ? <div role="status" aria-live="polite" className="fixed inset-x-3 top-3 z-[80] mx-auto flex max-w-md items-center gap-3 rounded-2xl border border-green-300 bg-white p-3 shadow-2xl dark:border-green-800 dark:!bg-[#17231b] sm:left-auto sm:right-5 sm:top-5 sm:mx-0"><span className={`grid h-11 w-11 flex-none place-items-center rounded-2xl text-white shadow ${incomingRequestAlert.type === 'dispute' ? 'bg-gradient-to-br from-orange-500 to-red-700' : 'bg-gradient-to-br from-blue-500 to-indigo-700'}`}>{incomingRequestAlert.type === 'dispute' ? <BadgeAlert size={22} strokeWidth={2.8}/> : <CalendarCheck2 size={22} strokeWidth={2.8}/>}</span><button type="button" onClick={() => { if (incomingRequestAlert.type === 'dispute') { setSelectedDisputeDetail(null); setDisputesHistoryModalOpen(true); } else { setSelectedLeaveDetail(null); setLeaveHistoryModalOpen(true); } setIncomingRequestAlert(null); }} className="min-w-0 flex-1 text-left"><span className="block text-xs font-extrabold text-slate-950 dark:!text-white">{incomingRequestAlert.title}</span><span className="mt-0.5 block text-[10px] leading-relaxed text-slate-600 dark:!text-slate-300">{incomingRequestAlert.detail}</span><span className="mt-1 block text-[10px] font-bold text-green-700 dark:!text-green-300">Tap to review</span></button><button type="button" onClick={() => setIncomingRequestAlert(null)} className="grid h-9 w-9 flex-none place-items-center rounded-full bg-slate-100 text-lg text-slate-600 dark:!bg-[#29362d] dark:!text-white" aria-label="Dismiss notification">×</button></div> : null}
 
-        {errorMsg && <div className="p-3 rounded-xl text-xs font-bold bg-red-50 text-red-700">{errorMsg}</div>}
+        {errorMsg && <div role="alert" className={`p-3 rounded-xl text-xs font-bold bg-red-50 text-red-700 ${hrStyles.notice}`}>{errorMsg}</div>}
+
+        <HRDashboardStats present={presentTodayCount} late={lateTodayCount} leave={onLeaveTodayCount} notTimedIn={notYetTimedInToday.length} loading={loadingData} onSelect={setDailyOverviewModal} />
 
         {/* Global employee search + live refresh */}
-        <div className="card-style !p-3 flex flex-col sm:flex-row sm:items-center gap-3 relative z-30">
+        <div className={hrStyles.toolbar}>
           <div className="relative flex-1 min-w-0">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             <input
               type="search"
               value={globalEmployeeSearch}
               onChange={(e) => setGlobalEmployeeSearch(e.target.value)}
-              placeholder="Search employee name, ID, or designation..."
+              placeholder="Search employee name, ID, or designation..." aria-label="Search employees"
               className="input-field !pl-9 !py-2 !text-xs !min-h-0 w-full"
             />
             {globalEmployeeSearch.trim() && (
@@ -2169,61 +2193,34 @@ export default function HRDashboard() {
               </div>
             )}
           </div>
-          <div className="flex items-center justify-between sm:justify-end gap-3 flex-shrink-0">
+          <div className={hrStyles.refreshGroup}>
             <span className="text-[10px] text-slate-400 font-medium">
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5" />
               {lastUpdatedAt ? `Updated ${lastUpdatedAt.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })}` : 'Loading live data'}
             </span>
-            <button type="button" onClick={refreshAllData} disabled={refreshing} className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-2 text-[10px] font-bold text-slate-700 transition hover:bg-slate-200 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700">
-              <RefreshCw size={13} className={refreshing ? 'animate-spin' : ''} /> Refresh
+            <button type="button" onClick={refreshAllData} disabled={refreshing} aria-label="Refresh HR dashboard">
+              <RefreshCw size={13} className={refreshing ? 'animate-spin' : ''} /> <span>Refresh</span>
             </button>
           </div>
         </div>
 
-        {/* Daily attendance overview */}
-        <section aria-labelledby="daily-overview-title"><div className="mb-3"><h2 id="daily-overview-title" className="text-base font-semibold sm:text-lg">Daily Overview</h2><p className="mt-0.5 text-xs text-slate-500">Today&apos;s attendance at a glance</p></div><div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
-          {[
-            { key: 'present' as const, label: 'Present', value: presentTodayCount, tone: 'from-emerald-500 to-green-600', icon: <CheckCircle2 size={19}/> },
-            { key: 'late' as const, label: 'Late', value: lateTodayCount, tone: 'from-amber-400 to-orange-500', icon: <Clock3 size={19}/> },
-            { key: 'leave' as const, label: 'On Leave', value: onLeaveTodayCount, tone: 'from-sky-500 to-blue-600', icon: <CalendarClock size={19}/> },
-            { key: 'notTimedIn' as const, label: 'Not Timed In', value: notYetTimedInToday.length, tone: 'from-orange-500 to-red-600', icon: <AlertTriangle size={19}/> },
-          ].map((stat) => (
-            <button type="button" key={stat.key} onClick={() => setDailyOverviewModal(stat.key)} className="group relative flex min-h-24 items-center gap-3 overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 text-left shadow-[0_6px_20px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-700 dark:bg-[#292f2b]" aria-label={`View ${stat.label} records`}>
-              <span className={`relative grid h-11 w-11 flex-none place-items-center rounded-2xl bg-gradient-to-br text-white shadow-md ${stat.tone}`}><span className="absolute inset-[3px] rounded-[13px] border border-white/25"/>{stat.icon}</span>
-              <span className="min-w-0"><span className="stat-number block text-2xl leading-none text-slate-950 dark:text-white">{stat.value}</span><span className="mt-1.5 block text-[11px] font-bold text-slate-600 dark:text-slate-300">{stat.label}</span></span>
-              <span className={`absolute inset-x-4 bottom-0 h-0.5 rounded-t-full bg-gradient-to-r ${stat.tone}`} aria-hidden="true" />
-            </button>
-          ))}
-        </div></section>
+        <HRDashboardAnnouncement content={announcementContent} imageUrl={announcementImageUrl} updatedAt={announcementUpdatedAt} loading={announcementLoading} onManage={() => setAnnouncementOpen(true)} />
 
-        {/* HR modules keep their existing handlers while sharing one visual language. */}
-        <section hidden aria-labelledby="hr-quick-actions-title"><div className="mb-3"><h2 id="hr-quick-actions-title" className="text-base font-semibold sm:text-lg">HR Quick Actions</h2><p className="mt-0.5 text-xs text-slate-500 dark:text-slate-300">Frequently used people operations tools</p></div><div className="grid grid-cols-3 gap-2 sm:grid-cols-4 sm:gap-3 lg:grid-cols-5">
-          {[
-            { title: 'Leave Requests', description: pendingLeaveCount ? `${pendingLeaveCount} pending` : 'All clear', icon: CalendarCheck2, tone: 'from-blue-500 to-indigo-700', action: () => { setSelectedLeaveDetail(null); setLeaveHistoryModalOpen(true); }, warning: pendingLeaveCount > 0, count: pendingLeaveCount },
-            { title: 'Attendance Disputes', description: pendingDisputesCount ? `${pendingDisputesCount} pending` : 'All clear', icon: BadgeAlert, tone: 'from-orange-500 to-red-700', action: () => { setSelectedDisputeDetail(null); setDisputesHistoryModalOpen(true); }, warning: pendingDisputesCount > 0, count: pendingDisputesCount },
-            { title: 'Leave Credits', description: leaveCreditsLoading ? 'Checking...' : lowLeaveCreditsCount ? `${lowLeaveCreditsCount} low` : 'Healthy', icon: Coins, tone: 'from-amber-400 to-yellow-700', action: openLeaveCreditsModal, warning: lowLeaveCreditsCount > 0 },
-            { title: 'Export Reports', description: 'CSV & PDF', icon: FileChartColumn, tone: 'from-cyan-500 to-blue-700', action: openReports },
-            { title: 'Announcements', description: announcementModuleLabel, icon: Megaphone, tone: 'from-fuchsia-500 to-purple-700', action: () => setAnnouncementOpen(true) },
-            { title: 'Holidays', description: holidaysLoading ? 'Checking...' : `${upcomingHolidaysCount} upcoming`, icon: CalendarDays, tone: 'from-rose-500 to-pink-700', action: openHolidays },
-            { title: 'Employees', description: `${profiles.length} total`, icon: ContactRound, tone: 'from-emerald-500 to-teal-700', action: () => setEmployeesListOpen(true) },
-            { title: 'Leave Calendar', description: 'Leaves & holidays', icon: CalendarRange, tone: 'from-violet-500 to-indigo-700', action: openLeaveCalendar },
-            { title: 'Help Desk', description: openHrSupportCount ? `${openHrSupportCount} open` : 'All clear', icon: LifeBuoy, tone: 'from-sky-500 to-cyan-700', action: openHelpdesk, warning: openHrSupportCount > 0 },
-            { title: 'Documents', description: `${activeHrDocumentsCount} published`, icon: FolderDown, tone: 'from-slate-500 to-slate-800', action: openDocuments },
-          ].map(({ title, description, icon: Icon, tone, action, warning, count }) => <button key={title} type="button" onClick={action} className="group relative flex min-h-28 min-w-0 flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border border-slate-200 bg-white px-1.5 py-3 text-center shadow-[0_5px_16px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:border-green-300 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 dark:border-slate-700 dark:bg-[#292f2b] dark:hover:border-green-700"><span className={`relative grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br text-white shadow-lg ring-1 ring-black/10 ${warning ? 'from-amber-500 to-orange-700' : tone}`}><span className="absolute inset-[3px] rounded-[13px] border border-white/35"/><Icon size={24} strokeWidth={3}/>{typeof count === 'number' && count > 0 && <span className="absolute -right-2 -top-2 grid h-6 min-w-6 place-items-center rounded-full border-2 border-white bg-rose-600 px-1 text-[10px] font-black text-white shadow dark:border-[#292f2b]">{count > 99 ? '99+' : count}</span>}</span><span className="line-clamp-2 text-[10px] font-extrabold leading-tight text-slate-900 dark:text-white sm:text-xs">{title}</span><span className={`hidden max-w-full truncate text-[10px] sm:block ${warning ? 'font-bold text-orange-700 dark:text-orange-300' : 'text-slate-500 dark:text-slate-300'}`}>{description}</span><span className={`absolute inset-x-4 bottom-0 h-0.5 rounded-t-full bg-gradient-to-r ${warning ? 'from-amber-500 to-orange-700' : tone}`} aria-hidden="true" /></button>)}
-        </div></section>
-
-        <div className="grid gap-3 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,.85fr)]">
-          <section className="card-style min-w-0 !p-4" aria-labelledby="attendance-trend-title">
-            <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 id="attendance-trend-title" className="text-base font-semibold">Attendance Trend</h2><p className="mt-0.5 text-xs text-slate-500">Attendance records across the selected period</p></div><div className="flex flex-wrap items-center justify-end gap-2"><MonthCalendarPicker value={attendanceChartMonth} onChange={setAttendanceChartMonth} /><div className="flex items-center gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">{(['daily', 'weekly', 'monthly'] as const).map((mode) => <button type="button" key={mode} onClick={() => setAttendanceChartMode(mode)} className={`rounded-lg px-2.5 py-1.5 text-[10px] font-bold capitalize transition ${attendanceChartMode === mode ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white' : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>{mode}</button>)}</div></div></div>
-            <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-semibold text-slate-500"><span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-green-600" />Present</span><span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-amber-500" />Late</span><span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-blue-500" />Leave</span><span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-rose-500" />Absent</span></div>
-            <div className="attendance-analytics-chart mt-2 h-64 min-w-0">{attendanceTrendData.some((row) => row.present || row.late || row.leave || row.absent) ? <ResponsiveContainer width="100%" height="100%"><BarChart data={attendanceTrendData} tabIndex={-1} style={{ outline: 'none' }} margin={{ top: 10, right: 6, left: -18, bottom: 0 }} barCategoryGap={attendanceChartMode === 'daily' ? '18%' : '28%'}><CartesianGrid stroke={chartLineColor} strokeDasharray="4 4" vertical={false} />{attendanceChartMode === 'daily' && attendanceTrendData.filter((row) => row.isWeekend).map((row) => <ReferenceArea key={row.key} x1={row.label} x2={row.label} fill="#94a3b8" fillOpacity={darkMode ? 0.22 : 0.14} stroke="none" />)}<XAxis dataKey="label" interval={attendanceChartMode === 'daily' ? 2 : 0} tick={({ x, y, payload }: { x?: string | number; y?: string | number; payload?: { value?: string } }) => { const label = String(payload?.value ?? ''); const weekend = attendanceTrendData.find((row) => row.label === label)?.isWeekend; return <text x={x} y={(Number(y) || 0) + 14} textAnchor="middle" fontSize={10} fontWeight={weekend ? 700 : 500} fill={weekend ? (darkMode ? '#cbd5e1' : '#475569') : chartTextColor}>{label}</text>; }} tickLine={false} axisLine={{ stroke: chartLineColor }} /><YAxis domain={[0, Math.max(1, profiles.length)]} tick={{ fontSize: 10, fill: chartTextColor }} tickLine={false} axisLine={false} allowDecimals={false} /><Tooltip content={attendanceTooltipContent} cursor={{ fill: darkMode ? 'rgba(148,163,184,.16)' : 'rgba(148,163,184,.08)' }} /><Bar dataKey="present" name="Present" stackId="attendance" fill="#16a34a" isAnimationActive animationDuration={550} className="cursor-pointer" onClick={(row: any) => openAttendanceChartDetail('attendance', row)} /><Bar dataKey="late" name="Late" stackId="attendance" fill="#f59e0b" isAnimationActive animationDuration={550} className="cursor-pointer" onClick={(row: any) => openAttendanceChartDetail('late', row)} /><Bar dataKey="leave" name="Leave" stackId="attendance" fill="#3b82f6" isAnimationActive animationDuration={550} className="cursor-pointer" onClick={(row: any) => openAttendanceChartDetail('leave', row)} /><Bar dataKey="absent" name="Absent" stackId="attendance" fill="#f43f5e" radius={[5, 5, 0, 0]} isAnimationActive animationDuration={550} className="cursor-pointer" onClick={(row: any) => openAttendanceChartDetail('absent', row)} /></BarChart></ResponsiveContainer> : <div className="grid h-full place-items-center text-center text-sm text-slate-400">No attendance records for this period.</div>}</div>
-          </section>
-
-          <section className="card-style min-w-0 !p-4" aria-labelledby="attendance-distribution-title">
-            <div className="flex items-start justify-between gap-3"><div><h2 id="attendance-distribution-title" className="text-base font-semibold">Attendance Overview</h2><p className="mt-0.5 text-xs text-slate-500">Current-month attendance logs</p></div><button type="button" onClick={() => setAttendanceInsightModal('attendance')} className="inline-flex min-h-9 items-center gap-1 rounded-full px-2 text-[10px] font-bold text-green-700 hover:bg-green-50 dark:text-green-300">Details <ChevronRight size={14}/></button></div>
-            <div className="attendance-analytics-chart relative mx-auto mt-2 h-48 max-w-[290px]" aria-label="Current-month attendance record distribution">{attendanceChartData.length > 0 ? <ResponsiveContainer width="100%" height="100%"><PieChart style={{ outline: 'none' }}><Pie data={attendanceChartData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={52} outerRadius={76} paddingAngle={4} stroke="none" isAnimationActive animationDuration={620} onMouseLeave={() => setActiveAttendanceSlice(undefined)} rootTabIndex={-1}>{attendanceChartData.map((item, index) => <Cell key={item.key} fill={item.color} opacity={activeAttendanceSlice === undefined || activeAttendanceSlice === index ? 1 : 0.32} onMouseEnter={() => setActiveAttendanceSlice(index)} />)}</Pie></PieChart></ResponsiveContainer> : <div className="grid h-full place-items-center text-center text-sm text-slate-400">No attendance records<br />this month.</div>}{attendanceChartData.length > 0 && <div className="pointer-events-none absolute inset-0 grid place-items-center text-center"><p className="stat-number text-3xl leading-none text-slate-900 dark:text-white">{attendanceInsights.current.logs.length}</p></div>}</div>
-            {attendanceChartData.length > 0 && <div className="mt-1 grid grid-cols-2 gap-1.5">{attendanceChartData.map((item) => <button type="button" key={item.key} onClick={() => setAttendanceInsightModal(item.key as 'attendance' | 'late' | 'leave' | 'absent')} className="flex items-center justify-between rounded-xl px-2 py-1.5 text-left text-[11px] transition hover:bg-slate-50 dark:hover:bg-slate-800"><span className="flex min-w-0 items-center gap-2 text-slate-600 dark:text-slate-300"><i className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: item.color }} /><span className="truncate">{item.name}</span></span><b className="tabular-nums text-slate-800 dark:text-white">{item.value} · {Math.round(item.value / attendanceInsights.current.logs.length * 100)}%</b></button>)}</div>}
-          </section>
+        <HRDashboardAnalytics open={analyticsOpen} onClose={() => setAnalyticsOpen(false)}>{analyticsContent}</HRDashboardAnalytics>
+        <div className={hrStyles.bottom}>
+          <HRDashboardQuickActions onAnalytics={() => setAnalyticsOpen(true)} actions={[
+            { title: 'Leave Requests', description: pendingLeaveCount ? `${pendingLeaveCount} pending` : 'All clear', icon: CalendarCheck2, action: () => { setSelectedLeaveDetail(null); setLeaveHistoryModalOpen(true); }, count: pendingLeaveCount },
+            { title: 'Attendance Disputes', description: pendingDisputesCount ? `${pendingDisputesCount} pending` : 'All clear', icon: BadgeAlert, action: () => { setSelectedDisputeDetail(null); setDisputesHistoryModalOpen(true); }, count: pendingDisputesCount },
+            { title: 'Leave Credits', description: leaveCreditsLoading ? 'Checking...' : lowLeaveCreditsCount ? `${lowLeaveCreditsCount} low` : 'Healthy', icon: Coins, action: openLeaveCreditsModal },
+            { title: 'Export Reports', description: 'CSV & PDF', icon: FileChartColumn, action: openReports },
+            { title: 'Announcements', description: announcementModuleLabel, icon: Megaphone, action: () => setAnnouncementOpen(true) },
+            { title: 'Holidays', description: holidaysLoading ? 'Checking...' : `${upcomingHolidaysCount} upcoming`, icon: CalendarDays, action: openHolidays },
+            { title: 'Employees', description: `${profiles.length} total`, icon: ContactRound, action: () => setEmployeesListOpen(true) },
+            { title: 'Leave Calendar', description: 'Leaves & holidays', icon: CalendarRange, action: openLeaveCalendar },
+            { title: 'Help Desk', description: openHrSupportCount ? `${openHrSupportCount} open` : 'All clear', icon: LifeBuoy, action: openHelpdesk, count: openHrSupportCount },
+            { title: 'Documents', description: `${activeHrDocumentsCount} published`, icon: FolderDown, action: openDocuments },
+          ]} />
+          <HRDashboardPending leaveCount={pendingLeaveCount} disputeCount={pendingDisputesCount} helpdeskCount={openHrSupportCount} onLeave={() => { setSelectedLeaveDetail(null); setLeaveHistoryModalOpen(true); }} onDisputes={() => { setSelectedDisputeDetail(null); setDisputesHistoryModalOpen(true); }} onHelpdesk={openHelpdesk} onReview={() => setActionCenterOpen(true)} />
         </div>
 
         <AttendanceInsightsModal modal={attendanceInsightModal} meta={attendanceInsightMeta} records={attendanceInsightRecords} initials={initials} setModal={setAttendanceInsightModal} />
@@ -2349,11 +2346,11 @@ export default function HRDashboard() {
 
         </div>
 
-        <div>
+        <div className={hrStyles.recordsHost}>
           <EmployeesModal open={employeesListOpen} onClose={() => setEmployeesListOpen(false)} pageSize={PAGE_SIZE} employeesPage={employeesPage} employeesTotalPages={employeesTotalPages} initials={initials} loadingData={loadingData} openProfileChoice={openProfileChoice} paginatedProfiles={paginatedProfiles} profiles={profiles} setEmployeesPage={setEmployeesPage} />
 
           {/* Attendance History */}
-          <section id="attendance-history" className="card-style overflow-hidden !p-0 scroll-mt-4">
+          <section id="attendance-history" data-open={attendanceHistoryOpen} className={`card-style overflow-hidden !p-0 scroll-mt-4 ${hrStyles.raw}`}>
             <button
               type="button"
               onClick={() => setAttendanceHistoryOpen((v) => !v)}
@@ -2464,7 +2461,7 @@ export default function HRDashboard() {
         </div>
       </div>
 
-      <HRMobileBottomNav requestCount={pendingHrActionCount} onHome={() => scrollToDashboardSection('hr-dashboard-top')} onAttendance={openAttendanceLog} onRequests={() => setActionCenterOpen(true)} onEmployees={() => setEmployeesListOpen(true)} onMore={() => setMobileToolsOpen(true)} />
+      <HRMobileBottomNav attendanceOpen={attendanceHistoryOpen} requestCount={pendingHrActionCount} onHome={() => { setAttendanceHistoryOpen(false); scrollToDashboardSection('hr-dashboard-top'); }} onAttendance={openAttendanceLog} onRequests={() => setActionCenterOpen(true)} onEmployees={() => setEmployeesListOpen(true)} onMore={() => setMobileToolsOpen(true)} />
       <HRMobileToolsSheet open={mobileToolsOpen} darkMode={darkMode} onClose={() => setMobileToolsOpen(false)} onToggleTheme={toggleTheme} onLogout={handleLogout} onAnnouncements={() => setAnnouncementOpen(true)} onHolidays={openHolidays} onLeaveCalendar={openLeaveCalendar} onLeaveCredits={openLeaveCreditsModal} onReports={openReports} onDocuments={openDocuments} onHelpdesk={openHelpdesk} />
 
       <EmployeeChoiceModal open={modalMode === 'choice'} onClose={closeModal} initials={initials} openEdit={openEdit} openPayslipsModal={openPayslipsModal} selectedProfile={selectedProfile} />

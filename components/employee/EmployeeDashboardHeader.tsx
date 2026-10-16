@@ -18,7 +18,7 @@ type Props = {
   onToggleTheme: () => void;
 };
 
-function HeaderClock() {
+export function HeaderClock() {
   const [now, setNow] = useState<Date | null>(null);
   useEffect(() => {
     const update = () => setNow(new Date());
@@ -36,7 +36,7 @@ function HeaderClock() {
 
 // A lightweight, decorative architectural illustration kept inside the hero.
 // It represents the company brand, rather than a photograph of a real office.
-function OfficeIllustration() {
+export function OfficeIllustration() {
   const id = useId().replaceAll(':', '');
   return <svg className={styles.office} viewBox="0 0 620 220" fill="none" aria-hidden="true">
     <defs>
