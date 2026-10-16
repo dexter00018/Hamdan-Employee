@@ -310,7 +310,7 @@ export default function EmployeeAttendancePage() {
       return (
         (filter === "all" || category === filter) &&
         (!search ||
-          `${formatDate(record.log_date)} ${record.log_date} ${display.label}`
+          `${formatDate(record.log_date)} ${record.log_date} ${display.label} ${remarksFor(record, category)}`
             .toLowerCase()
             .includes(search))
       );
@@ -458,7 +458,7 @@ export default function EmployeeAttendancePage() {
           onLogout={handleLogout}
         />
         <section className="min-w-0">
-          <header className="mb-3 flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)] dark:bg-[#292f2b] sm:flex-row sm:items-center sm:justify-between">
+          <header className="mb-4 flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)] dark:bg-[#292f2b] sm:flex-row sm:items-center sm:justify-between lg:mb-3 lg:rounded-none lg:bg-transparent lg:p-0 lg:shadow-none dark:lg:bg-transparent">
             <div>
               <button
                 type="button"
@@ -467,11 +467,11 @@ export default function EmployeeAttendancePage() {
               >
                 <ChevronLeft size={15} /> Dashboard
               </button>
-              <h1 className="text-2xl font-black tracking-tight">
-                Attendance
+              <h1 className="text-2xl font-black tracking-tight lg:text-[26px]">
+                Attendance History
               </h1>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">
-                Your daily time records
+                View your daily attendance records and working hours.
               </p>
             </div>
             <div className="grid w-full grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-2 sm:w-auto sm:min-w-[380px]">
@@ -605,7 +605,7 @@ export default function EmployeeAttendancePage() {
               Unable to load attendance: {error}
             </div>
           )}
-          <section className="mb-3 grid grid-cols-2 gap-2 lg:grid-cols-4 lg:gap-3">
+          <section className="mb-4 grid grid-cols-2 gap-2 lg:grid-cols-4 lg:gap-3">
             {summaryCards.map((card) => (
               <button
                 key={card.key}
@@ -616,22 +616,24 @@ export default function EmployeeAttendancePage() {
                   );
                   setPage(1);
                 }}
-                className={`rounded-xl border p-2.5 text-left transition hover:-translate-y-0.5 lg:p-3 ${card.tone} ${filter === card.key ? "ring-2 ring-offset-2 ring-green-500 dark:ring-offset-[#202521]" : ""}`}
+                className={`rounded-xl border p-2.5 text-left transition hover:-translate-y-0.5 lg:flex lg:min-h-[68px] lg:items-center lg:gap-3 lg:px-4 lg:py-3 ${card.tone} ${filter === card.key ? "ring-2 ring-offset-2 ring-green-500 dark:ring-offset-[#202521]" : ""}`}
               >
                 <span className="grid h-7 w-7 place-items-center rounded-lg bg-white/70 text-sm font-black shadow-sm dark:bg-black/10 lg:h-8 lg:w-8 lg:text-base">
                   {card.icon}
                 </span>
-                <p className="mt-1.5 text-lg font-black leading-none lg:mt-2 lg:text-xl">
-                  {card.value}
-                </p>
-                <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wide lg:mt-1 lg:text-xs">
-                  {card.label}
-                </p>
+                <span className="block lg:min-w-0">
+                  <span className="mt-1.5 block text-lg font-black leading-none lg:mt-0 lg:text-xl">
+                    {card.value}
+                  </span>
+                  <span className="mt-0.5 block text-[10px] font-bold uppercase tracking-wide lg:mt-0 lg:text-xs">
+                    {card.label}
+                  </span>
+                </span>
               </button>
             ))}
           </section>
-          <section className="overflow-hidden rounded-[1.75rem] bg-white shadow-[0_8px_30px_rgba(15,23,42,0.06)] dark:bg-[#292f2b]">
-            <div className="flex flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-[#465049]">
+          <section className="overflow-hidden rounded-[1.5rem] bg-white shadow-[0_8px_30px_rgba(15,23,42,0.06)] dark:bg-[#292f2b]">
+            <div className="flex flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between lg:px-4 lg:py-3.5 dark:border-[#465049]">
               <div>
                 <h2 className="text-base font-black">
                   {formatMonth(selectedMonth)}
@@ -651,7 +653,7 @@ export default function EmployeeAttendancePage() {
                       setQuery(event.target.value);
                       setPage(1);
                     }}
-                    placeholder="Search date..."
+                    placeholder="Search date, status, or remarks..."
                     className="w-28 bg-transparent text-xs text-slate-800 outline-none placeholder:text-slate-400 dark:text-white sm:w-36"
                   />
                 </label>
@@ -689,7 +691,7 @@ export default function EmployeeAttendancePage() {
               <>
                 <div className="hidden overflow-x-auto md:block">
                   <div className="min-w-[760px]">
-                    <div className="grid grid-cols-[1.35fr_1.45fr_.8fr_1fr_1fr] gap-3 border-b border-slate-100 bg-slate-50 px-5 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500 dark:border-[#465049] dark:bg-[#343b36]">
+                    <div className="grid grid-cols-[1.35fr_1.45fr_.8fr_1fr_1fr] gap-3 border-b border-slate-100 bg-emerald-50/55 px-5 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500 dark:border-[#465049] dark:bg-[#343b36]">
                       <span>Date</span>
                       <span>Time In → Time Out</span>
                       <span>Total Hours</span>
