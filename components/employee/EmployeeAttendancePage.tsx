@@ -374,7 +374,7 @@ export default function EmployeeAttendancePage() {
       return (
         <article
           key={record.id}
-          className="relative overflow-hidden rounded-2xl border border-slate-100 bg-slate-50 p-3 dark:border-[#465049] dark:bg-[#343b36]"
+          className="relative overflow-hidden rounded-2xl border border-slate-100 bg-slate-50 p-2.5 dark:border-[#465049] dark:bg-[#343b36]"
         >
           <i
             className={`absolute bottom-0 left-0 top-0 w-1 ${dotTone[category]}`}
@@ -388,7 +388,7 @@ export default function EmployeeAttendancePage() {
             </div>
             <span className={status.className}>{status.label}</span>
           </div>
-          <div className="mt-3 grid grid-cols-2 gap-2 pl-2 text-xs">
+          <div className="mt-2 grid grid-cols-2 gap-2 pl-2 text-xs">
             <p className="flex items-center gap-1.5 font-semibold tabular-nums">
               <Clock3 size={14} className="text-slate-400" />
               {formatTime(record.time_in)} → {formatTime(record.time_out)}
@@ -397,7 +397,7 @@ export default function EmployeeAttendancePage() {
               {formatWorkHours(record.time_in, record.time_out)}
             </p>
           </div>
-          <p className="mt-2 pl-2 text-[11px] text-slate-500 dark:text-slate-300">
+          <p className="mt-1 pl-2 text-[11px] text-slate-500 dark:text-slate-300">
             {remarksFor(record, category)}
           </p>
         </article>
@@ -616,15 +616,15 @@ export default function EmployeeAttendancePage() {
                   );
                   setPage(1);
                 }}
-                className={`rounded-xl border p-3 text-left transition hover:-translate-y-0.5 ${card.tone} ${filter === card.key ? "ring-2 ring-offset-2 ring-green-500 dark:ring-offset-[#202521]" : ""}`}
+                className={`rounded-xl border p-2.5 text-left transition hover:-translate-y-0.5 lg:p-3 ${card.tone} ${filter === card.key ? "ring-2 ring-offset-2 ring-green-500 dark:ring-offset-[#202521]" : ""}`}
               >
-                <span className="grid h-8 w-8 place-items-center rounded-lg bg-white/70 text-base font-black shadow-sm dark:bg-black/10">
+                <span className="grid h-7 w-7 place-items-center rounded-lg bg-white/70 text-sm font-black shadow-sm dark:bg-black/10 lg:h-8 lg:w-8 lg:text-base">
                   {card.icon}
                 </span>
-                <p className="mt-2 text-xl font-black leading-none">
+                <p className="mt-1.5 text-lg font-black leading-none lg:mt-2 lg:text-xl">
                   {card.value}
                 </p>
-                <p className="mt-1 text-xs font-bold uppercase tracking-wide">
+                <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wide lg:mt-1 lg:text-xs">
                   {card.label}
                 </p>
               </button>

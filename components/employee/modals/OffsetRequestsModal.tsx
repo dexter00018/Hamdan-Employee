@@ -13,7 +13,7 @@ type EarlyOutRecord = { id: string; log_date: string; time_out: string | null; e
 type UsageRequest = { id: string; attendance_log_id: string; hours: number; required_minutes: number | null; usage_type: 'late' | 'absent'; status: string; created_at: string; reviewed_at: string | null; hr_notes: string | null };
 type EarlyOutRequest = { id: string; attendance_log_id: string; required_minutes: number; status: string; created_at: string; reviewed_at: string | null; hr_notes: string | null };
 type OffsetLeave = { id: string; leave_type: string; start_date: string; status: string; offset_minutes_required: number; offset_charged_at: string | null; offset_refunded_at: string | null; reviewed_at: string | null; created_at: string };
-type HistoryItem = { id: string; createdAt: string; title: string; detail: string; status: string; workDate: string; reviewedAt: string | null; kind: 'earned' | 'late' | 'early' | 'absent' | 'leave' };
+type HistoryItem = { id: string; createdAt: string; title: string; detail: string; status: string; workDate: string; reviewedAt: string | null; note?: string | null; kind: 'earned' | 'late' | 'early' | 'absent' | 'leave' };
 type UsePanel = 'late' | 'early' | 'absent' | null;
 
 const REQUIRED_LEAVE_MINUTES = 9 * 60;
@@ -80,16 +80,7 @@ function dateTile(value: string) {
 
 function historyReviewLabel(item: HistoryItem) {
   if (!item.reviewedAt) return item.status === 'Pending' ? 'Awaiting HR approval' : 'Review date unavailable';
-  const action = item.status === 'Approved' ? 'Approved' : item.status === 'Rejected' ? 'Rejected' : 'Reviewed';
-  return `${action}: ${submittedLabel(item.reviewedAt)}`;
-}
-
-function earnedOffsetDetail(request: Request) {
-  const rawMinutes = Math.max(0, Math.floor((Date.parse(request.time_out_at) - Date.parse(request.scheduled_end_at)) / 60000));
-  const credit = request.status === 'Approved' ? `${request.eligible_hours}h credited` : request.status === 'Pending' ? `${request.eligible_hours}h pending HR approval` : `${request.eligible_hours}h not credited`;
-  const decision = request.reviewed_at ? ` · ${request.status} ${submittedLabel(request.reviewed_at)}` : '';
-  const note = request.hr_notes ? ` · ${request.hr_notes}` : '';
-  return `Out ${timeLabel(request.time_out_at)} · ${formatOffsetMinutes(rawMinutes)} after 7:00 PM · ${credit}${decision}${note}`;
+  return submittedLabel(item.reviewedAt);
 }
 
 function currentPayrollCutoff() {
@@ -260,24 +251,28 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
       const usageText = request.status === 'Approved' ? `Used ${formatOffsetMinutes(minutes)}` : request.status === 'Pending' ? `Reserves ${formatOffsetMinutes(minutes)}` : 'No deduction';
       const isAbsent = request.usage_type === 'absent';
       return {
-        id: `${request.usage_type}-${request.id}`, createdAt: request.created_at, title: `${isAbsent ? 'Absent' : 'Late'}${record?.log_date ? ` · ${record.log_date}` : ''}`,
-        detail: isAbsent ? `Full day · ${usageText}` : `Original ${timeLabel(record?.time_in)} · ${usageText}`, status: request.status,
-        workDate: record?.log_date ? dateLabel(record.log_date) : '—', reviewedAt: request.reviewed_at, kind: isAbsent ? 'absent' as const : 'late' as const,
+        id: `${request.usage_type}-${request.id}`, createdAt: request.created_at, title: isAbsent ? 'Absent' : 'Late',
+        detail: isAbsent ? usageText : `In ${timeLabel(record?.time_in)} · ${usageText}`, status: request.status,
+        workDate: record?.log_date ? dateLabel(record.log_date) : '—', reviewedAt: request.reviewed_at, note: request.hr_notes, kind: isAbsent ? 'absent' as const : 'late' as const,
       };
     });
     const earlyItems = earlyOutRequests.map((request) => {
       const record = earlyRecordMap.get(request.attendance_log_id);
       const usageText = request.status === 'Approved' ? `Used ${formatOffsetMinutes(request.required_minutes)}` : request.status === 'Pending' ? `Reserves ${formatOffsetMinutes(request.required_minutes)}` : 'No deduction';
       return {
-        id: `early-${request.id}`, createdAt: request.created_at, title: `Early Out${record?.log_date ? ` · ${record.log_date}` : ''}`,
-        detail: `Original out ${timeLabel(record?.time_out)} · ${usageText}`, status: request.status,
-        workDate: record?.log_date ? dateLabel(record.log_date) : '—', reviewedAt: request.reviewed_at, kind: 'early' as const,
+        id: `early-${request.id}`, createdAt: request.created_at, title: 'Early Out',
+        detail: `Out ${timeLabel(record?.time_out)} · ${usageText}`, status: request.status,
+        workDate: record?.log_date ? dateLabel(record.log_date) : '—', reviewedAt: request.reviewed_at, note: request.hr_notes, kind: 'early' as const,
       };
     });
-    const earnedItems = requests.map((request) => ({
-      id: `earned-${request.id}`, createdAt: request.created_at, title: `OT / Earned Offset · ${request.eligible_hours}h`,
-      detail: earnedOffsetDetail(request), status: request.status, workDate: eventDateLabel(request.scheduled_end_at), reviewedAt: request.reviewed_at, kind: 'earned' as const,
-    }));
+    const earnedItems = requests.map((request) => {
+      const rawMinutes = Math.max(0, Math.floor((Date.parse(request.time_out_at) - Date.parse(request.scheduled_end_at)) / 60000));
+      return {
+        id: `earned-${request.id}`, createdAt: request.created_at, title: `Earned Offset · ${request.eligible_hours}h`,
+        detail: `Out ${timeLabel(request.time_out_at)} · ${formatOffsetMinutes(rawMinutes)} after 7 PM`, status: request.status,
+        workDate: eventDateLabel(request.scheduled_end_at), reviewedAt: request.reviewed_at, note: request.hr_notes, kind: 'earned' as const,
+      };
+    });
     return [...leaveItems, ...lateItems, ...earlyItems, ...earnedItems].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [offsetLeaves, usageRequests, earlyOutRequests, requests, lateRecordMap, earlyRecordMap]);
 
@@ -411,10 +406,10 @@ export default function OffsetRequestsModal({ open, onClose, userId }: Props) {
         <section className="rounded-[26px] border border-slate-100 bg-gradient-to-br from-slate-50 to-white p-4 shadow-sm dark:border-slate-700 dark:from-[#303632] dark:to-[#27312e]">
           <div className="mb-4 flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-2xl bg-emerald-100 text-emerald-700 dark:bg-emerald-900/35 dark:text-emerald-300"><FileText size={21} /></span><div><h3 className="text-base font-extrabold text-slate-900 dark:text-white">Offset History</h3><p className="text-xs text-slate-500 dark:text-slate-300">Earned and used Offset</p></div></div>
           {loading ? <p className="py-4 text-center text-xs text-slate-500">Loading…</p> : visibleHistory.length ? (
-            <div className="space-y-2.5">{visibleHistory.map((item) => {
+            <div className="space-y-2">{visibleHistory.map((item) => {
               const tile = dateTile(item.workDate);
               const tone = historyTone(item.kind);
-              return <div key={item.id} className={`flex items-center justify-between gap-3 rounded-2xl border px-3 py-3 shadow-sm ${tone.border} ${tone.card}`}><div className="flex min-w-0 items-center gap-3"><span className={`grid h-12 w-12 shrink-0 place-items-center rounded-xl text-center leading-none ${tone.tile}`}><span className={`block text-[9px] font-extrabold tracking-wide ${tone.text}`}>{tile.month}</span><span className="block text-lg font-black text-slate-700 dark:text-white">{tile.day}</span></span><div className="min-w-0"><p className="text-sm font-extrabold text-slate-900 dark:text-white">{item.title}</p><p className="mt-1 text-xs font-medium text-slate-600 dark:text-slate-300">Work date: {item.workDate} <span className="mx-1 text-slate-300">•</span> {historyReviewLabel(item)}</p><p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{item.detail}</p></div></div><span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1.5 text-[10px] font-extrabold ${statusClass(item.status)}`}>{item.status === 'Approved' && <CheckCircle2 size={13} />}{item.status}</span></div>;
+              return <div key={item.id} className={`flex items-center justify-between gap-2 rounded-2xl border px-2.5 py-2.5 shadow-sm ${tone.border} ${tone.card}`}><div className="flex min-w-0 items-center gap-2.5"><span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl text-center leading-none ${tone.tile}`}><span className={`block text-[9px] font-extrabold tracking-wide ${tone.text}`}>{tile.month}</span><span className="block text-base font-black text-slate-700 dark:text-white">{tile.day}</span></span><div className="min-w-0"><p className="truncate text-sm font-extrabold text-slate-900 dark:text-white">{item.title}</p><p className="mt-0.5 truncate text-[11px] font-medium text-slate-600 dark:text-slate-300">{item.detail}</p><p className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">{historyReviewLabel(item)}</p>{item.note && <p className="mt-0.5 truncate text-[10px] text-slate-500 dark:text-slate-400" title={item.note}>{item.note}</p>}</div></div><span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[10px] font-extrabold ${statusClass(item.status)}`}>{item.status === 'Approved' && <CheckCircle2 size={12} />}{item.status}</span></div>;
             })}</div>
           ) : <p className="rounded-2xl bg-slate-50 px-3 py-5 text-center text-xs font-medium text-slate-500 dark:bg-slate-800/60">No offset history.</p>}
           {historyPages > 1 && <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3 dark:border-slate-700"><button onClick={() => setHistoryPage((p) => Math.max(0, p - 1))} disabled={safeHistoryPage === 0} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-500 disabled:opacity-35 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"><ChevronLeft size={15} /> Previous</button><span className="text-xs font-semibold text-slate-400">Page {safeHistoryPage + 1} of {historyPages}</span><button onClick={() => setHistoryPage((p) => Math.min(historyPages - 1, p + 1))} disabled={safeHistoryPage >= historyPages - 1} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-500 disabled:opacity-35 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">Next <ChevronRight size={15} /></button></div>}
