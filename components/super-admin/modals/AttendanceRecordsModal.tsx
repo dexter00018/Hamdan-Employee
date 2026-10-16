@@ -79,11 +79,11 @@ export default function AttendanceRecordsModal({ open, onClose, pageSize, attend
                       </span>
                       <span className="text-slate-600 text-xs">
                         {log.time_in
-                          ? new Date(log.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })
+                          ? new Date(log.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' })
                           : 'N/A'}
                         {' – '}
                         {log.time_out
-                          ? new Date(log.time_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' })
+                          ? new Date(log.time_out).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' })
                           : '—'}
                       </span>
                     </div>

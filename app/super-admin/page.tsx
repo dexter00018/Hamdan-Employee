@@ -446,18 +446,21 @@ export default function SuperAdminDashboard() {
       day: '2-digit',
       hour: '2-digit',
       minute: '2-digit',
+      second: '2-digit',
       hour12: false,
     });
     const parts = fmt.formatToParts(d).reduce((acc: any, p) => {
       acc[p.type] = p.value;
       return acc;
     }, {});
-    return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+    return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}`;
   };
 
   const manilaInputValueToUTCISO = (value: string) => {
-    // value looks like "2026-07-03T08:09" (a PH wall-clock time)
-    return new Date(`${value}:00+08:00`).toISOString();
+    // A datetime-local value is a PH wall-clock time. Older rows can be
+    // minute-only; edited values also preserve their entered seconds.
+    const withSeconds = value.length === 16 ? `${value}:00` : value;
+    return new Date(`${withSeconds}+08:00`).toISOString();
   };
 
   const toManilaDateString = (iso: string) =>

@@ -14,6 +14,7 @@ export default function EditAttendanceModal({ editingLog, logSaving, saveEditLog
             <label className="label-branded">Time In (Philippine Time)</label>
             <input
               type="datetime-local"
+              step="1"
               className="input-field mb-4"
               value={editingLog.timeInLocal}
               onChange={(e) =>
@@ -24,6 +25,7 @@ export default function EditAttendanceModal({ editingLog, logSaving, saveEditLog
             <label className="label-branded">Time Out (Philippine Time)</label>
             <input
               type="datetime-local"
+              step="1"
               className="input-field mb-1"
               value={editingLog.timeOutLocal}
               onChange={(e) =>
