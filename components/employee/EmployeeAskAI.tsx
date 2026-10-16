@@ -8,6 +8,13 @@ import { Conversation, ConversationContent, ConversationScrollButton } from '@/c
 type Message = { id: string; role: 'user' | 'assistant'; text: string; error?: boolean };
 type HistoryTurn = { role: 'user' | 'assistant'; content: string };
 type PendingSecureQuestion = { text: string; history: HistoryTurn[] };
+const STARTER_PROMPTS = [
+  'What can Ask AI help with?',
+  'How many leave credits do I have?',
+  'How do I report a missing log?',
+  'How does Offset work?',
+  'What are the deductions in my latest payslip?',
+];
 const subscribe = () => () => {};
 export default function EmployeeAskAI() {
   const mounted = useSyncExternalStore(subscribe, () => true, () => false);
@@ -101,9 +108,10 @@ export default function EmployeeAskAI() {
           {messages.length === 0 && <div className="flex flex-col items-start pb-4 pt-7">
             <span className="mb-5 grid size-14 place-items-center rounded-[20px] bg-gradient-to-br from-emerald-50 to-teal-100 text-emerald-700 dark:from-emerald-500/20 dark:to-teal-500/10 dark:text-emerald-300"><Sparkles size={28} strokeWidth={1.5} /></span>
             <h3 className="text-[23px] font-semibold tracking-tight">Hi! How can I help?</h3>
-            <p className="mt-2 max-w-[280px] text-sm leading-relaxed text-slate-500 dark:text-[#a8b9af]">Ask me about your attendance, leave, or payslip.</p>
+            <p className="mt-2 max-w-[320px] text-sm leading-relaxed text-slate-500 dark:text-[#a8b9af]">I can help with your attendance, leave, Offset, payslip, portal steps, and approved work-directory details.</p>
+            <p className="mt-2 max-w-[320px] text-[11px] leading-relaxed text-slate-400 dark:text-[#8fa399]">Your private answers stay scoped to your signed-in account.</p>
             <div className="mt-7 flex w-full flex-col gap-2">
-              {['How many leave credits do I have?', 'What are the deductions in my latest payslip?'].map(prompt => <button type="button" key={prompt} onClick={() => void send(prompt)} className="flex min-h-12 items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left text-xs font-medium transition hover:border-emerald-300 hover:bg-emerald-50 dark:border-white/10 dark:bg-white/[0.025] dark:hover:border-emerald-500/40 dark:hover:bg-emerald-500/5"><span>{prompt}</span><ArrowUp size={14} className="shrink-0 rotate-45 text-slate-400" /></button>)}
+              {STARTER_PROMPTS.map(prompt => <button type="button" key={prompt} onClick={() => void send(prompt)} className="flex min-h-12 items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left text-xs font-medium transition hover:border-emerald-300 hover:bg-emerald-50 dark:border-white/10 dark:bg-white/[0.025] dark:hover:border-emerald-500/40 dark:hover:bg-emerald-500/5"><span>{prompt}</span><ArrowUp size={14} className="shrink-0 rotate-45 text-slate-400" /></button>)}
             </div>
           </div>}
           {messages.map(message => <div key={message.id} className={`flex flex-col ${message.role === 'user' ? 'items-end' : 'items-start'}`}>

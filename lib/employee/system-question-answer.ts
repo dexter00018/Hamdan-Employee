@@ -3,6 +3,11 @@ type Entry = { terms: string[]; en: string; tl: string };
 
 const ENTRIES: Entry[] = [
   {
+    terms: ['what can ask ai do', 'what can ai help with', 'ask ai help', 'ask ai capabilities', 'ano pwede itanong sa ask ai', 'ano puwede itanong sa ask ai', 'ano kayang sagutin ng ask ai', 'ano kaya ng ask ai'],
+    en: 'Ask AI can help you understand your own attendance, leave, Offset, profile and published payslip information, explain portal workflows, and find approved work-directory details for active employees. Your private answers stay limited to your signed-in account. Ask AI cannot reveal another employee’s private attendance, leave, salary, payslip, personal email, phone, address, IDs, or passwords.',
+    tl: 'Makakatulong ang Ask AI sa pag-intindi ng sarili mong attendance, leave, Offset, profile at published payslip, sa portal workflows, at sa approved work-directory details ng active employees. Ang private answers ay limitado sa sarili mong signed-in account. Hindi nito puwedeng ibigay ang private attendance, leave, salary, payslip, personal email, phone, address, IDs o passwords ng ibang employee.',
+  },
+  {
     terms: ['manpower tracker', 'project tracker', 'time tracker', 'project timer', 'track project', 'project hours'],
     en: 'After Time In, you can pre-select a Manpower project before 9:00 AM; tracking begins automatically at 9:00 AM Manila time. It pauses automatically from 12:00 PM to 1:00 PM, resumes the same project at 1:00 PM only if the shift is still open, and closes at 7:00 PM or Time Out, whichever comes first. Switching projects stops the previous project and starts the new one.',
     tl: 'Pagkatapos ng Time In, puwede nang mag-pre-select ng Manpower project bago mag-9:00 AM; automatic magsisimula ang tracking ng 9:00 AM Manila time. Automatic itong magpa-pause ng 12:00 PM–1:00 PM, magre-resume sa parehong project ng 1:00 PM kung open pa ang shift, at hihinto sa 7:00 PM o sa Time Out, alinman ang mauna. Kapag nag-switch ng project, hihinto ang nauna at magsisimula ang bago.',
@@ -137,7 +142,7 @@ const normalize = (value: string) => value
   .replace(/\s+/g, ' ')
   .trim();
 
-const EXPLANATORY = /\b(how|why|where|what is|what does|can i|when can|rule|rules|process|workflow|meaning|works?|disabled|available|paano|bakit|saan|ano ang|ano ibig sabihin|pwede ba|maaari ba|kailan pwede|paano gumagana)\b/i;
+const EXPLANATORY = /\b(how|why|where|what is|what does|what can|can i|when can|rule|rules|process|workflow|meaning|works?|disabled|available|paano|bakit|saan|ano ang|ano ibig sabihin|ano puwede|pwede ba|maaari ba|kailan pwede|paano gumagana)\b/i;
 const LIVE_PERSONAL = /\b(how many|how much|my current|my remaining|my pending|my latest|what is my balance|who is my|ilan|magkano|balance ko|remaining ko|natitira ko|pending ko|status ng .* ko|sino (ang )?.* ko|time in ko|time out ko|attendance ko today|leave balance ko)\b/i;
 
 function score(question: string, entry: Entry) {
