@@ -2,6 +2,9 @@
 
 import { getAttendanceStatusDisplay } from "@/lib/attendance-status-display";
 import EmployeeDesktopSidebar from "@/components/employee/EmployeeDesktopSidebar";
+import AttendanceResolutionDrawer, {
+  type ResolvableAttendanceRecord,
+} from "@/components/employee/attendance/AttendanceResolutionDrawer";
 import { applyPortalTheme } from "@/lib/portal-theme";
 import { supabase } from "@/lib/supabase";
 import {
@@ -24,6 +27,7 @@ type AttendanceLog = {
   status: string | null;
   late_offset_minutes: number | null;
   early_out_offset_minutes: number | null;
+  absent_offset_minutes?: number | null;
 };
 
 type AttendanceFilter =
@@ -120,6 +124,30 @@ function remarksFor(
   return "—";
 }
 
+function resolutionKind(
+  log: AttendanceLog,
+  timeOutHour: number,
+): "late" | "early-out" | "absent" | null {
+  const normalizedStatus = log.status?.trim().toLowerCase();
+  if (
+    normalizedStatus === "offset applied" ||
+    normalizedStatus?.includes("leave") ||
+    Number(log.early_out_offset_minutes || 0) > 0 ||
+    Number(log.absent_offset_minutes || 0) > 0
+  ) return null;
+  if (normalizedStatus === "absent") return "absent";
+  if (normalizedStatus === "late") return "late";
+  if (!log.time_out) return null;
+  const hour = Number(
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Asia/Manila",
+      hour: "2-digit",
+      hour12: false,
+    }).format(new Date(log.time_out)),
+  );
+  return hour < timeOutHour ? "early-out" : null;
+}
+
 const dotTone: Record<Exclude<AttendanceFilter, "all">, string> = {
   present: "bg-emerald-500",
   late: "bg-orange-500",
@@ -148,7 +176,15 @@ export default function EmployeeAttendancePage() {
     Number(manilaMonth().slice(0, 4)),
   );
   const [darkMode, setDarkMode] = useState(false);
-  const pageSize = 8;
+  const [selectedResolution, setSelectedResolution] = useState<AttendanceLog | null>(null);
+  const [pendingResolutionLogIds, setPendingResolutionLogIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [leaveCredits, setLeaveCredits] = useState<{
+    total_credits: number;
+    used_credits: number;
+  } | null>(null);
+  const pageSize = 10;
 
   const applyTheme = useCallback((nextDark: boolean) => {
     applyPortalTheme(nextDark);
@@ -180,7 +216,16 @@ export default function EmployeeAttendancePage() {
     }
 
     setEmployeeId(user.id);
-    const [profileResult, recordsResult, settingResult] = await Promise.all([
+    const currentYear = new Date().getFullYear();
+    const [
+      profileResult,
+      recordsResult,
+      settingResult,
+      usageRequestsResult,
+      earlyOutRequestsResult,
+      pendingLeavesResult,
+      leaveCreditsResult,
+    ] = await Promise.all([
       supabase
         .from("profiles")
         .select("full_name, designation, avatar_url")
@@ -189,7 +234,7 @@ export default function EmployeeAttendancePage() {
       supabase
         .from("attendance_logs")
         .select(
-          "id, log_date, time_in, time_out, status, late_offset_minutes, early_out_offset_minutes",
+          "id, log_date, time_in, time_out, status, late_offset_minutes, early_out_offset_minutes, absent_offset_minutes",
         )
         .eq("user_id", user.id)
         .order("log_date", { ascending: false }),
@@ -197,6 +242,27 @@ export default function EmployeeAttendancePage() {
         .from("app_settings")
         .select("value")
         .eq("key", "time_out_reminder_hour")
+        .maybeSingle(),
+      supabase
+        .from("offset_usage_requests")
+        .select("attendance_log_id")
+        .eq("user_id", user.id)
+        .eq("status", "Pending"),
+      supabase
+        .from("early_out_offset_requests")
+        .select("attendance_log_id")
+        .eq("user_id", user.id)
+        .eq("status", "Pending"),
+      supabase
+        .from("leave_requests")
+        .select("start_date, end_date")
+        .eq("user_id", user.id)
+        .eq("status", "Pending"),
+      supabase
+        .from("leave_credits")
+        .select("total_credits, used_credits")
+        .eq("user_id", user.id)
+        .eq("year", currentYear)
         .maybeSingle(),
     ]);
 
@@ -208,10 +274,29 @@ export default function EmployeeAttendancePage() {
     }
 
     if (recordsResult.error) setError(recordsResult.error.message);
-    else setRecords((recordsResult.data || []) as AttendanceLog[]);
+    else {
+      const nextRecords = (recordsResult.data || []) as AttendanceLog[];
+      setRecords(nextRecords);
+      const pendingIds = new Set<string>();
+      (usageRequestsResult.data || []).forEach((request) =>
+        pendingIds.add(String(request.attendance_log_id)),
+      );
+      (earlyOutRequestsResult.data || []).forEach((request) =>
+        pendingIds.add(String(request.attendance_log_id)),
+      );
+      (pendingLeavesResult.data || []).forEach((leave) => {
+        nextRecords.forEach((record) => {
+          if (record.log_date >= leave.start_date && record.log_date <= leave.end_date) {
+            pendingIds.add(String(record.id));
+          }
+        });
+      });
+      setPendingResolutionLogIds(pendingIds);
+    }
 
     if (typeof settingResult.data?.value === "number")
       setTimeOutHour(settingResult.data.value);
+    setLeaveCredits(leaveCreditsResult.data ?? null);
     setLoading(false);
   }, []);
 
@@ -266,6 +351,34 @@ export default function EmployeeAttendancePage() {
       void supabase.removeChannel(channel);
     };
   }, [employeeId]);
+
+  // Resolution state changes are delivered by Realtime. There is deliberately
+  // no timer here: a new request, HR decision, or cancellation triggers the
+  // targeted refresh that updates the pending badge and final status.
+  useEffect(() => {
+    if (!employeeId) return;
+    const channel = supabase
+      .channel(`employee-attendance-resolution-${employeeId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "offset_usage_requests", filter: `user_id=eq.${employeeId}` },
+        () => void loadAttendance(),
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "early_out_offset_requests", filter: `user_id=eq.${employeeId}` },
+        () => void loadAttendance(),
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "leave_requests", filter: `user_id=eq.${employeeId}` },
+        () => void loadAttendance(),
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [employeeId, loadAttendance]);
 
   const pickerMonths = useMemo(
     () => monthNames.map((_, index) => `${monthPickerYear}-${String(index + 1).padStart(2, "0")}`),
@@ -348,8 +461,8 @@ export default function EmployeeAttendancePage() {
     },
     {
       key: "offset" as const,
-      label: "Offset",
-      value: counts.offset,
+      label: "Offset / Leave",
+      value: counts.offset + counts.leave,
       icon: "↻",
       tone: "border-violet-100 bg-violet-50 text-violet-700 dark:border-violet-900/60 dark:bg-violet-950/30 dark:text-violet-300",
     },
@@ -370,6 +483,8 @@ export default function EmployeeAttendancePage() {
       earlyOutOffsetMinutes: record.early_out_offset_minutes,
       timeOutHour,
     });
+    const resolve = resolutionKind(record, timeOutHour);
+    const disputePending = pendingResolutionLogIds.has(String(record.id));
     if (mobile)
       return (
         <article
@@ -400,12 +515,21 @@ export default function EmployeeAttendancePage() {
           <p className="mt-1 pl-2 text-[11px] text-slate-500 dark:text-slate-300">
             {remarksFor(record, category)}
           </p>
+          {(resolve || disputePending) && (
+            <div className="mt-2 flex justify-end pl-2">
+              {disputePending ? (
+                <span className="rounded-full bg-blue-50 px-2 py-1 text-[10px] font-extrabold text-blue-700 dark:bg-blue-950/35 dark:text-blue-200">Dispute Pending</span>
+              ) : (
+                <button type="button" onClick={() => setSelectedResolution(record)} className="rounded-lg border border-orange-200 bg-orange-50 px-2.5 py-1 text-[10px] font-extrabold text-orange-700 transition hover:bg-orange-100">Resolve</button>
+              )}
+            </div>
+          )}
         </article>
       );
     return (
       <div
         key={record.id}
-        className="grid grid-cols-[1.35fr_1.45fr_.8fr_1fr_1fr] items-center gap-3 border-b border-slate-100 px-5 py-3.5 text-xs last:border-0 dark:border-[#465049]"
+        className="grid grid-cols-[1.25fr_1.35fr_.75fr_.9fr_1fr_.75fr] items-center gap-3 border-b border-slate-100 px-5 py-3 text-xs last:border-0 dark:border-[#465049]"
       >
         <span className="flex items-center gap-3">
           <i className={`h-2.5 w-2.5 rounded-full ${dotTone[category]}`} />
@@ -429,6 +553,15 @@ export default function EmployeeAttendancePage() {
         </span>
         <span className="text-slate-500 dark:text-slate-300">
           {remarksFor(record, category)}
+        </span>
+        <span>
+          {disputePending ? (
+            <span className="inline-flex rounded-full bg-blue-50 px-2 py-1 text-[10px] font-extrabold text-blue-700 dark:bg-blue-950/35 dark:text-blue-200">Pending</span>
+          ) : resolve ? (
+            <button type="button" onClick={() => setSelectedResolution(record)} className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-1.5 text-[10px] font-extrabold text-orange-700 transition hover:bg-orange-100 dark:border-orange-900/60 dark:bg-orange-950/25 dark:text-orange-200">Resolve</button>
+          ) : (
+            <span className="text-slate-400">—</span>
+          )}
         </span>
       </div>
     );
@@ -471,7 +604,7 @@ export default function EmployeeAttendancePage() {
                 Attendance History
               </h1>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">
-                View your daily attendance records and working hours.
+                View your daily attendance records and manage any discrepancies.
               </p>
             </div>
             <div className="grid w-full grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-2 sm:w-auto sm:min-w-[380px]">
@@ -690,13 +823,14 @@ export default function EmployeeAttendancePage() {
             ) : (
               <>
                 <div className="hidden overflow-x-auto md:block">
-                  <div className="min-w-[760px]">
-                    <div className="grid grid-cols-[1.35fr_1.45fr_.8fr_1fr_1fr] gap-3 border-b border-slate-100 bg-emerald-50/55 px-5 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500 dark:border-[#465049] dark:bg-[#343b36]">
+                  <div className="min-w-[880px]">
+                    <div className="grid grid-cols-[1.25fr_1.35fr_.75fr_.9fr_1fr_.75fr] gap-3 border-b border-slate-100 bg-emerald-50/55 px-5 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500 dark:border-[#465049] dark:bg-[#343b36]">
                       <span>Date</span>
                       <span>Time In → Time Out</span>
                       <span>Total Hours</span>
                       <span>Status</span>
                       <span>Remarks</span>
+                      <span>Action</span>
                     </div>
                     {pageRecords.map((record) => renderRecord(record))}
                   </div>
@@ -742,6 +876,14 @@ export default function EmployeeAttendancePage() {
           </section>
         </section>
       </div>
+      <AttendanceResolutionDrawer
+        open={Boolean(selectedResolution)}
+        record={selectedResolution as ResolvableAttendanceRecord | null}
+        timeOutHour={timeOutHour}
+        leaveCredits={leaveCredits}
+        onClose={() => setSelectedResolution(null)}
+        onSubmitted={loadAttendance}
+      />
     </main>
   );
 }
