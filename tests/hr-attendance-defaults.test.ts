@@ -1,12 +1,12 @@
 import { readFileSync } from 'node:fs';
-import { runInNewContext } from 'node:vm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { manilaAttendanceDate } from '../lib/hr-attendance-history';
 
-const source = readFileSync(new URL('../app/hr/page.tsx', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../components/hr/HRAttendanceHistory.tsx', import.meta.url), 'utf8');
 
 afterEach(() => vi.useRealTimers());
 
-describe('HR raw attendance initial filters', () => {
+describe('HR attendance initial filters', () => {
   it.each([
     ['2026-10-15T15:59:00Z', '2026-10-15'],
     ['2026-10-15T16:01:00Z', '2026-10-16'],
@@ -14,17 +14,13 @@ describe('HR raw attendance initial filters', () => {
   ])('uses the Manila date when opened at %s', (now, expected) => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(now));
-    // Exercise the actual lazy initializer without mounting the dashboard
-    // or making any authenticated attendance/database requests.
-    const initializer = source.match(/const \[selectedDate, setSelectedDate\] = useState\(\(\) =>\s*([\s\S]*?)\n  \);/)?.[1];
-    expect(initializer).toBeDefined();
-    expect(runInNewContext(initializer!, { Date, Intl })).toBe(expected);
+    expect(manilaAttendanceDate()).toBe(expected);
   });
 
-  it('starts without a name or cutoff and does not restore saved filters', () => {
-    expect(source).toContain("const [searchTerm, setSearchTerm] = useState('');");
-    expect(source).toContain("const [cutoffFilter, setCutoffFilter] = useState('');");
-    expect(source).not.toContain('hamdan-hr-attendance-filters');
-    expect(source).not.toContain('filtersHydrated');
+  it('defaults to today unless opening a specific employee history and never restores stale browser filters', () => {
+    expect(source).toContain("date: props.initialEmployeeId ? '' : today");
+    expect(source).toContain("half: 'all', status: 'all', search: ''");
+    expect(source).not.toContain('localStorage');
+    expect(source).not.toContain('sessionStorage');
   });
 });

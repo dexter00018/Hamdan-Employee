@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it, vi } from 'vitest';
 
-const source = readFileSync(new URL('../app/hr/page.tsx', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+const source = readFileSync(new URL('../components/hr/HRPortal.tsx', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 
 describe('HR dashboard analytics navigation', () => {
   it('closes mobile analytics before opening the current-month summary and clears the prior selected range', () => {

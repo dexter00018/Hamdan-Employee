@@ -18,7 +18,7 @@ const eslintConfig = defineConfig([
   {
     files: [
       "app/employee/page.tsx",
-      "app/hr/page.tsx",
+      "components/hr/HRPortal.tsx",
       "app/super-admin/page.tsx",
       "app/api/address-search/route.ts",
       "app/api/check-email/route.ts",
