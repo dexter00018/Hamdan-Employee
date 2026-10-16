@@ -24,7 +24,7 @@ import { useVerificationDialog } from '@/components/shared/useVerificationDialog
 import { APP_SETTING_DEFINITIONS, DEFAULT_APP_SETTINGS, normalizeAppSettings, type AppSettingsValues } from '@/lib/app-settings';
 import { resolveSeasonalTheme, SEASONAL_THEME_PRESENTATION } from '@/lib/seasonal-theme';
 import { countChargeableLeaveDays } from '@/lib/leave-rules';
-import { computeAttendanceStatus } from '@/lib/attendance-rules';
+import { computeAttendanceStatus, computeLateMinutes } from '@/lib/attendance-rules';
 
 import { errorMessage, type AttendanceDispute, type LeaveRequest } from '@/lib/types/hr';
 import SeasonalDecor from '@/components/seasonal/SeasonalDecor';
@@ -1312,25 +1312,8 @@ export default function HRPortal({ view = 'dashboard', initialEmployeeId = '' }:
     employeesPage * PAGE_SIZE
   );
 
-  // Minutes late for a single Late log, derived from the configurable
-  // late cutoff (Super Admin -> App Settings) -- same threshold
-  // app/api/time-in/route.ts uses to decide Present vs Late, since we
-  // don't store an exact minutes-late value anywhere. Status is
-  // compared case-insensitively since it can also be hand-edited
-  // directly in Supabase (e.g. "late" instead of "Late").
-  const getMinutesLate = (timeInIso: string) => {
-    const parts = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Manila',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    })
-      .formatToParts(new Date(timeInIso))
-      .reduce((acc: any, p) => { acc[p.type] = p.value; return acc; }, {});
-    const minutesSinceMidnight = parseInt(parts.hour, 10) * 60 + parseInt(parts.minute, 10);
-    const cutoffMinutes = lateCutoffHour * 60 + lateCutoffMinute;
-    return Math.max(0, minutesSinceMidnight - cutoffMinutes);
-  };
+  // Match Employee and Offset requests: grace gates Late, duration starts at 9:00 AM.
+  const getMinutesLate = (timeInIso: string) => computeLateMinutes(timeInIso, lateCutoffHour, lateCutoffMinute);
 
   const formatLateDuration = (mins: number) => {
     if (mins <= 0) return '0 min';

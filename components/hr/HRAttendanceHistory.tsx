@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import { ArrowLeft, CalendarDays, Check, ChevronLeft, ChevronRight, Clock3, LogOut, RefreshCw, Search, SlidersHorizontal, TriangleAlert, UserRound } from 'lucide-react';
 import EmployeeThemeToggle from '@/components/employee/EmployeeThemeToggle';
 import ModalShell from '@/components/shared/ModalShell';
-import { filterHRAttendance, formatHRAttendanceHours, formatHRAttendanceTime, HR_ATTENDANCE_PAGE_SIZE, hrAttendancePresentation, manilaAttendanceDate, type HRAttendanceFilters, type HRAttendanceRecord } from '@/lib/hr-attendance-history';
+import { filterHRAttendance, formatHRAttendanceHours, formatHRAttendanceTime, HR_ATTENDANCE_PAGE_SIZE, hrAttendanceLateMinutes, hrAttendancePresentation, manilaAttendanceDate, type HRAttendanceFilters, type HRAttendanceRecord } from '@/lib/hr-attendance-history';
 import type { AttendanceDispute } from '@/lib/types/hr';
 import styles from './hr-attendance-history.module.css';
 
@@ -22,13 +22,6 @@ function displayDate(value: string) {
 
 function displayMonth(value: string) {
   return value ? new Date(`${value}-01T12:00:00+08:00`).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'long', year: 'numeric' }) : 'All months';
-}
-
-function lateMinutes(record: HRAttendanceRecord, hour: number, minute: number) {
-  if (!record.time_in || !Number.isFinite(Date.parse(record.time_in)) || !hrAttendancePresentation(record, 23).late) return 0;
-  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(record.time_in));
-  const value = (name: string) => Number(parts.find(part => part.type === name)?.value || 0);
-  return Math.max(0, value('hour') * 60 + value('minute') - hour * 60 - minute);
 }
 
 export default function HRAttendanceHistory(props: Props) {
@@ -56,7 +49,7 @@ export default function HRAttendanceHistory(props: Props) {
     if (item.leave) total.leave += 1;
     return total;
   }, { present: 0, late: 0, 'early-out': 0, absent: 0, leave: 0 }), [periodRecords, props.timeOutHour]);
-  const totalLateMinutes = useMemo(() => periodRecords.reduce((sum, record) => sum + lateMinutes(record, props.lateCutoffHour, props.lateCutoffMinute), 0), [periodRecords, props.lateCutoffHour, props.lateCutoffMinute]);
+  const totalLateMinutes = useMemo(() => periodRecords.reduce((sum, record) => sum + hrAttendanceLateMinutes(record, props.lateCutoffHour, props.lateCutoffMinute), 0), [periodRecords, props.lateCutoffHour, props.lateCutoffMinute]);
   const pages = Math.max(1, Math.ceil(visibleRecords.length / HR_ATTENDANCE_PAGE_SIZE));
   const currentPage = Math.min(page, pages);
   const start = (currentPage - 1) * HR_ATTENDANCE_PAGE_SIZE;
@@ -108,7 +101,7 @@ export default function HRAttendanceHistory(props: Props) {
     {mounted && createPortal(<div className={props.darkMode ? 'dark' : ''}><ModalShell open={Boolean(selected)} onClose={() => setSelectedId(null)} title="Attendance Details" description="Employee attendance record · Read-only HR view" placement="right" size="md" footer={<button type="button" onClick={() => setSelectedId(null)} className={styles.closeDetails}>Close details</button>}>
       {selected && selectedPresentation && <div className={styles.detailBody}>
         <div className={styles.detailEmployee}><UserRound size={22} /><div><h3>{selected.profiles?.full_name || 'Unknown employee'}</h3><p>{selected.profiles?.employee_id || 'No employee ID'} · {displayDate(selected.log_date)} · {selected.log_date}</p></div></div>
-        <div className={styles.detailFacts}><span>Status<strong className={`${selectedPresentation.display.className} ${styles.badge}`}>{selectedPresentation.display.label}</strong></span><span>Time In<b>{formatHRAttendanceTime(selected.time_in)}</b></span><span>Time Out<b>{formatHRAttendanceTime(selected.time_out)}</b></span><span>Total Hours<b>{formatHRAttendanceHours(selected)}</b></span>{selectedPresentation.late && <span>Late minutes<b>{lateMinutes(selected, props.lateCutoffHour, props.lateCutoffMinute)}m</b></span>}{selectedPresentation.earlyOut && selected.time_out && <span>Early Out<b>{Math.max(0, Math.ceil((Date.parse(`${selected.log_date}T${String(props.timeOutHour).padStart(2, '0')}:00:00+08:00`) - Date.parse(selected.time_out)) / 60_000))}m</b></span>}<span>Remarks<b>{selectedPresentation.remarks}</b></span></div>
+        <div className={styles.detailFacts}><span>Status<strong className={`${selectedPresentation.display.className} ${styles.badge}`}>{selectedPresentation.display.label}</strong></span><span>Time In<b>{formatHRAttendanceTime(selected.time_in)}</b></span><span>Time Out<b>{formatHRAttendanceTime(selected.time_out)}</b></span><span>Total Hours<b>{formatHRAttendanceHours(selected)}</b></span>{selectedPresentation.late && <span>Late minutes<b>{hrAttendanceLateMinutes(selected, props.lateCutoffHour, props.lateCutoffMinute)}m</b></span>}{selectedPresentation.earlyOut && selected.time_out && <span>Early Out<b>{Math.max(0, Math.ceil((Date.parse(`${selected.log_date}T${String(props.timeOutHour).padStart(2, '0')}:00:00+08:00`) - Date.parse(selected.time_out)) / 60_000))}m</b></span>}<span>Remarks<b>{selectedPresentation.remarks}</b></span></div>
         {selectedPresentation.offset && <section className={styles.resolution}><h3>Resolved with Offset</h3><p>The original attendance issue is retained in history and filters.</p>{[['Late', selected.late_offset_minutes], ['Early Out', selected.early_out_offset_minutes], ['Absent', selected.absent_offset_minutes]].map(([label, minutes]) => Number(minutes) > 0 ? <p key={String(label)}><b>{label}:</b> {Number(minutes)} minutes applied</p> : null)}</section>}
         {selected.early_out_offset_requests?.map((request, index) => <section key={index} className={styles.resolution}><h3>Early-out Offset request</h3><p>{request.status} · {request.required_minutes} minutes</p></section>)}
         {selectedDisputes.length > 0 && <section className={styles.reviewHistory}><h3>HR Review History</h3>{selectedDisputes.map(dispute => <article key={dispute.id}><b>{dispute.dispute_type === 'TimeOut' ? 'Time Out' : 'Time In'} dispute · {dispute.status}</b>{dispute.original_time_in && <p>Original Time In: {formatHRAttendanceTime(dispute.original_time_in)}</p>}{dispute.original_time_out && <p>Original Time Out: {formatHRAttendanceTime(dispute.original_time_out)}</p>}{dispute.reviewed_at && <p>Reviewed: {new Date(dispute.reviewed_at).toLocaleString('en-US', { timeZone: 'Asia/Manila' })}</p>}{dispute.reviewer?.full_name && <p>Reviewed by: {dispute.reviewer.full_name}</p>}{dispute.hr_notes && <p>HR notes: {dispute.hr_notes}</p>}</article>)}</section>}

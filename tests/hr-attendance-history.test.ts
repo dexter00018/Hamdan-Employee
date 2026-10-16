@@ -1,11 +1,20 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { filterHRAttendance, formatHRAttendanceHours, formatHRAttendanceTime, HR_ATTENDANCE_PAGE_SIZE, hrAttendancePresentation, matchesHRAttendanceStatus, type HRAttendanceFilters, type HRAttendanceRecord } from '../lib/hr-attendance-history';
+import { filterHRAttendance, formatHRAttendanceHours, formatHRAttendanceTime, HR_ATTENDANCE_PAGE_SIZE, hrAttendanceLateMinutes, hrAttendancePresentation, matchesHRAttendanceStatus, type HRAttendanceFilters, type HRAttendanceRecord } from '../lib/hr-attendance-history';
 
 const base: HRAttendanceRecord = { id: 'one', user_id: 'employee-1', log_date: '2026-10-15', time_in: '2026-10-15T01:20:04Z', time_out: '2026-10-15T11:00:07Z', status: 'Late', profiles: { full_name: 'Same Name', employee_id: 'HE-001' } };
 const all: HRAttendanceFilters = { employeeId: '', month: '', half: 'all', date: '', status: 'all', search: '' };
 
 describe('HR attendance filters and presentation', () => {
+  it('shows full Late minutes from 9:00 AM, including after Offset approval', () => {
+    const record = { ...base, time_in: '2026-10-15T01:16:00Z' };
+    expect(hrAttendanceLateMinutes(record, 9, 15)).toBe(16);
+    expect(hrAttendanceLateMinutes({ ...record, status: 'Offset Applied', late_offset_minutes: 16 }, 9, 15)).toBe(16);
+    expect(hrAttendanceLateMinutes({ ...record, status: 'Present' }, 9, 15)).toBe(0);
+    expect(hrAttendanceLateMinutes({ ...record, time_in: '2026-10-15T01:15:59Z' }, 9, 15)).toBe(0);
+    expect(hrAttendanceLateMinutes({ ...record, time_in: null }, 9, 15)).toBe(0);
+  });
+
   it('keeps late records in the Late filter after Offset approval', () => {
     const record = { ...base, status: 'Offset Applied', late_offset_minutes: 20 };
     expect(matchesHRAttendanceStatus(record, 'late', 19)).toBe(true);

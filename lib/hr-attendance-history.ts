@@ -1,4 +1,5 @@
 import { getAttendanceStatusDisplay } from './attendance-status-display';
+import { computeLateMinutes } from './attendance-rules';
 
 export const HR_ATTENDANCE_PAGE_SIZE = 6;
 export type HRAttendanceFilter = 'all' | 'present' | 'late' | 'early-out' | 'absent' | 'leave' | 'offset';
@@ -32,6 +33,11 @@ export function formatHRAttendanceHours(record: HRAttendanceRecord) {
   if (!Number.isFinite(elapsed) || elapsed < 0) return '—';
   const minutes = Math.round(elapsed / 60_000);
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+export function hrAttendanceLateMinutes(record: HRAttendanceRecord, cutoffHour: number, cutoffMinute: number) {
+  if (!hrAttendancePresentation(record, 23).late) return 0;
+  return computeLateMinutes(record.time_in, cutoffHour, cutoffMinute);
 }
 
 export function hrAttendancePresentation(record: HRAttendanceRecord, timeOutHour: number) {

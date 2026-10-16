@@ -1,5 +1,6 @@
 'use client';
 import { getAttendanceStatusDisplay } from '@/lib/attendance-status-display';
+import { computeLateMinutes } from '@/lib/attendance-rules';
 import { applyPortalTheme } from '@/lib/portal-theme';
 import MobileBottomNav from '@/components/employee/MobileBottomNav';
 import EmployeeSummaryCard from '@/components/employee/EmployeeSummaryCard';
@@ -1565,23 +1566,8 @@ export default function EmployeeDashboard() {
   // default to the current cutoff period.
   const summaryCutoffKey = monthFilter || currentCutoffKey;
 
-  // Minutes late for a single Late log, derived from the configurable
-  // late cutoff (Super Admin -> App Settings) -- same threshold
-  // app/api/time-in/route.ts uses to decide Present vs Late, since we
-  // don't store an exact minutes-late value anywhere.
-  const getMinutesLate = (timeInIso: string) => {
-    const parts = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Manila',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    })
-      .formatToParts(new Date(timeInIso))
-      .reduce((acc: any, p) => { acc[p.type] = p.value; return acc; }, {});
-    const minutesSinceMidnight = parseInt(parts.hour, 10) * 60 + parseInt(parts.minute, 10);
-    const cutoffMinutes = lateCutoffHour * 60 + lateCutoffMinute;
-    return Math.max(0, minutesSinceMidnight - cutoffMinutes);
-  };
+  // The grace cutoff gates Late status; its full duration starts at 9:00 AM.
+  const getMinutesLate = (timeInIso: string) => computeLateMinutes(timeInIso, lateCutoffHour, lateCutoffMinute);
 
   const formatLateDuration = (mins: number) => {
     if (mins <= 0) return '0 min';
