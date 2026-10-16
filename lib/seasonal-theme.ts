@@ -11,7 +11,6 @@ export type SeasonalThemeResolution = {
   scope: string;
   intensity: 'subtle' | 'festive';
   snowEnabled: boolean;
-  bannerEnabled: boolean;
 };
 
 export const SEASONAL_THEME_PRESENTATION: Record<SeasonalThemeVariant, { label: string; greeting: string; symbol: string; particle: string; bannerTone: string }> = {
@@ -53,6 +52,5 @@ export function resolveSeasonalTheme(settings: AppSettingsValues, portal: Season
     scope,
     intensity: settings.seasonal_theme_intensity === 'festive' ? 'festive' : 'subtle',
     snowEnabled: active && settings.seasonal_snow_enabled === true,
-    bannerEnabled: active && settings.seasonal_banner_enabled === true,
   };
 }

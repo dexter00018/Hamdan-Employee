@@ -1,0 +1,9 @@
+.page { padding: 14px; line-height: 1.4; }
+.frame { width: 100%; max-width: 1800px; margin-inline: auto; gap: 18px; }
+.sidebar { line-height: 1.4; }
+
+@media (min-width: 1024px) {
+  .frame { display: grid; grid-template-columns: 228px minmax(0, 1fr); align-items: start; }
+  .sidebar:global(.employee-desktop-sidebar) { position: sticky; top: 14px; width: 228px; min-width: 228px; height: calc(100dvh - 28px); max-height: calc(100dvh - 28px); }
+}
+@media (max-width: 1023px) { .page { padding: 12px 12px calc(5.5rem + env(safe-area-inset-bottom)); } }

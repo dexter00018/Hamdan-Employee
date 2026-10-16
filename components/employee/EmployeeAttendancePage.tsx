@@ -2,6 +2,8 @@
 
 import { getAttendanceStatusDisplay } from "@/lib/attendance-status-display";
 import EmployeeDesktopSidebar from "@/components/employee/EmployeeDesktopSidebar";
+import MobileBottomNav from "@/components/employee/MobileBottomNav";
+import frameStyles from "@/components/employee/employee-portal-frame.module.css";
 import AttendanceResolutionDrawer, {
   type ResolvableAttendanceRecord,
 } from "@/components/employee/attendance/AttendanceResolutionDrawer";
@@ -50,6 +52,29 @@ function shiftMonth(month: string, amount: number) {
   const [year, value] = month.split("-").map(Number);
   const date = new Date(year, value - 1 + amount, 1);
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function currentPayrollCutoff() {
+  const today = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  const year = Number(today.slice(0, 4));
+  const month = Number(today.slice(5, 7));
+  const day = Number(today.slice(8, 10));
+  const startDay = day <= 15 ? 1 : 16;
+  const endDay = day <= 15 ? 15 : new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const monthText = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    timeZone: "Asia/Manila",
+  }).format(new Date(`${year}-${String(month).padStart(2, "0")}-01T00:00:00+08:00`));
+  return {
+    start: `${year}-${String(month).padStart(2, "0")}-${String(startDay).padStart(2, "0")}`,
+    end: `${year}-${String(month).padStart(2, "0")}-${String(endDay).padStart(2, "0")}`,
+    label: `${monthText} ${startDay}–${endDay}, ${year}`,
+  };
 }
 
 const monthNames = [
@@ -101,6 +126,7 @@ function categoryFor(
     timeOut: log.time_out,
     lateOffsetMinutes: log.late_offset_minutes,
     earlyOutOffsetMinutes: log.early_out_offset_minutes,
+    absentOffsetMinutes: log.absent_offset_minutes,
     timeOutHour,
   });
   const status = log.status?.trim().toLowerCase() ?? "";
@@ -116,6 +142,7 @@ function remarksFor(
   log: AttendanceLog,
   category: Exclude<AttendanceFilter, "all">,
 ) {
+  if (isApprovedOffset(log)) return "Resolved with Offset";
   if (!log.time_in) return "No time in";
   if (!log.time_out) return "No time out";
   if (category === "offset") return "Offset applied";
@@ -146,6 +173,25 @@ function resolutionKind(
     }).format(new Date(log.time_out)),
   );
   return hour < timeOutHour ? "early-out" : null;
+}
+
+function isApprovedOffset(log: AttendanceLog) {
+  return (
+    log.status?.trim().toLowerCase() === "offset applied" ||
+    Number(log.late_offset_minutes || 0) > 0 ||
+    Number(log.early_out_offset_minutes || 0) > 0 ||
+    Number(log.absent_offset_minutes || 0) > 0
+  );
+}
+
+function detailKind(
+  log: AttendanceLog,
+  timeOutHour: number,
+): "late" | "early-out" | "absent" | null {
+  if (Number(log.absent_offset_minutes || 0) > 0) return "absent";
+  if (Number(log.early_out_offset_minutes || 0) > 0) return "early-out";
+  if (isApprovedOffset(log)) return "late";
+  return resolutionKind(log, timeOutHour);
 }
 
 const dotTone: Record<Exclude<AttendanceFilter, "all">, string> = {
@@ -184,7 +230,8 @@ export default function EmployeeAttendancePage() {
     total_credits: number;
     used_credits: number;
   } | null>(null);
-  const pageSize = 10;
+  const pageSize = 6;
+  const payrollCutoff = useMemo(() => currentPayrollCutoff(), []);
 
   const applyTheme = useCallback((nextDark: boolean) => {
     applyPortalTheme(nextDark);
@@ -418,6 +465,7 @@ export default function EmployeeAttendancePage() {
         timeOut: record.time_out,
         lateOffsetMinutes: record.late_offset_minutes,
         earlyOutOffsetMinutes: record.early_out_offset_minutes,
+        absentOffsetMinutes: record.absent_offset_minutes,
         timeOutHour,
       });
       return (
@@ -460,11 +508,11 @@ export default function EmployeeAttendancePage() {
       tone: "border-amber-100 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300",
     },
     {
-      key: "offset" as const,
-      label: "Offset / Leave",
-      value: counts.offset + counts.leave,
-      icon: "↻",
-      tone: "border-violet-100 bg-violet-50 text-violet-700 dark:border-violet-900/60 dark:bg-violet-950/30 dark:text-violet-300",
+      key: "absent" as const,
+      label: "Absent",
+      value: counts.absent,
+      icon: "!",
+      tone: "border-rose-100 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300",
     },
   ];
 
@@ -481,55 +529,77 @@ export default function EmployeeAttendancePage() {
       timeOut: record.time_out,
       lateOffsetMinutes: record.late_offset_minutes,
       earlyOutOffsetMinutes: record.early_out_offset_minutes,
+      absentOffsetMinutes: record.absent_offset_minutes,
       timeOutHour,
     });
     const resolve = resolutionKind(record, timeOutHour);
+    const approvedOffset = isApprovedOffset(record);
     const disputePending = pendingResolutionLogIds.has(String(record.id));
+    const hasIssue = Boolean(detailKind(record, timeOutHour) || disputePending);
+    const withinPayrollCutoff = record.log_date >= payrollCutoff.start && record.log_date <= payrollCutoff.end;
     if (mobile)
       return (
         <article
           key={record.id}
-          className="relative overflow-hidden rounded-2xl border border-slate-100 bg-slate-50 p-2.5 dark:border-[#465049] dark:bg-[#343b36]"
+          onClick={() => hasIssue && setSelectedResolution(record)}
+          onKeyDown={(event) => {
+            if (hasIssue && (event.key === "Enter" || event.key === " ")) {
+              event.preventDefault();
+              setSelectedResolution(record);
+            }
+          }}
+          role={hasIssue ? "button" : undefined}
+          tabIndex={hasIssue ? 0 : undefined}
+          className={`relative overflow-hidden rounded-xl border border-slate-100 bg-white p-2 shadow-sm dark:border-[#465049] dark:bg-[#343b36] ${hasIssue ? "cursor-pointer transition hover:border-green-200 hover:bg-green-50/60 focus:outline-none focus:ring-2 focus:ring-green-500 dark:hover:border-green-800" : ""}`}
         >
           <i
             className={`absolute bottom-0 left-0 top-0 w-1 ${dotTone[category]}`}
           />
-          <div className="flex items-start justify-between gap-3 pl-2">
-            <div>
-              <h3 className="text-sm font-black">
-                {formatDate(record.log_date)}
-              </h3>
-              <p className="text-[10px] text-slate-500">{record.log_date}</p>
+          <div className="pl-1.5">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex min-w-0 items-start gap-1.5">
+                <i className={`mt-1 h-2 w-2 shrink-0 rounded-full ${dotTone[category]}`} />
+                <div>
+                  <h3 className="text-[13px] font-black leading-tight">
+                    {formatDate(record.log_date)}
+                  </h3>
+                  <p className="mt-0.5 text-[9px] leading-none text-slate-500">{record.log_date}</p>
+                </div>
+              </div>
+              <span className={`${status.className} shrink-0 !px-2 !py-1 !text-[9px]`}>{status.label}</span>
             </div>
-            <span className={status.className}>{status.label}</span>
-          </div>
-          <div className="mt-2 grid grid-cols-2 gap-2 pl-2 text-xs">
-            <p className="flex items-center gap-1.5 font-semibold tabular-nums">
-              <Clock3 size={14} className="text-slate-400" />
-              {formatTime(record.time_in)} → {formatTime(record.time_out)}
-            </p>
-            <p className="text-right font-bold tabular-nums">
-              {formatWorkHours(record.time_in, record.time_out)}
-            </p>
-          </div>
-          <p className="mt-1 pl-2 text-[11px] text-slate-500 dark:text-slate-300">
-            {remarksFor(record, category)}
-          </p>
-          {(resolve || disputePending) && (
-            <div className="mt-2 flex justify-end pl-2">
-              {disputePending ? (
-                <span className="rounded-full bg-blue-50 px-2 py-1 text-[10px] font-extrabold text-blue-700 dark:bg-blue-950/35 dark:text-blue-200">Dispute Pending</span>
-              ) : (
-                <button type="button" onClick={() => setSelectedResolution(record)} className="rounded-lg border border-orange-200 bg-orange-50 px-2.5 py-1 text-[10px] font-extrabold text-orange-700 transition hover:bg-orange-100">Resolve</button>
-              )}
+            <div className="mt-1.5 flex items-center justify-between gap-2">
+              <p className="flex min-w-0 items-center gap-1.5 whitespace-nowrap text-[11px] font-semibold tabular-nums">
+                <Clock3 size={14} className="shrink-0 text-slate-400" />
+                {formatTime(record.time_in)} → {formatTime(record.time_out)}
+              </p>
+              {hasIssue && <ChevronRight size={16} className="shrink-0 text-slate-400" />}
             </div>
-          )}
+            <div className="mt-1 flex min-h-4 items-center justify-between gap-2 pl-5 text-[10px]">
+              <span className="shrink-0 font-bold tabular-nums text-slate-800 dark:text-slate-100">{formatWorkHours(record.time_in, record.time_out)}</span>
+              <span className="flex min-w-0 items-center gap-1.5 text-right text-slate-500 dark:text-slate-300">
+                <span className="truncate">{remarksFor(record, category)}</span>
+                {hasIssue && <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[8px] font-bold ${disputePending ? "bg-blue-50 text-blue-700 dark:bg-blue-950/35 dark:text-blue-200" : approvedOffset ? "bg-violet-50 text-violet-700 dark:bg-violet-950/35 dark:text-violet-200" : withinPayrollCutoff ? "bg-violet-600 text-white" : "bg-slate-100 text-slate-400"}`}>
+                  {disputePending ? "Pending" : approvedOffset || !withinPayrollCutoff ? "Details" : "Resolve"}
+                </span>}
+              </span>
+            </div>
+          </div>
         </article>
       );
     return (
       <div
         key={record.id}
-        className="grid grid-cols-[1.25fr_1.35fr_.75fr_.9fr_1fr_.75fr] items-center gap-3 border-b border-slate-100 px-5 py-3 text-xs last:border-0 dark:border-[#465049]"
+        onClick={() => hasIssue && setSelectedResolution(record)}
+        onKeyDown={(event) => {
+          if (hasIssue && (event.key === "Enter" || event.key === " ")) {
+            event.preventDefault();
+            setSelectedResolution(record);
+          }
+        }}
+        role={hasIssue ? "button" : undefined}
+        tabIndex={hasIssue ? 0 : undefined}
+        className={`grid grid-cols-[1.25fr_1.35fr_.75fr_.9fr_1fr_.75fr] items-center gap-3 border-b border-slate-100 px-5 py-3 text-xs last:border-0 dark:border-[#465049] ${hasIssue ? "cursor-pointer transition hover:bg-green-50/55 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-green-500 dark:hover:bg-green-950/15" : ""}`}
       >
         <span className="flex items-center gap-3">
           <i className={`h-2.5 w-2.5 rounded-full ${dotTone[category]}`} />
@@ -556,9 +626,11 @@ export default function EmployeeAttendancePage() {
         </span>
         <span>
           {disputePending ? (
-            <span className="inline-flex rounded-full bg-blue-50 px-2 py-1 text-[10px] font-extrabold text-blue-700 dark:bg-blue-950/35 dark:text-blue-200">Pending</span>
+            <span className="inline-flex whitespace-nowrap rounded-full bg-blue-50 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-blue-700 dark:bg-blue-950/35 dark:text-blue-200">Dispute Pending</span>
           ) : resolve ? (
-            <button type="button" onClick={() => setSelectedResolution(record)} className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-1.5 text-[10px] font-extrabold text-orange-700 transition hover:bg-orange-100 dark:border-orange-900/60 dark:bg-orange-950/25 dark:text-orange-200">Resolve</button>
+            <span className={`inline-flex whitespace-nowrap rounded-full border px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider ${withinPayrollCutoff ? "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-900/60 dark:bg-orange-950/25 dark:text-orange-200" : "border-slate-200 bg-slate-100 text-slate-400 dark:border-[#465049] dark:bg-[#343b36] dark:text-slate-400"}`}>{withinPayrollCutoff ? "Resolve" : "View details"}</span>
+          ) : approvedOffset ? (
+            <span className="inline-flex whitespace-nowrap rounded-full border border-violet-200 bg-violet-50 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-violet-700 dark:border-violet-900/60 dark:bg-violet-950/25 dark:text-violet-200">View details</span>
           ) : (
             <span className="text-slate-400">—</span>
           )}
@@ -568,8 +640,8 @@ export default function EmployeeAttendancePage() {
   };
 
   return (
-    <main className="dashboard-shell employee-attendance min-h-screen bg-slate-50 p-3 pb-24 text-slate-900 transition-colors dark:bg-[#202521] dark:text-white md:p-5 lg:p-8">
-      <div className="mx-auto grid max-w-[1600px] gap-5 lg:grid-cols-[228px_minmax(0,1fr)]">
+    <main className={`${frameStyles.page} dashboard-shell employee-attendance min-h-screen bg-slate-50 text-slate-900 transition-colors dark:bg-[#202521] dark:text-white`}>
+      <div className={`${frameStyles.frame} grid`}>
         <EmployeeDesktopSidebar
           employeeName={employeeName}
           designation={designation}
@@ -591,23 +663,26 @@ export default function EmployeeAttendancePage() {
           onLogout={handleLogout}
         />
         <section className="min-w-0">
-          <header className="mb-4 flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)] dark:bg-[#292f2b] sm:flex-row sm:items-center sm:justify-between lg:mb-3 lg:rounded-none lg:bg-transparent lg:p-0 lg:shadow-none dark:lg:bg-transparent">
-            <div>
+          <header className="mb-3 flex flex-col gap-3 rounded-xl bg-white p-3 shadow-[0_8px_24px_rgba(15,23,42,0.05)] dark:bg-[#292f2b] sm:mb-4 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:rounded-2xl sm:p-4 lg:mb-3 lg:rounded-none lg:bg-transparent lg:p-0 lg:shadow-none dark:lg:bg-transparent">
+            <div className="flex items-start gap-3">
               <button
                 type="button"
                 onClick={() => router.push("/employee")}
-                className="mb-2 inline-flex items-center gap-1 text-xs font-bold text-green-700 hover:text-green-800 lg:hidden"
+                className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-slate-50 text-slate-700 transition hover:bg-slate-100 dark:bg-[#343b36] dark:text-slate-200 dark:hover:bg-[#3d463f] lg:hidden"
+                aria-label="Back to dashboard"
               >
-                <ChevronLeft size={15} /> Dashboard
+                <ChevronLeft size={23} />
               </button>
-              <h1 className="text-2xl font-black tracking-tight lg:text-[26px]">
-                Attendance History
-              </h1>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">
-                View your daily attendance records and manage any discrepancies.
-              </p>
+              <div>
+                <h1 className="text-xl font-black tracking-tight sm:text-2xl lg:text-[26px]">
+                  Attendance History
+                </h1>
+                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-300 sm:mt-1 sm:text-sm">
+                  View your daily attendance records and manage any discrepancies.
+                </p>
+              </div>
             </div>
-            <div className="grid w-full grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-2 sm:w-auto sm:min-w-[380px]">
+            <div className="grid w-full grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-1.5 sm:w-auto sm:min-w-[380px] sm:gap-2">
               <div className="min-w-0">
                 <button
                   type="button"
@@ -617,7 +692,7 @@ export default function EmployeeAttendancePage() {
                     setMonthPickerYear(Number(selectedMonth.slice(0, 4)));
                     setMonthPickerOpen(true);
                   }}
-                  className="flex h-10 w-full items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-left text-xs font-bold shadow-sm transition hover:bg-slate-50 dark:border-[#465049] dark:bg-[#343b36] dark:text-white dark:hover:bg-[#3d463f]"
+                  className="flex h-9 w-full items-center gap-2 rounded-xl border border-slate-200 bg-white px-2.5 text-left text-xs font-bold shadow-sm transition hover:bg-slate-50 dark:border-[#465049] dark:bg-[#343b36] dark:text-white dark:hover:bg-[#3d463f] sm:h-10 sm:px-3"
                 >
                   <CalendarDays size={16} className="shrink-0 text-green-700 dark:text-green-300" />
                   <span className="min-w-0 flex-1 truncate">{formatMonth(selectedMonth)}</span>
@@ -630,7 +705,7 @@ export default function EmployeeAttendancePage() {
                   setSelectedMonth(manilaMonth());
                   setPage(1);
                 }}
-                className="h-10 rounded-xl bg-green-700 px-3 text-xs font-bold text-white transition hover:bg-green-800"
+                className="h-9 rounded-xl bg-green-700 px-2.5 text-xs font-bold text-white transition hover:bg-green-800 sm:h-10 sm:px-3"
               >
                 Today
               </button>
@@ -640,7 +715,7 @@ export default function EmployeeAttendancePage() {
                   setSelectedMonth((month) => shiftMonth(month, -1));
                   setPage(1);
                 }}
-                className="grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 dark:border-[#465049] dark:bg-[#343b36] dark:text-slate-200 dark:hover:bg-[#3d463f]"
+                className="grid h-9 w-9 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 dark:border-[#465049] dark:bg-[#343b36] dark:text-slate-200 dark:hover:bg-[#3d463f] sm:h-10 sm:w-10"
                 aria-label="Previous month"
               >
                 <ChevronLeft size={17} />
@@ -651,7 +726,7 @@ export default function EmployeeAttendancePage() {
                   setSelectedMonth((month) => shiftMonth(month, 1));
                   setPage(1);
                 }}
-                className="grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 dark:border-[#465049] dark:bg-[#343b36] dark:text-slate-200 dark:hover:bg-[#3d463f]"
+                className="grid h-9 w-9 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 dark:border-[#465049] dark:bg-[#343b36] dark:text-slate-200 dark:hover:bg-[#3d463f] sm:h-10 sm:w-10"
                 aria-label="Next month"
               >
                 <ChevronRight size={17} />
@@ -738,7 +813,7 @@ export default function EmployeeAttendancePage() {
               Unable to load attendance: {error}
             </div>
           )}
-          <section className="mb-4 grid grid-cols-2 gap-2 lg:grid-cols-4 lg:gap-3">
+          <section className="mb-3 grid grid-cols-2 gap-1.5 sm:mb-4 sm:gap-2 lg:grid-cols-4 lg:gap-3">
             {summaryCards.map((card) => (
               <button
                 key={card.key}
@@ -749,36 +824,36 @@ export default function EmployeeAttendancePage() {
                   );
                   setPage(1);
                 }}
-                className={`rounded-xl border p-2.5 text-left transition hover:-translate-y-0.5 lg:flex lg:min-h-[68px] lg:items-center lg:gap-3 lg:px-4 lg:py-3 ${card.tone} ${filter === card.key ? "ring-2 ring-offset-2 ring-green-500 dark:ring-offset-[#202521]" : ""}`}
+                className={`flex min-h-[66px] items-center gap-2 rounded-xl border p-2 text-left transition hover:-translate-y-0.5 lg:min-h-[68px] lg:gap-3 lg:px-4 lg:py-3 ${card.tone} ${filter === card.key ? "ring-2 ring-offset-2 ring-green-500 dark:ring-offset-[#202521]" : ""}`}
               >
-                <span className="grid h-7 w-7 place-items-center rounded-lg bg-white/70 text-sm font-black shadow-sm dark:bg-black/10 lg:h-8 lg:w-8 lg:text-base">
+                <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-white/80 text-sm font-black shadow-sm dark:bg-black/10 lg:h-8 lg:w-8 lg:text-base">
                   {card.icon}
                 </span>
-                <span className="block lg:min-w-0">
-                  <span className="mt-1.5 block text-lg font-black leading-none lg:mt-0 lg:text-xl">
+                <span className="block min-w-0 lg:min-w-0">
+                  <span className="block text-lg font-black leading-none lg:text-xl">
                     {card.value}
                   </span>
-                  <span className="mt-0.5 block text-[10px] font-bold uppercase tracking-wide lg:mt-0 lg:text-xs">
+                  <span className="mt-0.5 block text-[9px] font-bold uppercase tracking-wide lg:mt-0 lg:text-xs">
                     {card.label}
                   </span>
                 </span>
               </button>
             ))}
           </section>
-          <section className="overflow-hidden rounded-[1.5rem] bg-white shadow-[0_8px_30px_rgba(15,23,42,0.06)] dark:bg-[#292f2b]">
-            <div className="flex flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between lg:px-4 lg:py-3.5 dark:border-[#465049]">
+          <section className="overflow-hidden rounded-xl bg-white shadow-[0_8px_30px_rgba(15,23,42,0.06)] dark:bg-[#292f2b] sm:rounded-[1.5rem]">
+            <div className="flex flex-col gap-2 border-b border-slate-100 p-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:p-4 lg:px-4 lg:py-3.5 dark:border-[#465049]">
               <div>
                 <h2 className="text-base font-black">
                   {formatMonth(selectedMonth)}
                 </h2>
-                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-300">
+                <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-300 sm:text-xs">
                   {selectedRecords.length} record
                   {selectedRecords.length === 1 ? "" : "s"} · {counts.leave}{" "}
                   leave · {counts.absent} absent
                 </p>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <label className="flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 text-slate-500 dark:border-[#465049] dark:bg-[#343b36]">
+              <div className="flex w-full items-center gap-1.5 sm:w-auto sm:gap-2">
+                <label className="flex h-9 min-w-0 flex-1 items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-2.5 text-slate-500 dark:border-[#465049] dark:bg-[#343b36] sm:min-h-10 sm:flex-none sm:px-3">
                   <Search size={15} />
                   <input
                     value={query}
@@ -787,10 +862,10 @@ export default function EmployeeAttendancePage() {
                       setPage(1);
                     }}
                     placeholder="Search date, status, or remarks..."
-                    className="w-28 bg-transparent text-xs text-slate-800 outline-none placeholder:text-slate-400 dark:text-white sm:w-36"
+                    className="min-w-0 flex-1 bg-transparent text-[11px] text-slate-800 outline-none placeholder:text-slate-400 dark:text-white sm:w-36 sm:flex-none sm:text-xs"
                   />
                 </label>
-                <label className="flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-slate-600 dark:border-[#465049] dark:bg-[#343b36] dark:text-slate-200">
+                <label className="flex h-9 shrink-0 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2.5 text-slate-600 dark:border-[#465049] dark:bg-[#343b36] dark:text-slate-200 sm:min-h-10 sm:px-3">
                   <SlidersHorizontal size={15} />
                   <select
                     aria-label="Attendance status filter"
@@ -799,13 +874,12 @@ export default function EmployeeAttendancePage() {
                       setFilter(event.target.value as AttendanceFilter);
                       setPage(1);
                     }}
-                    className="bg-transparent text-xs font-bold outline-none dark:[color-scheme:dark]"
+                    className="max-w-[88px] bg-transparent text-[11px] font-bold outline-none dark:[color-scheme:dark] sm:max-w-none sm:text-xs"
                   >
                     <option value="all">All status</option>
                     <option value="present">Present</option>
                     <option value="late">Late</option>
                     <option value="early-out">Early Out</option>
-                    <option value="offset">Offset</option>
                     <option value="leave">Leave</option>
                     <option value="absent">Absent</option>
                   </select>
@@ -835,12 +909,12 @@ export default function EmployeeAttendancePage() {
                     {pageRecords.map((record) => renderRecord(record))}
                   </div>
                 </div>
-                <div className="space-y-2 p-3 md:hidden">
+                <div className="space-y-1.5 p-2 md:hidden">
                   {pageRecords.map((record) => renderRecord(record, true))}
                 </div>
               </>
             )}
-            <footer className="flex items-center justify-between border-t border-slate-100 px-4 py-3 text-xs font-semibold text-slate-500 dark:border-[#465049] dark:text-slate-300">
+            <footer className="flex items-center justify-between border-t border-slate-100 px-3 py-2.5 text-[11px] font-semibold text-slate-500 dark:border-[#465049] dark:text-slate-300 sm:px-4 sm:py-3 sm:text-xs">
               <span>
                 Showing{" "}
                 {visibleRecords.length ? (currentPage - 1) * pageSize + 1 : 0}–
@@ -881,8 +955,19 @@ export default function EmployeeAttendancePage() {
         record={selectedResolution as ResolvableAttendanceRecord | null}
         timeOutHour={timeOutHour}
         leaveCredits={leaveCredits}
+        withinPayrollCutoff={selectedResolution ? selectedResolution.log_date >= payrollCutoff.start && selectedResolution.log_date <= payrollCutoff.end : false}
+        payrollCutoffLabel={payrollCutoff.label}
+        resolutionPending={selectedResolution ? pendingResolutionLogIds.has(String(selectedResolution.id)) : false}
         onClose={() => setSelectedResolution(null)}
         onSubmitted={loadAttendance}
+      />
+      <MobileBottomNav
+        activeTab="attendance"
+        onHome={() => router.push("/employee")}
+        onAttendance={() => undefined}
+        onLeave={() => router.push("/employee")}
+        onActionCenter={() => router.push("/employee")}
+        onProfile={() => router.push("/employee")}
       />
     </main>
   );

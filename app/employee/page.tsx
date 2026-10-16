@@ -8,14 +8,19 @@ import EmployeeDesktopSidebar from '@/components/employee/EmployeeDesktopSidebar
 import MobileAllToolsSheet from '@/components/employee/MobileAllToolsSheet';
 import EmployeeWorkClock from '@/components/employee/EmployeeWorkClock';
 import EmployeeAskAI from '@/components/employee/EmployeeAskAI';
+import EmployeeDashboardHeader from '@/components/employee/EmployeeDashboardHeader';
+import EmployeeDashboardAnnouncement from '@/components/employee/EmployeeDashboardAnnouncement';
+import EmployeeDashboardInsights from '@/components/employee/EmployeeDashboardInsights';
+import dashboardStyles from '@/components/employee/employee-dashboard.module.css';
+import frameStyles from '@/components/employee/employee-portal-frame.module.css';
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
-import Spinner, { LoadingRow } from '@/components/Spinner';
-import { Bell, CheckCircle2, CircleX, Clock3, UserRound } from 'lucide-react';
+import Spinner from '@/components/Spinner';
+import { CheckCircle2, CircleX, Clock3, LogOut } from 'lucide-react';
 import { APP_SETTING_DEFINITIONS, DEFAULT_APP_SETTINGS, normalizeAppSettings, type AppSettingsValues } from '@/lib/app-settings';
 import { resolveSeasonalTheme, SEASONAL_THEME_PRESENTATION } from '@/lib/seasonal-theme';
 import { useVerificationDialog } from '@/components/shared/useVerificationDialog';
@@ -58,26 +63,6 @@ function EyeOffIcon() {
   );
 }
 
-function SunIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="5" />
-      <line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" />
-      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-      <line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" />
-      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-    </svg>
-  );
-}
-
-function MoonIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z" />
-    </svg>
-  );
-}
-
 // Fallback values used only if app_settings hasn't loaded yet or a row
 // is missing -- normal operation always uses the configurable values
 // fetched from the database (editable via Super Admin -> App Settings).
@@ -105,7 +90,6 @@ export default function EmployeeDashboard() {
   const [timeOutReminderHour, setTimeOutReminderHour] = useState(FALLBACK_TIME_OUT_REMINDER_HOUR);
   const [attendanceRecordingEnabled, setAttendanceRecordingEnabled] = useState(true);
   const [seasonalSettings, setSeasonalSettings] = useState<AppSettingsValues>({ ...DEFAULT_APP_SETTINGS });
-  const [dismissedSeasonalBanner, setDismissedSeasonalBanner] = useState<string | null>(null);
   const seasonalTheme = useMemo(() => resolveSeasonalTheme(seasonalSettings, 'employee'), [seasonalSettings]);
   const seasonalPresentation = SEASONAL_THEME_PRESENTATION[seasonalTheme.variant];
 
@@ -1619,6 +1603,9 @@ export default function EmployeeDashboard() {
     // also be hand-edited directly in Supabase (e.g. "late" instead of "Late").
     const presentLogs = cutoffLogs.filter(l => l.status?.toLowerCase() !== 'absent' && !isLeaveStatus(l.status));
     const lateLogs = cutoffLogs.filter(l => l.status?.toLowerCase() === 'late');
+    // Keep the original attendance issue visible even after Offset resolves it.
+    // This is the same display logic used by Attendance History filters.
+    const earlyOutLogs = cutoffLogs.filter(l => attendanceStatusDisplay(l).label.includes('EARLY OUT'));
     const absentLogs = cutoffLogs.filter(l => l.status?.toLowerCase() === 'absent');
     const leaveLogs = cutoffLogs.filter(l => isLeaveStatus(l.status));
     const onTime = presentLogs.length - lateLogs.length;
@@ -1627,17 +1614,18 @@ export default function EmployeeDashboard() {
       .reduce((sum, l) => sum + getMinutesLate(l.time_in), 0);
     // presentLogs/lateLogs/absentLogs carried along so the stat cards can
     // list the exact dates behind each number when tapped.
-    return { present: presentLogs.length, late: lateLogs.length, leave: leaveLogs.length, absent: absentLogs.length, onTime, totalLateMinutes, presentLogs, lateLogs, leaveLogs, absentLogs };
-  }, [history, summaryCutoffKey, lateCutoffHour, lateCutoffMinute]);
+    return { present: presentLogs.length, late: lateLogs.length, earlyOut: earlyOutLogs.length, leave: leaveLogs.length, absent: absentLogs.length, onTime, totalLateMinutes, presentLogs, lateLogs, earlyOutLogs, leaveLogs, absentLogs };
+  }, [history, summaryCutoffKey, lateCutoffHour, lateCutoffMinute, timeOutReminderHour]);
 
   // Which stat card's detail list is currently open (null = none).
-  const [summaryDetailType, setSummaryDetailType] = useState<'present' | 'late' | 'leave' | 'absent' | null>(null);
+  const [summaryDetailType, setSummaryDetailType] = useState<'present' | 'late' | 'early-out' | 'leave' | 'absent' | null>(null);
 
   const summaryDetailInfo = useMemo(() => {
     if (!summaryDetailType) return null;
-    const map: Record<'present' | 'late' | 'leave' | 'absent', { title: string; accent: string; logs: any[]; emptyNote: string }> = {
+    const map: Record<'present' | 'late' | 'early-out' | 'leave' | 'absent', { title: string; accent: string; logs: any[]; emptyNote: string }> = {
       present: { title: 'Present Days', accent: 'text-blue-600', logs: summary.presentLogs, emptyNote: "No present days on record for this period yet." },
       late: { title: 'Late Days', accent: 'text-orange-600', logs: summary.lateLogs, emptyNote: "No late days this period -- keep it up!" },
+      'early-out': { title: 'Early Out Days', accent: 'text-amber-600', logs: summary.earlyOutLogs, emptyNote: 'No early-out days recorded for this period.' },
       leave: { title: 'Days on Leave', accent: 'text-purple-600', logs: summary.leaveLogs, emptyNote: "No leave days recorded for this period." },
       absent: { title: 'Absent Days', accent: 'text-red-600', logs: summary.absentLogs, emptyNote: "No absences this period -- perfect attendance!" },
     };
@@ -1691,6 +1679,13 @@ export default function EmployeeDashboard() {
   const [attendanceCalendarOpen, setAttendanceCalendarOpen] = useState(false);
   const [attendanceCalendarMonth, setAttendanceCalendarMonth] = useState(() => currentCutoffKey.split(':')[0]);
   const [selectedAttendanceCalendarDate, setSelectedAttendanceCalendarDate] = useState<string | null>(null);
+
+  const changeDashboardCalendarMonth = (offset: number) => {
+    const [year, month] = attendanceCalendarMonth.split('-').map(Number);
+    const next = new Date(year, month - 1 + offset, 1);
+    setAttendanceCalendarMonth(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`);
+    setSelectedAttendanceCalendarDate(null);
+  };
 
   const attendanceCalendarDays = useMemo(() => {
     const [year, month] = attendanceCalendarMonth.split('-').map(Number);
@@ -1914,7 +1909,7 @@ export default function EmployeeDashboard() {
   }
 
   return (
-    <main id="employee-dashboard-top" className={`dashboard-shell employee-dashboard relative min-h-screen overflow-x-hidden p-3 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:p-4 sm:pb-[calc(6rem+env(safe-area-inset-bottom))] md:p-6 md:pb-[calc(6rem+env(safe-area-inset-bottom))] lg:p-8 ${seasonalTheme.active ? `seasonal-theme seasonal-${seasonalTheme.variant} seasonal-${seasonalTheme.intensity}` : ''}`}>
+    <main id="employee-dashboard-top" className={`${dashboardStyles.dashboard} dashboard-shell employee-dashboard relative min-h-screen overflow-x-hidden p-3 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:p-4 sm:pb-[calc(6rem+env(safe-area-inset-bottom))] md:p-6 md:pb-[calc(6rem+env(safe-area-inset-bottom))] lg:p-4 ${seasonalTheme.active ? `seasonal-theme seasonal-${seasonalTheme.variant} seasonal-${seasonalTheme.intensity}` : ''}`}>
       <style jsx global>{`
         /* DARK MODE — neutral dark gray, not pure black. */
         .dark { color-scheme: dark; }
@@ -1930,23 +1925,6 @@ export default function EmployeeDashboard() {
           box-shadow: 0 4px 18px rgba(15, 23, 42, .045);
         }
         .dark .employee-dashboard .card-style { border-color: #414944 !important; }
-        @media (min-width: 1024px) {
-          .employee-dashboard .seasonal-content {
-            display: grid;
-            grid-template-columns: 228px minmax(0, 1fr);
-            align-items: start;
-            column-gap: 1.25rem;
-            row-gap: 1rem;
-          }
-          .employee-dashboard .dashboard-primary-content,
-          .employee-dashboard .dashboard-main-content { grid-column: 2; }
-          .employee-dashboard .employee-main-layout { display: contents !important; }
-          .employee-dashboard .employee-main-layout > .dashboard-sidebar {
-            grid-column: 1;
-            grid-row: 1 / span 20;
-            align-self: stretch;
-          }
-        }
         .seasonal-theme {
           background-color: #eef8f1;
           background-image: radial-gradient(circle at 8% 2%, rgba(220,38,38,.16), transparent 22rem), radial-gradient(circle at 92% 8%, rgba(22,163,74,.2), transparent 25rem);
@@ -2101,60 +2079,31 @@ export default function EmployeeDashboard() {
         .commute-theme-scope.dark [class*="bg-blue-50/"] { background-color: rgba(30, 49, 80, .72) !important; }
         .commute-theme-scope.dark [class*="bg-orange-50/"] { background-color: rgba(64, 45, 30, .78) !important; }
         .commute-theme-scope.dark [class*="bg-amber-50/"] { background-color: rgba(66, 53, 30, .78) !important; }
-        @media (max-width: 1023px) {
-          .employee-quick-actions > button {
-            min-height: 5.5rem;
-            flex-direction: column;
-            justify-content: center;
-            gap: .375rem;
-            text-align: center;
-          }
-          .employee-quick-actions > button > div:first-child { width: 2.75rem; height: 2.75rem; }
-          .employee-quick-actions > button > div:last-child p:last-child { display: none; }
-        }
       `}</style>
       {seasonalTheme.active && seasonalTheme.snowEnabled ? <SeasonalDecor variant={seasonalTheme.variant} intensity={seasonalTheme.intensity} particle={seasonalPresentation.particle} /> : null}
-      <div className="seasonal-content mx-auto max-w-[1600px] space-y-3 md:space-y-4 lg:space-y-0">
+      <div className={`${frameStyles.frame} seasonal-content`}>
 
-        {/* Header */}
-        <header className="dashboard-primary-content flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_4px_18px_rgba(15,23,42,0.04)] dark:bg-[#292f2b] sm:p-4">
-          <div className="min-w-0">
-            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#16a34a] lg:hidden">Hamdan Engineering</p>
-            <h1 className="mt-0.5 truncate text-xl font-bold leading-tight sm:text-2xl">{profile?.full_name || 'Employee'}</h1>
-            <p className="mt-1 truncate text-xs font-semibold uppercase tracking-wide text-slate-500">{profile?.designation || 'Employee'}</p>
-          </div>
-          <div className="flex flex-none items-center gap-1.5 sm:gap-2">
-            <button
-              type="button"
-              onClick={toggleTheme}
-              className="grid h-11 w-11 place-items-center rounded-full border border-slate-200 text-slate-500 transition-colors duration-150 hover:bg-slate-50 lg:hidden"
-              aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-            >
-              {darkMode ? <SunIcon /> : <MoonIcon />}
-            </button>
-            <button type="button" onClick={() => setNotificationsModalOpen(true)} className="relative grid h-11 w-11 place-items-center rounded-full border border-slate-200 text-slate-600 transition hover:bg-slate-50" aria-label={`Notifications${unreadNotificationCount ? `, ${unreadNotificationCount} unread` : ''}`}>
-              <Bell size={19} strokeWidth={2} />
-              {unreadNotificationCount > 0 && <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white">{unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}</span>}
-            </button>
-            <button type="button" onClick={() => setMobileToolsOpen(true)} className="grid h-11 w-11 place-items-center overflow-hidden rounded-full border border-slate-200 bg-slate-50 text-slate-500 lg:hidden" aria-label="Open employee menu">
-              {profile?.avatar_url ? <Image src={profile.avatar_url} alt="" width={44} height={44} className="h-full w-full object-cover" /> : <UserRound size={19} />}
-            </button>
-            <button type="button" onClick={openProfileFromNav} className="hidden h-11 w-11 place-items-center overflow-hidden rounded-full border border-slate-200 bg-slate-50 text-slate-500 lg:grid" aria-label="Open employee profile">
-              {profile?.avatar_url ? <Image src={profile.avatar_url} alt="" width={44} height={44} className="h-full w-full object-cover" /> : <UserRound size={19} />}
-            </button>
-          </div>
-        </header>
+        <EmployeeDashboardHeader
+          employeeName={profile?.full_name || 'Employee'}
+          designation={profile?.designation || 'Employee'}
+          avatarUrl={profile?.avatar_url}
+          unreadCount={unreadNotificationCount}
+          darkMode={darkMode}
+          onNotifications={() => setNotificationsModalOpen(true)}
+          onProfile={openProfileFromNav}
+          onMobileMenu={() => setMobileToolsOpen(true)}
+          onToggleTheme={toggleTheme}
+        />
 
-        {seasonalTheme.active && seasonalTheme.bannerEnabled && dismissedSeasonalBanner !== seasonalTheme.variant ? <section className={`dashboard-primary-content relative overflow-hidden rounded-2xl border border-amber-300/50 bg-gradient-to-r px-4 py-3 text-white shadow-lg ${seasonalPresentation.bannerTone}`} aria-label="Seasonal greeting"><span className="absolute -right-3 -top-5 text-6xl text-white/10" aria-hidden="true">{seasonalPresentation.symbol}</span><div className="flex items-center gap-3"><span className="grid h-9 w-9 flex-none place-items-center rounded-xl bg-white/15 text-lg ring-1 ring-white/20" aria-hidden="true">{seasonalPresentation.symbol}</span><div className="min-w-0 flex-1"><p className="text-[9px] font-black uppercase tracking-[0.18em] text-amber-200">{seasonalPresentation.label}</p><p className="truncate text-sm font-bold">{seasonalPresentation.greeting}</p></div><button type="button" onClick={() => setDismissedSeasonalBanner(seasonalTheme.variant)} className="grid h-9 w-9 flex-none place-items-center rounded-full bg-white/10 text-lg text-white/80 transition hover:bg-white/20" aria-label="Dismiss seasonal greeting">×</button></div></section> : null}
+        {message && <div className={`dashboard-primary-content dashboard-feedback p-3 rounded-xl text-xs font-bold ${message.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{message}</div>}
 
-        {message && <div className={`dashboard-primary-content p-3 rounded-xl text-xs font-bold ${message.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{message}</div>}
-
-        <div className="dashboard-primary-content"><EmployeeAskAI key={currentUserId || 'signed-out'} /></div>
+        <div className="dashboard-primary-content employee-ai-launcher"><EmployeeAskAI key={currentUserId || 'signed-out'} /></div>
 
         {/* Current-cutoff attendance overview stays on one row, including mobile. */}
-        <div aria-label={`Attendance overview for ${formatMonthLabel(summaryCutoffKey)}`} className="dashboard-primary-content grid grid-cols-3 gap-2 sm:gap-3">
-          <EmployeeSummaryCard label="Present" value={summary.present} icon={CheckCircle2} tone="green" onClick={() => setSummaryDetailType('present')} />
+        <div aria-label={`Attendance overview for ${formatMonthLabel(summaryCutoffKey)}`} className="dashboard-primary-content dashboard-overview">
+          <EmployeeSummaryCard label="Present" value={summary.present} icon={CheckCircle2} tone="green" detail="Working days this cutoff" onClick={() => setSummaryDetailType('present')} />
           <EmployeeSummaryCard label="Late" value={summary.late} icon={Clock3} tone="orange" detail={`${formatLateDuration(summary.totalLateMinutes)} total`} onClick={() => setSummaryDetailType('late')} />
+          <EmployeeSummaryCard label="Early Out" value={summary.earlyOut} icon={LogOut} tone="yellow" detail="This cutoff" onClick={() => setSummaryDetailType('early-out')} />
           <EmployeeSummaryCard label="Absent" value={summary.absent} icon={CircleX} tone="red" detail="This cutoff" onClick={() => setSummaryDetailType('absent')} />
         </div>
 
@@ -2247,23 +2196,23 @@ export default function EmployeeDashboard() {
           </div>
 
           {/* Main Content */}
-          <div className="dashboard-main-content space-y-4 lg:col-span-4 md:space-y-5">
+          <div className="dashboard-main-content">
 
             {/* Clock + Time buttons */}
-            {!attendanceRecordingEnabled ? <div role="status" className="rounded-2xl border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:!text-white">Attendance recording is temporarily unavailable.</div> : null}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <EmployeeWorkClock todayLog={todayLog} endHour={timeOutReminderHour} />
-              <div className="card-style flex flex-col justify-center gap-2 !p-3 sm:min-h-40 sm:!p-4">
+            {!attendanceRecordingEnabled ? <div role="status" className="dashboard-attendance-alert rounded-2xl border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:!text-white">Attendance recording is temporarily unavailable.</div> : null}
+            <div className="dashboard-clock-actions">
+              <EmployeeWorkClock todayLog={todayLog} endHour={timeOutReminderHour} compact />
+              <div className="dashboard-attendance-action card-style flex flex-col justify-center gap-3">
                 {!todayLog ? (
-                  <button onClick={handleTimeIn} disabled={!attendanceRecordingEnabled || loading || initLoading || checkingNetwork || officeNetworkAllowed === false} className="btn-primary !py-3">
+                  <button onClick={handleTimeIn} disabled={!attendanceRecordingEnabled || loading || initLoading || checkingNetwork || officeNetworkAllowed === false} className="btn-primary dashboard-time-button">
                     {loading ? <span className="flex items-center justify-center gap-2"><Spinner size="sm"/>Processing...</span> : checkingNetwork ? <span className="flex items-center justify-center gap-2"><Spinner size="sm"/>Checking...</span> : officeNetworkAllowed === false ? (officeNetworkIssue === 'unavailable' ? 'Attendance Unavailable' : 'Not on Office Network') : 'Time In'}
                   </button>
                 ) : !todayLog.time_out ? (
-                  <button onClick={handleTimeOutClick} disabled={!attendanceRecordingEnabled || timeOutLoading || checkingNetwork || officeNetworkAllowed === false} className="btn-danger !py-3">
+                  <button onClick={handleTimeOutClick} disabled={!attendanceRecordingEnabled || timeOutLoading || checkingNetwork || officeNetworkAllowed === false} className="btn-danger dashboard-time-button">
                     {timeOutLoading ? <span className="flex items-center justify-center gap-2"><Spinner size="sm"/>Processing...</span> : checkingNetwork ? <span className="flex items-center justify-center gap-2"><Spinner size="sm"/>Checking...</span> : officeNetworkAllowed === false ? (officeNetworkIssue === 'unavailable' ? 'Attendance Unavailable' : 'Not on Office Network') : 'Time Out'}
                   </button>
                 ) : (
-                  <button disabled className="btn-primary !py-3 opacity-50 cursor-not-allowed">Completed for Today</button>
+                  <button disabled className="btn-primary dashboard-time-button opacity-50 cursor-not-allowed">Completed for Today</button>
                 )}
                 <div className="flex min-h-6 flex-col justify-center">
                 {todayLog?.time_in && (
@@ -2273,7 +2222,7 @@ export default function EmployeeDashboard() {
                   </p>
                 )}
                 {!checkingNetwork && officeNetworkAllowed === false && !(todayLog?.time_out) && (
-                  <div className={`flex items-start justify-between gap-3 rounded-xl border p-3 ${officeNetworkIssue === 'unavailable' ? 'bg-red-50 border-red-100' : 'bg-orange-50 border-orange-100'}`}>
+                  <div className={`attendance-network-notice flex items-start justify-between gap-3 rounded-xl border p-3 ${officeNetworkIssue === 'unavailable' ? 'bg-red-50 border-red-100' : 'bg-orange-50 border-orange-100'}`}>
                     <div className="min-w-0">
                       <p className={`text-xs font-bold ${officeNetworkIssue === 'unavailable' ? 'text-red-700' : 'text-orange-700'}`}>
                         {officeNetworkIssue === 'unavailable' ? 'Attendance recording is temporarily unavailable.' : 'You are not connected to an authorized office network.'}
@@ -2291,47 +2240,18 @@ export default function EmployeeDashboard() {
               </div>
             </div>
 
-            {/* Announcements */}
-            {/* min-h approximates the resolved card's typical height (icon row
-                + 2-3 lines of text) so swapping from skeleton to real content
-                doesn't shove everything below it down -- this was a measurable
-                contributor to this page's Cumulative Layout Shift score. */}
-            {announcementLoading ? (
-              <div className="card-style !p-3 min-h-[100px] flex items-center"><LoadingRow label="Loading announcement..." /></div>
-            ) : announcementError ? (
-              <div className="card-style flex min-h-[100px] items-center !p-3 border border-red-100"><p className="text-red-500 text-sm">{announcementError}</p></div>
-            ) : announcement ? (
-              <div className="card-dark min-h-[100px] !p-3">
-                <div className="flex items-start gap-3">
-                  <div className="flex-shrink-0 w-8 h-8 rounded-xl bg-green-500 flex items-center justify-center text-sm">📣</div>
-                  <div className="flex-1 min-w-0">
-                    <span className="mb-2 inline-block rounded-full bg-green-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-950">Announcement</span>
-                    <p className="text-white text-sm font-medium whitespace-pre-wrap leading-relaxed">{announcement}</p>
-                    {announcementImageUrl && (
-                      // Fixed aspect-ratio wrapper reserves the image's box before
-                      // it loads, so the rest of the page doesn't jump once the
-                      // browser learns the real dimensions (a CLS contributor).
-                      <div className="mt-3 w-full aspect-video max-h-[420px] rounded-2xl bg-black/10 border border-white/10 overflow-hidden">
-                        {/* eslint-disable-next-line @next/next/no-img-element -- external Supabase Storage URL, not a static asset */}
-                        <img
-                          src={announcementImageUrl}
-                          alt="Announcement attachment"
-                          className="w-full h-full object-contain"
-                        />
-                      </div>
-                    )}
-                    {announcementUpdatedAt && <p className="text-green-100/70 text-[10px] font-medium uppercase tracking-widest mt-2">Updated: {announcementUpdatedAt}</p>}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="card-style flex min-h-[100px] items-center justify-center !p-3 border-2 border-dashed border-slate-200 text-center">
-                <p className="text-slate-400 text-xs">No announcements right now.</p>
-              </div>
-            )}
+            <EmployeeDashboardAnnouncement
+              key={currentUserId || 'signed-out'}
+              viewerId={currentUserId}
+              loading={announcementLoading}
+              error={announcementError}
+              content={announcement}
+              imageUrl={announcementImageUrl}
+              updatedAt={announcementUpdatedAt}
+            />
 
             {/* Quick Actions */}
-            <EmployeeQuickActions
+            <div className="dashboard-quick-actions"><EmployeeQuickActions
               onAttendanceHistory={openAttendanceFromNav}
               onLeave={() => setLeaveChoiceModalOpen(true)}
               onDisputes={() => { setSelectedMyDisputeDetail(null); setMyDisputesModalOpen(true); fetchMyDisputes(); }}
@@ -2343,6 +2263,20 @@ export default function EmployeeDashboard() {
               designation={profile?.designation}
               ready={!initLoading}
               hasTimeInToday={Boolean(todayLog?.time_in)}
+              referenceLayout
+            /></div>
+
+            <EmployeeDashboardInsights
+              summary={summary}
+              lateDuration={formatLateDuration(summary.totalLateMinutes)}
+              monthLabel={formatMonthOnly(attendanceCalendarMonth)}
+              today={todayManila}
+              days={attendanceCalendarDays.map((day) => day ? { date: day.date, day: day.day, holiday: day.holiday, status: day.log ? attendanceStatusDisplay(day.log).label : '' } : null)}
+              onSummary={setSummaryDetailType}
+              onAttendance={openAttendanceFromNav}
+              onChangeMonth={changeDashboardCalendarMonth}
+              onOpenCalendar={() => { setSelectedAttendanceCalendarDate(null); setAttendanceCalendarOpen(true); }}
+              onSelectDate={(date) => { setSelectedAttendanceCalendarDate(date); setAttendanceCalendarOpen(true); }}
             />
 
             {/* Full attendance records now live on the dedicated Attendance page. */}
@@ -2559,7 +2493,7 @@ export default function EmployeeDashboard() {
       {notificationsModalOpen && <NotificationsModal open={notificationsModalOpen} onClose={() => setNotificationsModalOpen(false)} notifications={employeeNotifications} unreadCount={unreadNotificationCount} readIds={readNotificationIds} onMarkAllRead={markAllNotificationsRead} onOpenNotification={openNotificationTarget} />}
 
       {/* Attendance Calendar Modal */}
-      {attendanceCalendarOpen && <AttendanceCalendarModal open={attendanceCalendarOpen} onClose={() => setAttendanceCalendarOpen(false)} month={attendanceCalendarMonth} onMonthChange={(value) => { setAttendanceCalendarMonth(value); setSelectedAttendanceCalendarDate(null); }} availableMonths={availableMonths} formatMonth={formatMonthOnly} days={attendanceCalendarDays} selectedDate={selectedAttendanceCalendarDate} onSelectDate={setSelectedAttendanceCalendarDate} selectedDay={selectedAttendanceCalendarDay} />}
+      {attendanceCalendarOpen && <AttendanceCalendarModal open={attendanceCalendarOpen} onClose={() => setAttendanceCalendarOpen(false)} month={attendanceCalendarMonth} onMonthChange={(value) => { setAttendanceCalendarMonth(value); setSelectedAttendanceCalendarDate(null); }} availableMonths={Array.from(new Set([attendanceCalendarMonth, ...availableMonths])).sort().reverse()} formatMonth={formatMonthOnly} days={attendanceCalendarDays} selectedDate={selectedAttendanceCalendarDate} onSelectDate={setSelectedAttendanceCalendarDate} selectedDay={selectedAttendanceCalendarDay} />}
 
       {/* Help Desk / HR Request Modal */}
       {supportModalOpen && <HelpDeskModal open={supportModalOpen} onClose={() => setSupportModalOpen(false)} saving={supportSaving} loading={supportLoading} message={supportMessage} form={supportForm} setForm={setSupportForm} requests={supportRequests} onSubmit={submitSupportRequest} onCancel={cancelSupportRequest} />}

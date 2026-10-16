@@ -25,26 +25,31 @@ const surfaces = {
   red: 'border-rose-200 bg-rose-50/80 dark:border-rose-900/60 dark:bg-rose-950/30',
 };
 
+const detailColors = {
+  green: 'text-emerald-700 dark:text-emerald-300',
+  orange: 'text-orange-700 dark:text-orange-300',
+  yellow: 'text-amber-700 dark:text-amber-300',
+  purple: 'text-violet-700 dark:text-violet-300',
+  red: 'text-rose-700 dark:text-rose-300',
+};
+
 export default function EmployeeSummaryCard({ label, value, icon: Icon, tone, onClick, detail }: Props) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`group relative min-h-[104px] min-w-0 overflow-hidden rounded-2xl border p-2.5 text-left shadow-[0_8px_24px_rgba(15,23,42,0.06)] transition duration-200 hover:-translate-y-0.5 hover:shadow-lg sm:min-h-[112px] sm:p-4 ${surfaces[tone]}`}
+      className={`dashboard-stat group relative min-w-0 overflow-hidden rounded-2xl border text-left shadow-[0_8px_24px_rgba(15,23,42,0.04)] transition duration-200 hover:-translate-y-0.5 hover:shadow-lg ${surfaces[tone]}`}
       aria-label={`View ${label.toLowerCase()} details`}
     >
-      <div className="flex items-center justify-between gap-2 sm:gap-3">
-        <span className={`relative grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-gradient-to-br text-white shadow-lg sm:h-9 sm:w-9 ${tones[tone]}`}>
-          <span className="absolute inset-[3px] rounded-[13px] border border-white/25" aria-hidden="true" />
-          <Icon aria-hidden="true" size={17} strokeWidth={2.2} />
-        </span>
-        <span className="stat-number text-lg text-slate-900 dark:text-white sm:text-2xl">{value}</span>
+      <span className={`dashboard-stat-icon relative bg-gradient-to-br text-white shadow-sm ${tones[tone]}`}>
+        <Icon aria-hidden="true" size={28} strokeWidth={1.8} />
+      </span>
+      <div className="dashboard-stat-copy">
+        <p className="dashboard-stat-label">{label}</p>
+        <span className="dashboard-stat-value text-slate-900 dark:text-white">{value}</span>
+        {detail ? <p className={`dashboard-stat-detail ${detailColors[tone]}`}>{detail}</p> : null}
       </div>
-      <div className="mt-2 min-w-0">
-        <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">{label}</p>
-        {detail ? <p className={`mt-0.5 truncate text-[9px] font-bold sm:text-[10px] ${tone === 'red' ? 'text-red-600 dark:text-red-300' : 'text-orange-600 dark:text-orange-300'}`}>{detail}</p> : null}
-      </div>
-      <span className={`absolute inset-x-4 bottom-0 h-0.5 rounded-t-full bg-gradient-to-r ${tones[tone].split(' shadow-')[0]}`} aria-hidden="true" />
+      <span className={`dashboard-stat-rail absolute inset-x-4 bottom-0 h-0.5 rounded-t-full bg-gradient-to-r ${tones[tone].split(' shadow-')[0]}`} aria-hidden="true" />
     </button>
   );
 }

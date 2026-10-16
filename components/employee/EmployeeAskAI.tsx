@@ -95,7 +95,7 @@ export default function EmployeeAskAI() {
     }
   };
   if (!mounted) return null;
-  return createPortal(<div className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] right-4 z-[48] font-sans lg:bottom-6 lg:right-6">
+  return createPortal(<div className="employee-ai-dock fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] right-4 z-[48] font-sans lg:bottom-6 lg:right-6">
     {open && <section id={panelId} role="dialog" aria-labelledby={titleId} onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); close(); } }} className="absolute bottom-[72px] right-0 flex h-[min(620px,calc(100dvh-12rem))] w-[min(410px,calc(100vw-2rem))] flex-col overflow-hidden rounded-[26px] border border-slate-200 bg-white text-slate-900 shadow-[0_24px_90px_-18px_rgba(0,0,0,0.35)] dark:border-[#39443e] dark:bg-[#18241f] dark:text-[#f1f5f3] lg:h-[min(660px,calc(100dvh-8rem))]">
       <header className="flex shrink-0 items-center gap-3 border-b border-slate-100 px-5 py-4 dark:border-white/10">
         <span className="relative grid size-10 place-items-center rounded-2xl bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300"><Sparkles size={21} /><span className="absolute -bottom-0.5 -right-0.5 grid size-4 place-items-center rounded-full border-2 border-white bg-emerald-600 text-white dark:border-[#18241f]"><Check size={8} strokeWidth={3} /></span></span>
@@ -149,9 +149,9 @@ export default function EmployeeAskAI() {
         </form>
       </div>}
     </section>}
-    <button ref={launcher} type="button" onClick={() => open ? close() : setOpen(true)} aria-label={open ? 'Close Ask AI' : 'Open Ask AI'} aria-expanded={open} aria-controls={open ? panelId : undefined} className="group relative ml-auto flex size-16 items-center justify-center rounded-[22px] border border-emerald-300/30 bg-gradient-to-br from-emerald-500 via-emerald-700 to-teal-900 text-white shadow-[0_10px_32px_-6px_rgba(4,120,87,0.5),inset_0_1px_0_rgba(255,255,255,0.25)] transition duration-200 hover:-translate-y-1 hover:shadow-[0_14px_36px_-6px_rgba(4,120,87,0.6)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-600 motion-reduce:transform-none">
+    <button ref={launcher} type="button" onClick={() => open ? close() : setOpen(true)} aria-label={open ? 'Close Ask AI' : 'Open Ask AI'} aria-expanded={open} aria-controls={open ? panelId : undefined} className="employee-ai-dock-button group relative ml-auto flex size-16 items-center justify-center rounded-[22px] border border-emerald-300/30 bg-gradient-to-br from-emerald-500 via-emerald-700 to-teal-900 text-white shadow-[0_10px_32px_-6px_rgba(4,120,87,0.5),inset_0_1px_0_rgba(255,255,255,0.25)] transition duration-200 hover:-translate-y-1 hover:shadow-[0_14px_36px_-6px_rgba(4,120,87,0.6)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-600 motion-reduce:transform-none">
       {open ? <X size={25} /> : <>
-        <svg aria-hidden="true" viewBox="0 0 48 48" className="size-11 drop-shadow-sm" fill="none">
+        <svg aria-hidden="true" viewBox="0 0 48 48" className="employee-ai-dock-icon size-11 drop-shadow-sm" fill="none">
           <path d="M24 12V8" stroke="#D1FAE5" strokeWidth="2.5" strokeLinecap="round" />
           <circle cx="24" cy="6" r="3" fill="#A7F3D0" />
           <rect x="5" y="23" width="5" height="10" rx="2.5" fill="#D1FAE5" />

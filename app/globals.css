@@ -169,37 +169,37 @@
 
   /* Status tags */
   .tag-present {
-    @apply px-3 py-1.5 rounded-full font-bold text-[10px] uppercase tracking-wider;
+    @apply inline-flex whitespace-nowrap px-3 py-1.5 rounded-full font-bold text-[10px] uppercase tracking-wider;
     background: var(--color-green-50);
     color: var(--color-green-700);
   }
 
   .tag-late {
-    @apply px-3 py-1.5 rounded-full font-bold text-[10px] uppercase tracking-wider;
+    @apply inline-flex whitespace-nowrap px-3 py-1.5 rounded-full font-bold text-[10px] uppercase tracking-wider;
     background: var(--color-orange-50);
     color: var(--color-orange-700);
   }
 
   .tag-excused {
-    @apply px-3 py-1.5 rounded-full font-bold text-[10px] uppercase tracking-wider;
+    @apply inline-flex whitespace-nowrap px-3 py-1.5 rounded-full font-bold text-[10px] uppercase tracking-wider;
     background: var(--color-sky-50);
     color: var(--color-sky-700);
   }
 
   .tag-absent {
-    @apply px-3 py-1.5 rounded-full font-bold text-[10px] uppercase tracking-wider;
+    @apply inline-flex whitespace-nowrap px-3 py-1.5 rounded-full font-bold text-[10px] uppercase tracking-wider;
     background: var(--color-red-50);
     color: var(--color-red-700);
   }
 
   .tag-leave {
-    @apply px-3 py-1.5 rounded-full font-bold text-[10px] uppercase tracking-wider;
+    @apply inline-flex whitespace-nowrap px-3 py-1.5 rounded-full font-bold text-[10px] uppercase tracking-wider;
     background: var(--color-purple-50);
     color: var(--color-purple-700);
   }
 
   .tag-offset {
-    @apply px-3 py-1.5 rounded-full font-bold text-[10px] uppercase tracking-wider;
+    @apply inline-flex whitespace-nowrap px-3 py-1.5 rounded-full font-bold text-[10px] uppercase tracking-wider;
     background: #ffedd5;
     color: #c2410c;
   }
@@ -213,7 +213,7 @@
   .tag-offset-early,
   .tag-offset-combined,
   .tag-late-early {
-    @apply inline-flex whitespace-nowrap rounded-full px-2 py-1 text-[10px] font-bold uppercase;
+    @apply inline-flex whitespace-nowrap rounded-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider;
   }
 
   .tag-early-out,

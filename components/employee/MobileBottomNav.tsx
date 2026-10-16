@@ -18,6 +18,7 @@ type MobileTab =
 
 type MobileBottomNavProps = {
   actionCount?: number;
+  activeTab?: MobileTab;
   onHome: () => void;
   onAttendance: () => void;
   onLeave: () => void;
@@ -27,19 +28,21 @@ type MobileBottomNavProps = {
 
 export default function MobileBottomNav({
   actionCount = 0,
+  activeTab,
   onHome,
   onAttendance,
   onLeave,
   onActionCenter,
   onProfile,
 }: MobileBottomNavProps) {
-  const [activeTab, setActiveTab] = useState<MobileTab>('home');
+  const [selectedTab, setSelectedTab] = useState<MobileTab>('home');
+  const currentTab = activeTab ?? selectedTab;
 
   const handleClick = (
     tab: MobileTab,
     action: () => void
   ) => {
-    setActiveTab(tab);
+    setSelectedTab(tab);
     action();
   };
 
@@ -105,7 +108,7 @@ export default function MobileBottomNav({
       >
         {navItems.map((item) => {
           const Icon = item.icon;
-          const isActive = activeTab === item.key;
+          const isActive = currentTab === item.key;
           const badge = item.badge ?? 0;
 
           return (

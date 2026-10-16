@@ -7,6 +7,7 @@ import { Clock3 } from 'lucide-react';
 
 type TodayLog = {
   id?: string | number;
+  time_in?: string | null;
   time_out: string | null;
   status: string | null;
   late_offset_minutes?: number | null;
@@ -30,7 +31,7 @@ function getManilaClock() {
   };
 }
 
-function EmployeeWorkClock({ todayLog, endHour }: { todayLog: TodayLog; endHour: number }) {
+function EmployeeWorkClock({ todayLog, endHour, compact = false }: { todayLog: TodayLog; endHour: number; compact?: boolean }) {
   const [clock, setClock] = useState(() => ({ time: '--:--:--', date: '', dateKey: '' }));
   const [earlyOutOffset, setEarlyOutOffset] = useState<{ status: string; requiredMinutes: number } | null>(null);
 
@@ -115,23 +116,29 @@ function EmployeeWorkClock({ todayLog, endHour }: { todayLog: TodayLog; endHour:
         };
 
   return (
-    <div className={`relative flex min-h-40 overflow-hidden rounded-3xl border bg-white shadow-[0_12px_30px_rgba(15,23,42,0.08)] dark:bg-[#292f2b] ${workClockTone.border}`}>
-      <div className={`relative flex w-[34%] min-w-28 flex-col items-center justify-center overflow-hidden bg-gradient-to-br px-3 py-5 text-center text-white transition-colors duration-300 ${workClockTone.panel}`}>
+    <div className={`employee-work-clock relative flex overflow-hidden border bg-white shadow-[0_12px_30px_rgba(15,23,42,0.08)] dark:bg-[#292f2b] ${compact ? 'min-h-40 rounded-3xl lg:min-h-28 lg:rounded-2xl' : 'min-h-40 rounded-3xl'} ${workClockTone.border}`}>
+      <div className={`work-clock-brand relative flex w-[34%] min-w-28 flex-col items-center justify-center overflow-hidden bg-gradient-to-br px-3 py-5 text-center text-white transition-colors duration-300 ${compact ? 'lg:py-3' : ''} ${workClockTone.panel}`}>
         <span className="absolute -left-7 -top-8 h-20 w-20 rounded-full border-[14px] border-white/10" aria-hidden="true" />
-        <span className="grid h-11 w-11 place-items-center rounded-2xl bg-white/15 shadow-inner ring-1 ring-white/25">
+        <span className={`grid place-items-center rounded-2xl bg-white/15 shadow-inner ring-1 ring-white/25 ${compact ? 'h-11 w-11 lg:h-8 lg:w-8 lg:rounded-xl' : 'h-11 w-11'}`}>
           <Clock3 aria-hidden="true" size={21} strokeWidth={2.2} />
         </span>
-        <p className="mt-3 text-[9px] font-black uppercase tracking-[0.18em] text-white/75">Work clock</p>
-        <span className={`mt-2 rounded-full px-2.5 py-1 text-[8px] font-extrabold uppercase tracking-wide shadow-sm ${todayWorkStatus.className}`}>
+        <p className={`mt-3 text-[9px] font-black uppercase tracking-[0.18em] text-white/75 ${compact ? 'lg:mt-1.5 lg:text-[8px]' : ''}`}>Work clock</p>
+        <span className={`mt-2 rounded-full px-2.5 py-1 text-[8px] font-extrabold uppercase tracking-wide shadow-sm ${compact ? 'lg:mt-1 lg:px-2 lg:py-0.5' : ''} ${todayWorkStatus.className}`}>
           {todayWorkStatus.label}
         </span>
       </div>
-      <div className="relative flex min-w-0 flex-1 flex-col justify-center px-4 py-5 text-left sm:px-5">
+      <div className={`work-clock-content relative flex min-w-0 flex-1 flex-col justify-center px-4 py-5 text-left sm:px-5 ${compact ? 'lg:px-4 lg:py-3' : ''}`}>
         <span className={`absolute right-0 top-0 h-full w-1 bg-gradient-to-b transition-colors duration-300 ${workClockTone.rail}`} aria-hidden="true" />
+        <div className="work-clock-time-in hidden">
+          <p>Time In</p>
+          <strong>{todayLog?.time_in ? new Date(todayLog.time_in).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}</strong>
+        </div>
+        <div className="work-clock-current">
         <p className="text-[9px] font-extrabold uppercase tracking-[0.18em] text-slate-400">Philippine time</p>
-        <p className="mt-1 font-mono text-[clamp(2rem,8vw,3rem)] font-black leading-none tabular-nums tracking-[-0.08em] text-slate-950 dark:text-white">{clock.time}</p>
-        <div className="mt-3 border-t border-dashed border-slate-200 pt-2 dark:border-slate-700">
+        <p className={`mt-1 font-mono font-black leading-none tabular-nums tracking-[-0.08em] text-slate-950 dark:text-white ${compact ? 'text-[clamp(2rem,8vw,3rem)] lg:text-3xl' : 'text-[clamp(2rem,8vw,3rem)]'}`}>{clock.time}</p>
+        <div className={`mt-3 border-t border-dashed border-slate-200 pt-2 dark:border-slate-700 ${compact ? 'lg:mt-1.5 lg:pt-1.5' : ''}`}>
           <p className="truncate text-[9px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-300">{clock.date}</p>
+        </div>
         </div>
       </div>
     </div>

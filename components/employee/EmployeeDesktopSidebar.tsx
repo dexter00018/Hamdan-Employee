@@ -1,4 +1,6 @@
 import Image from 'next/image';
+import EmployeeThemeToggle from './EmployeeThemeToggle';
+import frameStyles from './employee-portal-frame.module.css';
 import {
   BellRing,
   CalendarClock,
@@ -9,9 +11,7 @@ import {
   Headphones,
   LayoutDashboard,
   LogOut,
-  Moon,
   Plane,
-  Sun,
   UserRound,
 } from 'lucide-react';
 
@@ -51,7 +51,7 @@ export default function EmployeeDesktopSidebar(props: Props) {
   ];
 
   return (
-    <aside className="dashboard-sidebar employee-desktop-sidebar hidden flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_30px_rgba(15,23,42,0.06)] dark:border-[#465049] dark:bg-[#292f2b] lg:flex">
+    <aside className={`${frameStyles.sidebar} dashboard-sidebar employee-desktop-sidebar hidden flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_30px_rgba(15,23,42,0.06)] dark:border-[#465049] dark:bg-[#292f2b] lg:flex`}>
       <div className="shrink-0 border-b border-slate-100 px-2 pb-3 dark:border-[#465049]">
         <p className="text-base font-extrabold tracking-tight text-slate-900 dark:text-white">HAMDAN</p>
         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#16a34a]">Engineering</p>
@@ -70,10 +70,7 @@ export default function EmployeeDesktopSidebar(props: Props) {
         })}
       </nav>
 
-      <button type="button" onClick={props.onToggleTheme} className="mt-2 flex min-h-10 shrink-0 items-center gap-3 rounded-xl border border-slate-200 px-3 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-[#465049] dark:text-slate-200 dark:hover:bg-[#343b36]" aria-label={props.darkMode ? 'Switch to light mode' : 'Switch to dark mode'}>
-        {props.darkMode ? <Sun size={17} /> : <Moon size={17} />}
-        {props.darkMode ? 'Light Mode' : 'Dark Mode'}
-      </button>
+      <EmployeeThemeToggle darkMode={props.darkMode} onToggle={props.onToggleTheme} className="mt-2" />
 
       <button type="button" onClick={props.onProfile} className="mt-2 flex min-h-12 shrink-0 items-center gap-3 rounded-xl bg-slate-50 p-2 text-left dark:bg-[#343b36]">
         <span className="grid h-9 w-9 flex-none place-items-center overflow-hidden rounded-full bg-white text-slate-500 dark:bg-[#292f2b]">
