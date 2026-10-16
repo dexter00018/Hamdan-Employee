@@ -96,8 +96,8 @@ export default function HRDashboard() {
   const [loadingData, setLoadingData] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Filter States — defaults to "today" (Philippine time) so HR sees
-  // today's attendance by default instead of the entire history.
+  // Start every dashboard visit on today (Philippine time). Keep manual
+  // filters in page state only so an old browser selection cannot override it.
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDate, setSelectedDate] = useState(() =>
     new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())
@@ -657,7 +657,6 @@ export default function HRDashboard() {
   const [activeAttendanceSlice, setActiveAttendanceSlice] = useState<number | undefined>(undefined);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
-  const [filtersHydrated, setFiltersHydrated] = useState(false);
 
   // Employee Help Desk management
   const [hrSupportModalOpen, setHrSupportModalOpen] = useState(false);
@@ -771,27 +770,6 @@ export default function HRDashboard() {
     const { error } = await supabase.from('employee_documents').delete().eq('id', document.id);
     if (error) alert('Failed to delete document record: ' + error.message); else await fetchHrDocuments();
   };
-
-  useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem('hamdan-hr-attendance-filters');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (typeof parsed.searchTerm === 'string') setSearchTerm(parsed.searchTerm);
-        if (typeof parsed.selectedDate === 'string') setSelectedDate(parsed.selectedDate);
-        if (typeof parsed.cutoffFilter === 'string') setCutoffFilter(parsed.cutoffFilter);
-      }
-    } catch (error) {
-      console.warn('Could not restore attendance filters:', error);
-    } finally {
-      setFiltersHydrated(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!filtersHydrated) return;
-    window.localStorage.setItem('hamdan-hr-attendance-filters', JSON.stringify({ searchTerm, selectedDate, cutoffFilter }));
-  }, [filtersHydrated, searchTerm, selectedDate, cutoffFilter]);
 
   useEffect(() => {
     const moduleModalOpen = announcementOpen || holidaysOpen || employeesListOpen || leaveCalendarOpen || hrSupportModalOpen || hrDocumentsModalOpen || !!quickViewProfile || !!dailyOverviewModal || !!attendanceInsightModal;
