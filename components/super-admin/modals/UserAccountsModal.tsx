@@ -3,7 +3,7 @@
 import type { Dispatch, SetStateAction } from 'react';
 import ModalShell from '@/components/shared/ModalShell';
 
-type Employee = { id: string; full_name: string | null; employee_id?: string | null; role: string; is_active?: boolean | null };
+type Employee = { id: string; full_name: string | null; employee_id?: string | null; role: string; is_active?: boolean | null; resigned_date?: string | null };
 type Props = { open: boolean; onClose: () => void; pageSize: number; employees: Employee[]; employeesLoading: boolean; employeesPage: number; employeesTotalPages: number; initials: (name: string | null) => string; paginatedEmployees: Employee[]; roleTagClass: (role: string) => string; setEmployeesPage: Dispatch<SetStateAction<number>>; startEdit: (employee: Employee) => void; totalAccounts: number };
 
 export default function UserAccountsModal({ open, onClose, pageSize, employees, employeesLoading, employeesPage, employeesTotalPages, initials, paginatedEmployees, roleTagClass, setEmployeesPage, startEdit, totalAccounts }: Props) {
@@ -35,7 +35,7 @@ export default function UserAccountsModal({ open, onClose, pageSize, employees, 
                     <p className="truncate text-sm font-bold text-slate-950 dark:text-white">{emp.full_name || 'Unnamed account'}</p>
                     <p className="mt-0.5 truncate font-mono text-[10px] font-semibold text-slate-500 dark:text-slate-300">{emp.employee_id || 'No employee ID'}</p>
                   </div>
-                  <span className="flex min-w-0 flex-col items-center gap-1"><span className={`${roleTagClass(emp.role)} max-w-full truncate`}>{emp.role}</span>{emp.is_active === false ? <span className="tag-absent">Inactive</span> : null}</span>
+                  <span className="flex min-w-0 flex-col items-center gap-1"><span className={`${roleTagClass(emp.role)} max-w-full truncate`}>{emp.role}</span>{emp.resigned_date ? <span className="tag-absent">Resigned</span> : emp.is_active === false ? <span className="tag-absent">Inactive</span> : null}</span>
                   <span className="text-right text-[11px] font-bold text-emerald-700 dark:text-emerald-300">Edit</span>
                 </button>
               ))}

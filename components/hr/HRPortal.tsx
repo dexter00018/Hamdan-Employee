@@ -68,6 +68,7 @@ type Profile = {
   designation: string | null;
   avatar_url: string | null;
   employee_email: string | null;
+  resigned_date?: string | null;
 };
 
 type AttendanceChartSelection = { start: string; end: string; label: string };
@@ -481,7 +482,7 @@ export default function HRPortal({ view = 'dashboard', initialEmployeeId = '' }:
       .from('attendance_logs')
       .select('id, user_id, log_date, time_in, time_out, status, late_offset_minutes, early_out_offset_minutes, profiles!inner(full_name, employee_id, role, is_active), early_out_offset_requests(status, required_minutes)')
       .eq('profiles.role', 'employee')
-      .eq('profiles.is_active', true)
+      .or('is_active.eq.true,resigned_date.not.is.null', { referencedTable: 'profiles' })
       .gte('log_date', range.start)
       .lte('log_date', range.end)
       .order('log_date', { ascending: true })
@@ -834,14 +835,14 @@ export default function HRPortal({ view = 'dashboard', initialEmployeeId = '' }:
         .from('attendance_logs')
         .select('*, profiles!inner(full_name, is_active), early_out_offset_requests(status, required_minutes)')
         .eq('profiles.role', 'employee')
-        .eq('profiles.is_active', true)
+        .or('is_active.eq.true,resigned_date.not.is.null', { referencedTable: 'profiles' })
         .order('log_date', { ascending: false })
         .order('time_in', { ascending: false, nullsFirst: false }),
       supabase
         .from('profiles')
-        .select('id, full_name, employee_id, designation, avatar_url, employee_email')
+        .select('id, full_name, employee_id, designation, avatar_url, employee_email, resigned_date')
         .eq('role', 'employee')
-        .eq('is_active', true)
+        .or('is_active.eq.true,resigned_date.not.is.null')
         .order('full_name'),
     ]);
 
@@ -2082,7 +2083,7 @@ export default function HRPortal({ view = 'dashboard', initialEmployeeId = '' }:
                     className="flex w-full items-center gap-3 border-b border-slate-100 p-3 text-left transition last:border-0 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
                   >
                     <span className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center text-[10px] font-bold flex-shrink-0">{initials(profile.full_name)}</span>
-                    <span className="min-w-0"><span className="block text-xs font-bold text-slate-900 truncate">{profile.full_name || 'Unknown'}</span><span className="block text-[10px] text-slate-400 truncate">{profile.employee_id || 'No ID'} · {profile.designation || 'No designation'}</span></span>
+                    <span className="min-w-0"><span className="block text-xs font-bold text-slate-900 truncate">{profile.full_name || 'Unknown'}{profile.resigned_date ? <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-700">RESIGNED</span> : null}</span><span className="block text-[10px] text-slate-400 truncate">{profile.employee_id || 'No ID'} · {profile.designation || 'No designation'}</span></span>
                   </button>
                 ))}
               </div>

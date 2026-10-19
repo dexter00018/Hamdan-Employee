@@ -1,13 +1,20 @@
 'use client';
 
+import { useState } from 'react';
 import type { Dispatch, FormEvent, SetStateAction } from 'react';
 import Spinner from '@/components/Spinner';
 import ModalShell from '@/components/shared/ModalShell';
 
-type Employee = { id: string; role?: string | null; is_active?: boolean | null };
-type Props = { open: boolean; onClose: () => void; confirmPassword: string; deactivating: boolean; designation: string; editingId: string | null; email: string; emailChecking: boolean; emailConflict: boolean; employeeId: string; employeeIdConflict: string | null; employees: Employee[]; fullName: string; fullNameConflict: boolean | null; handleSave: (event: FormEvent) => void | Promise<void>; loading: boolean; password: string; passwordMismatch: boolean; resetForm: () => void; role: 'employee' | 'admin'; setConfirmPassword: Dispatch<SetStateAction<string>>; setDesignation: Dispatch<SetStateAction<string>>; setEmail: Dispatch<SetStateAction<string>>; setEmployeeId: Dispatch<SetStateAction<string>>; setFullName: Dispatch<SetStateAction<string>>; setPassword: Dispatch<SetStateAction<string>>; setRole: Dispatch<SetStateAction<'employee' | 'admin'>>; toggleAccountActive: (deactivate: boolean) => void | Promise<void> };
+type Employee = { id: string; role?: string | null; is_active?: boolean | null; resigned_date?: string | null };
 
-export default function AccountFormModal({ open, onClose, confirmPassword, deactivating, designation, editingId, email, emailChecking, emailConflict, employeeId, employeeIdConflict, employees, fullName, fullNameConflict, handleSave, loading, password, passwordMismatch, resetForm, role, setConfirmPassword, setDesignation, setEmail, setEmployeeId, setFullName, setPassword, setRole, toggleAccountActive }: Props) {
+function todayManilaDate() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
+type Props = { open: boolean; onClose: () => void; confirmPassword: string; deactivating: boolean; designation: string; editingId: string | null; email: string; emailChecking: boolean; emailConflict: boolean; employeeId: string; employeeIdConflict: string | null; employees: Employee[]; fullName: string; fullNameConflict: boolean | null; handleSave: (event: FormEvent) => void | Promise<void>; loading: boolean; password: string; passwordMismatch: boolean; resetForm: () => void; role: 'employee' | 'admin'; setConfirmPassword: Dispatch<SetStateAction<string>>; setDesignation: Dispatch<SetStateAction<string>>; setEmail: Dispatch<SetStateAction<string>>; setEmployeeId: Dispatch<SetStateAction<string>>; setFullName: Dispatch<SetStateAction<string>>; setPassword: Dispatch<SetStateAction<string>>; setRole: Dispatch<SetStateAction<'employee' | 'admin'>>; toggleAccountActive: (deactivate: boolean) => void | Promise<void>; resigning: boolean; requestResign: (lastDay: string) => void; requestReinstate: () => void };
+
+export default function AccountFormModal({ open, onClose, confirmPassword, deactivating, designation, editingId, email, emailChecking, emailConflict, employeeId, employeeIdConflict, employees, fullName, fullNameConflict, handleSave, loading, password, passwordMismatch, resetForm, role, setConfirmPassword, setDesignation, setEmail, setEmployeeId, setFullName, setPassword, setRole, toggleAccountActive, resigning, requestResign, requestReinstate }: Props) {
+  const [resignDate, setResignDate] = useState(todayManilaDate);
+  const editingEmployee = editingId ? employees.find((e) => e.id === editingId) : undefined;
   const close = () => { resetForm(); onClose(); };
   return (
     <ModalShell open={open} onClose={close} title={editingId ? 'Edit Account' : 'Create New Account'} size="sm" closeDisabled={loading || deactivating}>
@@ -134,7 +141,7 @@ export default function AccountFormModal({ open, onClose, confirmPassword, deact
                   (the API route itself also refuses those, this just keeps
                   the button from showing up as a false option). Sits
                   visually separate as a danger-zone style action. */}
-              {editingId && employees.find((e) => e.id === editingId)?.role !== 'super_admin' && (
+              {editingId && employees.find((e) => e.id === editingId)?.role !== 'super_admin' && !editingEmployee?.resigned_date && (
                 <div className="pt-4 border-t border-slate-100">
                   {employees.find((e) => e.id === editingId)?.is_active === false ? (
                     <button
@@ -161,6 +168,42 @@ export default function AccountFormModal({ open, onClose, confirmPassword, deact
                   )}
                   <p className="text-slate-400 text-[11px] mt-2 text-center">
                     Deactivating blocks login but keeps all attendance, leave, and payslip history.
+                  </p>
+                </div>
+              )}
+
+              {/* Resigned status -- employees only. History stays; no more attendance
+                  or Absent tags after the last working day. */}
+              {editingEmployee?.role === 'employee' && (
+                <div className="pt-4 border-t border-slate-100">
+                  {editingEmployee.resigned_date ? (
+                    <>
+                      <p className="text-center text-sm font-bold text-amber-700">Resigned · last working day {editingEmployee.resigned_date}</p>
+                      <button
+                        type="button"
+                        onClick={() => requestReinstate()}
+                        disabled={resigning}
+                        className="mt-2 w-full p-3 rounded-full font-bold bg-green-50 text-green-700 hover:bg-green-100 transition disabled:opacity-50"
+                      >
+                        {resigning ? <span className="flex items-center justify-center gap-2"><Spinner size="sm" />Updating...</span> : 'Remove Resigned Status'}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <label className="mb-1 block text-xs font-bold text-slate-500">Last working day</label>
+                      <input type="date" className="input-field" value={resignDate} max={todayManilaDate()} onChange={(event) => setResignDate(event.target.value)} />
+                      <button
+                        type="button"
+                        onClick={() => { if (resignDate) requestResign(resignDate); }}
+                        disabled={resigning || !resignDate}
+                        className="mt-2 w-full p-3 rounded-full font-bold bg-amber-50 text-amber-700 hover:bg-amber-100 transition disabled:opacity-50"
+                      >
+                        Mark as Resigned
+                      </button>
+                    </>
+                  )}
+                  <p className="text-slate-400 text-[11px] mt-2 text-center">
+                    Resigned employees keep all history, cannot log in or record attendance, and are no longer tagged Absent after the last working day.
                   </p>
                 </div>
               )}

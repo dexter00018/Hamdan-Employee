@@ -969,6 +969,64 @@ export default function SuperAdminDashboard() {
     }
   };
 
+  const [resignVerification, setResignVerification] = useState<{ employeeId: string; name: string; lastDay: string | null } | null>(null);
+  const [resigning, setResigning] = useState(false);
+
+  const requestResign = (lastDay: string) => {
+    if (!editingId) return;
+    const editingEmployee = employees.find((e) => e.id === editingId);
+    setResignVerification({ employeeId: editingId, name: editingEmployee?.full_name ?? 'this employee', lastDay });
+  };
+
+  const requestReinstate = () => {
+    if (!editingId) return;
+    const editingEmployee = employees.find((e) => e.id === editingId);
+    setResignVerification({ employeeId: editingId, name: editingEmployee?.full_name ?? 'this employee', lastDay: null });
+  };
+
+  // Resign = database status (resigned_date, history kept, no more Absent tags) + login ban.
+  const confirmResign = async () => {
+    if (!resignVerification) return;
+    const { employeeId: targetId, name, lastDay } = resignVerification;
+    setResigning(true);
+    setMessage(null);
+    try {
+      let text: string;
+      if (lastDay) {
+        const { data: removed, error } = await supabase.rpc('resign_employee', { p_user_id: targetId, p_last_day: lastDay });
+        if (error) throw error;
+        const res = await fetch('/api/deactivate-employee', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: targetId, deactivate: true }),
+        });
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error || 'Failed to block the login.');
+        text = `${name} is now marked as resigned (last working day ${lastDay}). ${removed ?? 0} empty Absent record(s) after that date were removed.`;
+      } else {
+        const { error } = await supabase.rpc('reinstate_employee', { p_user_id: targetId });
+        if (error) throw error;
+        const res = await fetch('/api/deactivate-employee', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: targetId, deactivate: false }),
+        });
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error || 'Failed to restore the login.');
+        text = `${name} is active again. Weekdays since the last working day may be tagged Absent on the next attendance refresh.`;
+      }
+      setMessage({ type: 'success', text });
+      setResignVerification(null);
+      resetForm();
+      await fetchEmployees();
+    } catch (err: any) {
+      console.error('Error updating resigned status:', err);
+      setMessage({ type: 'error', text: err?.message ?? 'Failed to update resigned status.' });
+    } finally {
+      setResigning(false);
+    }
+  };
+
   const roleTagClass = (r: string) => (r === 'admin' ? 'tag-admin' : 'tag-employee');
 
   const initials = (name: string | null) =>
@@ -1150,7 +1208,7 @@ export default function SuperAdminDashboard() {
       <SuperAdminMobileBottomNav onHome={() => document.getElementById('super-admin-dashboard-top')?.scrollIntoView({ behavior: 'smooth' })} onAccounts={openUserAccountsModal} onSettings={openAppSettingsModal} onHealth={openHealthModal} onMore={() => setMobileToolsOpen(true)} />
       <SuperAdminMobileToolsSheet onHelpdesk={() => setItHelpdeskOpen(true)} open={mobileToolsOpen} darkMode={darkMode} email={currentAdminEmail} onClose={() => setMobileToolsOpen(false)} onToggleTheme={toggleTheme} onLogout={handleLogout} onCreate={openCreateAccountModal} onAccounts={openUserAccountsModal} onAttendance={openAttendanceRecordsModal} onSettings={openAppSettingsModal} onReset={openResetPasswordModal} onAudit={openAuditLogModal} onHealth={openHealthModal} onBackup={() => setBackupModalOpen(true)} onArchive={() => setArchivalModalOpen(true)} />
 
-      {createAccountModalOpen && <AccountFormModal open={createAccountModalOpen} onClose={() => setCreateAccountModalOpen(false)} confirmPassword={confirmPassword} deactivating={deactivating} designation={designation} editingId={editingId} email={email} emailChecking={emailChecking} emailConflict={emailConflict} employeeId={employeeId} employeeIdConflict={employeeIdConflict} employees={employees} fullName={fullName} fullNameConflict={fullNameConflict} handleSave={handleSave} loading={loading} password={password} passwordMismatch={passwordMismatch} resetForm={resetForm} role={role} setConfirmPassword={setConfirmPassword} setDesignation={setDesignation} setEmail={setEmail} setEmployeeId={setEmployeeId} setFullName={setFullName} setPassword={setPassword} setRole={setRole} toggleAccountActive={toggleAccountActive} />}
+      {createAccountModalOpen && <AccountFormModal open={createAccountModalOpen} onClose={() => setCreateAccountModalOpen(false)} confirmPassword={confirmPassword} deactivating={deactivating} designation={designation} editingId={editingId} email={email} emailChecking={emailChecking} emailConflict={emailConflict} employeeId={employeeId} employeeIdConflict={employeeIdConflict} employees={employees} fullName={fullName} fullNameConflict={fullNameConflict} handleSave={handleSave} loading={loading} password={password} passwordMismatch={passwordMismatch} resetForm={resetForm} role={role} setConfirmPassword={setConfirmPassword} setDesignation={setDesignation} setEmail={setEmail} setEmployeeId={setEmployeeId} setFullName={setFullName} setPassword={setPassword} setRole={setRole} toggleAccountActive={toggleAccountActive} resigning={resigning} requestResign={requestResign} requestReinstate={requestReinstate} />}
 
       {resetPasswordModalOpen && <ResetPasswordModal open={resetPasswordModalOpen} onClose={() => setResetPasswordModalOpen(false)} handleResetPassword={handleResetPassword} resetEmail={resetEmail} resetLoading={resetLoading} resetPasswordMsg={resetPasswordMsg} setResetEmail={setResetEmail} setResetPasswordMsg={setResetPasswordMsg} />}
 
@@ -1179,6 +1237,7 @@ export default function SuperAdminDashboard() {
       {editingLog && <EditAttendanceModal editingLog={editingLog} logSaving={logSaving} saveEditLog={saveEditLog} setEditingLog={setEditingLog} />}
 
       <VerificationDialog open={Boolean(accountVerification)} title={accountVerification?.deactivate ? 'Deactivate account?' : 'Reactivate account?'} description={accountVerification?.deactivate ? 'The employee will immediately lose login access, while historical records remain intact.' : 'The employee will regain access to the application.'} confirmLabel={accountVerification?.deactivate ? 'Deactivate account' : 'Reactivate account'} tone={accountVerification?.deactivate ? 'danger' : 'primary'} details={accountVerification ? [accountVerification.name, accountVerification.deactivate ? 'Attendance, leave, and payslip history will not be deleted.' : 'Existing account data and permissions will be restored.'] : []} busy={deactivating} onCancel={() => { if (!deactivating) setAccountVerification(null); }} onConfirm={confirmToggleAccountActive} />
+      <VerificationDialog open={Boolean(resignVerification)} title={resignVerification?.lastDay ? 'Mark employee as resigned?' : 'Remove resigned status?'} description={resignVerification?.lastDay ? 'The employee loses login access immediately. Attendance, leave, and payslip history stay visible, and no Absent is tagged after the last working day.' : 'The employee regains access and is treated as an active employee again.'} confirmLabel={resignVerification?.lastDay ? 'Mark as resigned' : 'Remove resigned status'} tone={resignVerification?.lastDay ? 'danger' : 'primary'} details={resignVerification ? [resignVerification.name, resignVerification.lastDay ? `Last working day: ${resignVerification.lastDay}` : 'Weekdays since the last working day may be tagged Absent again.'] : []} busy={resigning} onCancel={() => { if (!resigning) setResignVerification(null); }} onConfirm={confirmResign} />
 
 
     </main>

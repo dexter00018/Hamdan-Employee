@@ -1,0 +1,403 @@
+diff --git a/app/super-admin/page.tsx b/app/super-admin/page.tsx
+index 7c019f0..89bdc6c 100644
+--- a/app/super-admin/page.tsx
++++ b/app/super-admin/page.tsx
+@@ -969,6 +969,64 @@ export default function SuperAdminDashboard() {
+     }
+   };
+ 
++  const [resignVerification, setResignVerification] = useState<{ employeeId: string; name: string; lastDay: string | null } | null>(null);
++  const [resigning, setResigning] = useState(false);
++
++  const requestResign = (lastDay: string) => {
++    if (!editingId) return;
++    const editingEmployee = employees.find((e) => e.id === editingId);
++    setResignVerification({ employeeId: editingId, name: editingEmployee?.full_name ?? 'this employee', lastDay });
++  };
++
++  const requestReinstate = () => {
++    if (!editingId) return;
++    const editingEmployee = employees.find((e) => e.id === editingId);
++    setResignVerification({ employeeId: editingId, name: editingEmployee?.full_name ?? 'this employee', lastDay: null });
++  };
++
++  // Resign = database status (resigned_date, history kept, no more Absent tags) + login ban.
++  const confirmResign = async () => {
++    if (!resignVerification) return;
++    const { employeeId: targetId, name, lastDay } = resignVerification;
++    setResigning(true);
++    setMessage(null);
++    try {
++      let text: string;
++      if (lastDay) {
++        const { data: removed, error } = await supabase.rpc('resign_employee', { p_user_id: targetId, p_last_day: lastDay });
++        if (error) throw error;
++        const res = await fetch('/api/deactivate-employee', {
++          method: 'POST',
++          headers: { 'Content-Type': 'application/json' },
++          body: JSON.stringify({ userId: targetId, deactivate: true }),
++        });
++        const result = await res.json();
++        if (!res.ok) throw new Error(result.error || 'Failed to block the login.');
++        text = `${name} is now marked as resigned (last working day ${lastDay}). ${removed ?? 0} empty Absent record(s) after that date were removed.`;
++      } else {
++        const { error } = await supabase.rpc('reinstate_employee', { p_user_id: targetId });
++        if (error) throw error;
++        const res = await fetch('/api/deactivate-employee', {
++          method: 'POST',
++          headers: { 'Content-Type': 'application/json' },
++          body: JSON.stringify({ userId: targetId, deactivate: false }),
++        });
++        const result = await res.json();
++        if (!res.ok) throw new Error(result.error || 'Failed to restore the login.');
++        text = `${name} is active again. Weekdays since the last working day may be tagged Absent on the next attendance refresh.`;
++      }
++      setMessage({ type: 'success', text });
++      setResignVerification(null);
++      resetForm();
++      await fetchEmployees();
++    } catch (err: any) {
++      console.error('Error updating resigned status:', err);
++      setMessage({ type: 'error', text: err?.message ?? 'Failed to update resigned status.' });
++    } finally {
++      setResigning(false);
++    }
++  };
++
+   const roleTagClass = (r: string) => (r === 'admin' ? 'tag-admin' : 'tag-employee');
+ 
+   const initials = (name: string | null) =>
+@@ -1150,7 +1208,7 @@ export default function SuperAdminDashboard() {
+       <SuperAdminMobileBottomNav onHome={() => document.getElementById('super-admin-dashboard-top')?.scrollIntoView({ behavior: 'smooth' })} onAccounts={openUserAccountsModal} onSettings={openAppSettingsModal} onHealth={openHealthModal} onMore={() => setMobileToolsOpen(true)} />
+       <SuperAdminMobileToolsSheet onHelpdesk={() => setItHelpdeskOpen(true)} open={mobileToolsOpen} darkMode={darkMode} email={currentAdminEmail} onClose={() => setMobileToolsOpen(false)} onToggleTheme={toggleTheme} onLogout={handleLogout} onCreate={openCreateAccountModal} onAccounts={openUserAccountsModal} onAttendance={openAttendanceRecordsModal} onSettings={openAppSettingsModal} onReset={openResetPasswordModal} onAudit={openAuditLogModal} onHealth={openHealthModal} onBackup={() => setBackupModalOpen(true)} onArchive={() => setArchivalModalOpen(true)} />
+ 
+-      {createAccountModalOpen && <AccountFormModal open={createAccountModalOpen} onClose={() => setCreateAccountModalOpen(false)} confirmPassword={confirmPassword} deactivating={deactivating} designation={designation} editingId={editingId} email={email} emailChecking={emailChecking} emailConflict={emailConflict} employeeId={employeeId} employeeIdConflict={employeeIdConflict} employees={employees} fullName={fullName} fullNameConflict={fullNameConflict} handleSave={handleSave} loading={loading} password={password} passwordMismatch={passwordMismatch} resetForm={resetForm} role={role} setConfirmPassword={setConfirmPassword} setDesignation={setDesignation} setEmail={setEmail} setEmployeeId={setEmployeeId} setFullName={setFullName} setPassword={setPassword} setRole={setRole} toggleAccountActive={toggleAccountActive} />}
++      {createAccountModalOpen && <AccountFormModal open={createAccountModalOpen} onClose={() => setCreateAccountModalOpen(false)} confirmPassword={confirmPassword} deactivating={deactivating} designation={designation} editingId={editingId} email={email} emailChecking={emailChecking} emailConflict={emailConflict} employeeId={employeeId} employeeIdConflict={employeeIdConflict} employees={employees} fullName={fullName} fullNameConflict={fullNameConflict} handleSave={handleSave} loading={loading} password={password} passwordMismatch={passwordMismatch} resetForm={resetForm} role={role} setConfirmPassword={setConfirmPassword} setDesignation={setDesignation} setEmail={setEmail} setEmployeeId={setEmployeeId} setFullName={setFullName} setPassword={setPassword} setRole={setRole} toggleAccountActive={toggleAccountActive} resigning={resigning} requestResign={requestResign} requestReinstate={requestReinstate} />}
+ 
+       {resetPasswordModalOpen && <ResetPasswordModal open={resetPasswordModalOpen} onClose={() => setResetPasswordModalOpen(false)} handleResetPassword={handleResetPassword} resetEmail={resetEmail} resetLoading={resetLoading} resetPasswordMsg={resetPasswordMsg} setResetEmail={setResetEmail} setResetPasswordMsg={setResetPasswordMsg} />}
+ 
+@@ -1179,6 +1237,7 @@ export default function SuperAdminDashboard() {
+       {editingLog && <EditAttendanceModal editingLog={editingLog} logSaving={logSaving} saveEditLog={saveEditLog} setEditingLog={setEditingLog} />}
+ 
+       <VerificationDialog open={Boolean(accountVerification)} title={accountVerification?.deactivate ? 'Deactivate account?' : 'Reactivate account?'} description={accountVerification?.deactivate ? 'The employee will immediately lose login access, while historical records remain intact.' : 'The employee will regain access to the application.'} confirmLabel={accountVerification?.deactivate ? 'Deactivate account' : 'Reactivate account'} tone={accountVerification?.deactivate ? 'danger' : 'primary'} details={accountVerification ? [accountVerification.name, accountVerification.deactivate ? 'Attendance, leave, and payslip history will not be deleted.' : 'Existing account data and permissions will be restored.'] : []} busy={deactivating} onCancel={() => { if (!deactivating) setAccountVerification(null); }} onConfirm={confirmToggleAccountActive} />
++      <VerificationDialog open={Boolean(resignVerification)} title={resignVerification?.lastDay ? 'Mark employee as resigned?' : 'Remove resigned status?'} description={resignVerification?.lastDay ? 'The employee loses login access immediately. Attendance, leave, and payslip history stay visible, and no Absent is tagged after the last working day.' : 'The employee regains access and is treated as an active employee again.'} confirmLabel={resignVerification?.lastDay ? 'Mark as resigned' : 'Remove resigned status'} tone={resignVerification?.lastDay ? 'danger' : 'primary'} details={resignVerification ? [resignVerification.name, resignVerification.lastDay ? `Last working day: ${resignVerification.lastDay}` : 'Weekdays since the last working day may be tagged Absent again.'] : []} busy={resigning} onCancel={() => { if (!resigning) setResignVerification(null); }} onConfirm={confirmResign} />
+ 
+ 
+     </main>
+diff --git a/components/hr/HRPortal.tsx b/components/hr/HRPortal.tsx
+index 8b33fa3..5061915 100644
+--- a/components/hr/HRPortal.tsx
++++ b/components/hr/HRPortal.tsx
+@@ -68,6 +68,7 @@ type Profile = {
+   designation: string | null;
+   avatar_url: string | null;
+   employee_email: string | null;
++  resigned_date?: string | null;
+ };
+ 
+ type AttendanceChartSelection = { start: string; end: string; label: string };
+@@ -481,7 +482,7 @@ export default function HRPortal({ view = 'dashboard', initialEmployeeId = '' }:
+       .from('attendance_logs')
+       .select('id, user_id, log_date, time_in, time_out, status, late_offset_minutes, early_out_offset_minutes, profiles!inner(full_name, employee_id, role, is_active), early_out_offset_requests(status, required_minutes)')
+       .eq('profiles.role', 'employee')
+-      .eq('profiles.is_active', true)
++      .or('is_active.eq.true,resigned_date.not.is.null', { referencedTable: 'profiles' })
+       .gte('log_date', range.start)
+       .lte('log_date', range.end)
+       .order('log_date', { ascending: true })
+@@ -834,14 +835,14 @@ export default function HRPortal({ view = 'dashboard', initialEmployeeId = '' }:
+         .from('attendance_logs')
+         .select('*, profiles!inner(full_name, is_active), early_out_offset_requests(status, required_minutes)')
+         .eq('profiles.role', 'employee')
+-        .eq('profiles.is_active', true)
++        .or('is_active.eq.true,resigned_date.not.is.null', { referencedTable: 'profiles' })
+         .order('log_date', { ascending: false })
+         .order('time_in', { ascending: false, nullsFirst: false }),
+       supabase
+         .from('profiles')
+-        .select('id, full_name, employee_id, designation, avatar_url, employee_email')
++        .select('id, full_name, employee_id, designation, avatar_url, employee_email, resigned_date')
+         .eq('role', 'employee')
+-        .eq('is_active', true)
++        .or('is_active.eq.true,resigned_date.not.is.null')
+         .order('full_name'),
+     ]);
+ 
+@@ -2082,7 +2083,7 @@ export default function HRPortal({ view = 'dashboard', initialEmployeeId = '' }:
+                     className="flex w-full items-center gap-3 border-b border-slate-100 p-3 text-left transition last:border-0 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                   >
+                     <span className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center text-[10px] font-bold flex-shrink-0">{initials(profile.full_name)}</span>
+-                    <span className="min-w-0"><span className="block text-xs font-bold text-slate-900 truncate">{profile.full_name || 'Unknown'}</span><span className="block text-[10px] text-slate-400 truncate">{profile.employee_id || 'No ID'} · {profile.designation || 'No designation'}</span></span>
++                    <span className="min-w-0"><span className="block text-xs font-bold text-slate-900 truncate">{profile.full_name || 'Unknown'}{profile.resigned_date ? <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-700">RESIGNED</span> : null}</span><span className="block text-[10px] text-slate-400 truncate">{profile.employee_id || 'No ID'} · {profile.designation || 'No designation'}</span></span>
+                   </button>
+                 ))}
+               </div>
+diff --git a/components/super-admin/modals/AccountFormModal.tsx b/components/super-admin/modals/AccountFormModal.tsx
+index 21a203b..7f4aba9 100644
+--- a/components/super-admin/modals/AccountFormModal.tsx
++++ b/components/super-admin/modals/AccountFormModal.tsx
+@@ -1,13 +1,20 @@
+ 'use client';
+ 
++import { useState } from 'react';
+ import type { Dispatch, FormEvent, SetStateAction } from 'react';
+ import Spinner from '@/components/Spinner';
+ import ModalShell from '@/components/shared/ModalShell';
+ 
+-type Employee = { id: string; role?: string | null; is_active?: boolean | null };
+-type Props = { open: boolean; onClose: () => void; confirmPassword: string; deactivating: boolean; designation: string; editingId: string | null; email: string; emailChecking: boolean; emailConflict: boolean; employeeId: string; employeeIdConflict: string | null; employees: Employee[]; fullName: string; fullNameConflict: boolean | null; handleSave: (event: FormEvent) => void | Promise<void>; loading: boolean; password: string; passwordMismatch: boolean; resetForm: () => void; role: 'employee' | 'admin'; setConfirmPassword: Dispatch<SetStateAction<string>>; setDesignation: Dispatch<SetStateAction<string>>; setEmail: Dispatch<SetStateAction<string>>; setEmployeeId: Dispatch<SetStateAction<string>>; setFullName: Dispatch<SetStateAction<string>>; setPassword: Dispatch<SetStateAction<string>>; setRole: Dispatch<SetStateAction<'employee' | 'admin'>>; toggleAccountActive: (deactivate: boolean) => void | Promise<void> };
++type Employee = { id: string; role?: string | null; is_active?: boolean | null; resigned_date?: string | null };
+ 
+-export default function AccountFormModal({ open, onClose, confirmPassword, deactivating, designation, editingId, email, emailChecking, emailConflict, employeeId, employeeIdConflict, employees, fullName, fullNameConflict, handleSave, loading, password, passwordMismatch, resetForm, role, setConfirmPassword, setDesignation, setEmail, setEmployeeId, setFullName, setPassword, setRole, toggleAccountActive }: Props) {
++function todayManilaDate() {
++  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
++}
++type Props = { open: boolean; onClose: () => void; confirmPassword: string; deactivating: boolean; designation: string; editingId: string | null; email: string; emailChecking: boolean; emailConflict: boolean; employeeId: string; employeeIdConflict: string | null; employees: Employee[]; fullName: string; fullNameConflict: boolean | null; handleSave: (event: FormEvent) => void | Promise<void>; loading: boolean; password: string; passwordMismatch: boolean; resetForm: () => void; role: 'employee' | 'admin'; setConfirmPassword: Dispatch<SetStateAction<string>>; setDesignation: Dispatch<SetStateAction<string>>; setEmail: Dispatch<SetStateAction<string>>; setEmployeeId: Dispatch<SetStateAction<string>>; setFullName: Dispatch<SetStateAction<string>>; setPassword: Dispatch<SetStateAction<string>>; setRole: Dispatch<SetStateAction<'employee' | 'admin'>>; toggleAccountActive: (deactivate: boolean) => void | Promise<void>; resigning: boolean; requestResign: (lastDay: string) => void; requestReinstate: () => void };
++
++export default function AccountFormModal({ open, onClose, confirmPassword, deactivating, designation, editingId, email, emailChecking, emailConflict, employeeId, employeeIdConflict, employees, fullName, fullNameConflict, handleSave, loading, password, passwordMismatch, resetForm, role, setConfirmPassword, setDesignation, setEmail, setEmployeeId, setFullName, setPassword, setRole, toggleAccountActive, resigning, requestResign, requestReinstate }: Props) {
++  const [resignDate, setResignDate] = useState(todayManilaDate);
++  const editingEmployee = editingId ? employees.find((e) => e.id === editingId) : undefined;
+   const close = () => { resetForm(); onClose(); };
+   return (
+     <ModalShell open={open} onClose={close} title={editingId ? 'Edit Account' : 'Create New Account'} size="sm" closeDisabled={loading || deactivating}>
+@@ -134,7 +141,7 @@ export default function AccountFormModal({ open, onClose, confirmPassword, deact
+                   (the API route itself also refuses those, this just keeps
+                   the button from showing up as a false option). Sits
+                   visually separate as a danger-zone style action. */}
+-              {editingId && employees.find((e) => e.id === editingId)?.role !== 'super_admin' && (
++              {editingId && employees.find((e) => e.id === editingId)?.role !== 'super_admin' && !editingEmployee?.resigned_date && (
+                 <div className="pt-4 border-t border-slate-100">
+                   {employees.find((e) => e.id === editingId)?.is_active === false ? (
+                     <button
+@@ -165,6 +172,42 @@ export default function AccountFormModal({ open, onClose, confirmPassword, deact
+                 </div>
+               )}
+ 
++              {/* Resigned status -- employees only. History stays; no more attendance
++                  or Absent tags after the last working day. */}
++              {editingEmployee?.role === 'employee' && (
++                <div className="pt-4 border-t border-slate-100">
++                  {editingEmployee.resigned_date ? (
++                    <>
++                      <p className="text-center text-sm font-bold text-amber-700">Resigned · last working day {editingEmployee.resigned_date}</p>
++                      <button
++                        type="button"
++                        onClick={() => requestReinstate()}
++                        disabled={resigning}
++                        className="mt-2 w-full p-3 rounded-full font-bold bg-green-50 text-green-700 hover:bg-green-100 transition disabled:opacity-50"
++                      >
++                        {resigning ? <span className="flex items-center justify-center gap-2"><Spinner size="sm" />Updating...</span> : 'Remove Resigned Status'}
++                      </button>
++                    </>
++                  ) : (
++                    <>
++                      <label className="mb-1 block text-xs font-bold text-slate-500">Last working day</label>
++                      <input type="date" className="input-field" value={resignDate} max={todayManilaDate()} onChange={(event) => setResignDate(event.target.value)} />
++                      <button
++                        type="button"
++                        onClick={() => { if (resignDate) requestResign(resignDate); }}
++                        disabled={resigning || !resignDate}
++                        className="mt-2 w-full p-3 rounded-full font-bold bg-amber-50 text-amber-700 hover:bg-amber-100 transition disabled:opacity-50"
++                      >
++                        Mark as Resigned
++                      </button>
++                    </>
++                  )}
++                  <p className="text-slate-400 text-[11px] mt-2 text-center">
++                    Resigned employees keep all history, cannot log in or record attendance, and are no longer tagged Absent after the last working day.
++                  </p>
++                </div>
++              )}
++
+               <button disabled={loading || !!employeeIdConflict || emailConflict || passwordMismatch} className="btn-primary">
+                 {loading ? (
+                   <span className="flex items-center justify-center gap-2">
+diff --git a/components/super-admin/modals/UserAccountsModal.tsx b/components/super-admin/modals/UserAccountsModal.tsx
+index 3c8e9f5..158de04 100644
+--- a/components/super-admin/modals/UserAccountsModal.tsx
++++ b/components/super-admin/modals/UserAccountsModal.tsx
+@@ -3,7 +3,7 @@
+ import type { Dispatch, SetStateAction } from 'react';
+ import ModalShell from '@/components/shared/ModalShell';
+ 
+-type Employee = { id: string; full_name: string | null; employee_id?: string | null; role: string; is_active?: boolean | null };
++type Employee = { id: string; full_name: string | null; employee_id?: string | null; role: string; is_active?: boolean | null; resigned_date?: string | null };
+ type Props = { open: boolean; onClose: () => void; pageSize: number; employees: Employee[]; employeesLoading: boolean; employeesPage: number; employeesTotalPages: number; initials: (name: string | null) => string; paginatedEmployees: Employee[]; roleTagClass: (role: string) => string; setEmployeesPage: Dispatch<SetStateAction<number>>; startEdit: (employee: Employee) => void; totalAccounts: number };
+ 
+ export default function UserAccountsModal({ open, onClose, pageSize, employees, employeesLoading, employeesPage, employeesTotalPages, initials, paginatedEmployees, roleTagClass, setEmployeesPage, startEdit, totalAccounts }: Props) {
+@@ -35,7 +35,7 @@ export default function UserAccountsModal({ open, onClose, pageSize, employees,
+                     <p className="truncate text-sm font-bold text-slate-950 dark:text-white">{emp.full_name || 'Unnamed account'}</p>
+                     <p className="mt-0.5 truncate font-mono text-[10px] font-semibold text-slate-500 dark:text-slate-300">{emp.employee_id || 'No employee ID'}</p>
+                   </div>
+-                  <span className="flex min-w-0 flex-col items-center gap-1"><span className={`${roleTagClass(emp.role)} max-w-full truncate`}>{emp.role}</span>{emp.is_active === false ? <span className="tag-absent">Inactive</span> : null}</span>
++                  <span className="flex min-w-0 flex-col items-center gap-1"><span className={`${roleTagClass(emp.role)} max-w-full truncate`}>{emp.role}</span>{emp.resigned_date ? <span className="tag-absent">Resigned</span> : emp.is_active === false ? <span className="tag-absent">Inactive</span> : null}</span>
+                   <span className="text-right text-[11px] font-bold text-emerald-700 dark:text-emerald-300">Edit</span>
+                 </button>
+               ))}
+diff --git a/supabase/migrations/20261019070000_resigned_employee_status.sql b/supabase/migrations/20261019070000_resigned_employee_status.sql
+new file mode 100644
+index 0000000..dea3f18
+--- /dev/null
++++ b/supabase/migrations/20261019070000_resigned_employee_status.sql
+@@ -0,0 +1,161 @@
++-- Resigned employee status.
++-- profiles.resigned_date = last working day. NOT NULL means "resigned":
++--   * history (attendance, leave, payroll data) stays in the database untouched
++--   * settle_overdue_absences() no longer creates Absent rows after that date
++--   * resign_employee() also removes untouched Absent placeholders already created
++--     after that date (rows with a dispute/offset request attached are kept)
++-- employment_status (Regular/Probationary/Contractual) is a different thing and is not changed.
++
++alter table public.profiles add column if not exists resigned_date date;
++comment on column public.profiles.resigned_date is
++  'Last working day. Not null = resigned: nothing is recorded and no Absent is generated after this date; history stays readable.';
++
++create or replace function public.settle_overdue_absences()
++returns void
++language plpgsql
++security definer
++set search_path to 'public'
++as $function$
++declare
++  v_today date := (current_timestamp at time zone 'Asia/Manila')::date;
++begin
++  if not (
++    auth.role() = 'service_role'
++    or exists (
++      select 1 from public.profiles
++      where id = auth.uid() and role = any (array['admin','super_admin'])
++    )
++  ) then
++    raise exception 'Not authorized';
++  end if;
++
++  insert into public.attendance_logs (user_id, log_date, status, time_in, time_out)
++  select p.id, d::date, 'Absent', null, null
++  from public.profiles p
++  left join public.employee_government_ids g on g.user_id = p.id
++  cross join lateral generate_series(
++    greatest(coalesce(g.hired_date, v_today - 90), v_today - 90),
++    v_today - 1,
++    interval '1 day'
++  ) as d
++  where lower(coalesce(p.role, '')) = 'employee'
++    and (p.resigned_date is null or d::date <= p.resigned_date)
++    and extract(dow from d) not in (0, 6)
++    and not exists (
++      select 1 from public.attendance_logs al
++      where al.user_id = p.id and al.log_date = d::date
++    )
++    and not exists (
++      select 1 from public.leave_request_days lrd
++      where lrd.user_id = p.id and lrd.leave_date = d::date
++    )
++    and not exists (
++      select 1 from public.holidays h
++      where h.holiday_date = d::date
++    )
++  on conflict (user_id, log_date) do nothing;
++end;
++$function$;
++
++-- Tag an employee as resigned. Returns how many empty Absent rows were removed.
++create or replace function public.resign_employee(p_user_id uuid, p_last_day date)
++returns integer
++language plpgsql
++security definer
++set search_path = ''
++as $function$
++declare
++  v_today date := (statement_timestamp() at time zone 'Asia/Manila')::date;
++  v_removed integer := 0;
++  v_name text;
++begin
++  if not exists (
++    select 1 from public.profiles p
++    where p.id = (select auth.uid()) and p.role = 'super_admin' and p.is_active = true
++  ) then
++    raise exception 'Only an active Super Admin can mark an employee as resigned';
++  end if;
++
++  if p_last_day is null or p_last_day > v_today then
++    raise exception 'The last working day cannot be in the future';
++  end if;
++
++  select p.full_name into v_name from public.profiles p where p.id = p_user_id and p.role = 'employee';
++  if not found then
++    raise exception 'Employee not found';
++  end if;
++
++  update public.profiles
++  set resigned_date = p_last_day, is_active = false
++  where id = p_user_id;
++
++  with removed as (
++    delete from public.attendance_logs al
++    where al.user_id = p_user_id
++      and al.log_date > p_last_day
++      and al.status = 'Absent'
++      and al.time_in is null
++      and al.time_out is null
++      and al.absent_offset_minutes = 0
++      and not exists (select 1 from public.attendance_disputes x where x.attendance_log_id = al.id)
++      and not exists (select 1 from public.offset_requests x where x.attendance_log_id = al.id)
++      and not exists (select 1 from public.early_out_offset_requests x where x.attendance_log_id = al.id)
++      and not exists (select 1 from public.offset_usage_requests x where x.attendance_log_id = al.id)
++    returning 1
++  )
++  select count(*)::integer into v_removed from removed;
++
++  perform public.log_audit_event(
++    'employee_resigned',
++    'profile',
++    p_user_id,
++    'Marked ' || coalesce(v_name, 'employee') || ' as resigned, last working day ' || p_last_day::text
++      || '. Removed ' || v_removed::text || ' empty Absent placeholder(s) after that date.'
++  );
++
++  return v_removed;
++end;
++$function$;
++
++-- Undo a resignation (for mistakes or an immediate re-hire).
++-- WARNING: once resigned_date is cleared, weekdays since the last working day (up to
++-- 90 days back) have no attendance row, so the next settle_overdue_absences() run will
++-- tag them Absent. For a later re-hire, also update the hired date first.
++create or replace function public.reinstate_employee(p_user_id uuid)
++returns void
++language plpgsql
++security definer
++set search_path = ''
++as $function$
++declare
++  v_name text;
++begin
++  if not exists (
++    select 1 from public.profiles p
++    where p.id = (select auth.uid()) and p.role = 'super_admin' and p.is_active = true
++  ) then
++    raise exception 'Only an active Super Admin can reinstate an employee';
++  end if;
++
++  select p.full_name into v_name
++  from public.profiles p
++  where p.id = p_user_id and p.role = 'employee' and p.resigned_date is not null;
++  if not found then
++    raise exception 'This employee is not marked as resigned';
++  end if;
++
++  update public.profiles set resigned_date = null, is_active = true where id = p_user_id;
++
++  perform public.log_audit_event(
++    'employee_reinstated',
++    'profile',
++    p_user_id,
++    'Removed the resigned status of ' || coalesce(v_name, 'employee')
++  );
++end;
++$function$;
++
++revoke all on function public.resign_employee(uuid, date) from public, anon;
++grant execute on function public.resign_employee(uuid, date) to authenticated;
++revoke all on function public.reinstate_employee(uuid) from public, anon;
++grant execute on function public.reinstate_employee(uuid) to authenticated;
