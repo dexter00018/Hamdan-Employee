@@ -1,0 +1,242 @@
+diff --git a/components/super-admin/modals/ManpowerTrackerModal.tsx b/components/super-admin/modals/ManpowerTrackerModal.tsx
+index 60075b7..da83746 100644
+--- a/components/super-admin/modals/ManpowerTrackerModal.tsx
++++ b/components/super-admin/modals/ManpowerTrackerModal.tsx
+@@ -35,6 +35,7 @@ type ManpowerAdjustment = {
+   project_id: string;
+   work_date: string;
+   delta_minutes: number;
++  transfer_id: string | null;
+   reason: string;
+   created_at: string;
+ };
+@@ -85,7 +86,8 @@ export default function SuperAdminManpowerTrackerModal({ open, onClose }: Props)
+   const [projectCode, setProjectCode] = useState('');
+   const [adjustmentEmployeeId, setAdjustmentEmployeeId] = useState('');
+   const [adjustmentProjectId, setAdjustmentProjectId] = useState('');
+-  const [adjustmentDirection, setAdjustmentDirection] = useState<'add' | 'deduct'>('add');
++  const [transferDestinationProjectId, setTransferDestinationProjectId] = useState('');
++  const [adjustmentDirection, setAdjustmentDirection] = useState<'add' | 'deduct' | 'transfer'>('add');
+   const [adjustmentHours, setAdjustmentHours] = useState('');
+   const [adjustmentMinutes, setAdjustmentMinutes] = useState('');
+   const [adjustmentReason, setAdjustmentReason] = useState('');
+@@ -123,7 +125,7 @@ export default function SuperAdminManpowerTrackerModal({ open, onClose }: Props)
+         .order('started_at', { ascending: true }),
+       supabase
+         .from('manpower_time_adjustments')
+-        .select('id,user_id,project_id,work_date,delta_minutes,reason,created_at')
++        .select('id,user_id,project_id,work_date,delta_minutes,transfer_id,reason,created_at')
+         .eq('work_date', date)
+         .order('created_at', { ascending: false }),
+     ]);
+@@ -244,8 +246,9 @@ export default function SuperAdminManpowerTrackerModal({ open, onClose }: Props)
+     const hours = adjustmentHours.trim() ? Number(adjustmentHours) : 0;
+     const minutes = adjustmentMinutes.trim() ? Number(adjustmentMinutes) : 0;
+     const totalMinutes = hours * 60 + minutes;
+-    if (!adjustmentEmployeeId || !adjustmentProjectId || !Number.isInteger(hours) || !Number.isInteger(minutes) || hours < 0 || hours > 24 || minutes < 0 || minutes > 59 || totalMinutes < 1 || totalMinutes > 1440 || adjustmentReason.trim().length < 3) {
+-      setMessage({ type: 'error', text: 'Select an employee and project, enter 0–24 hours plus 0–59 minutes, and provide a reason.' });
++    const isTransfer = adjustmentDirection === 'transfer';
++    if (!adjustmentEmployeeId || !adjustmentProjectId || (isTransfer && (!transferDestinationProjectId || transferDestinationProjectId === adjustmentProjectId)) || !Number.isInteger(hours) || !Number.isInteger(minutes) || hours < 0 || hours > 24 || minutes < 0 || minutes > 59 || totalMinutes < 1 || totalMinutes > 1440 || adjustmentReason.trim().length < 3) {
++      setMessage({ type: 'error', text: isTransfer ? 'Select an employee, different source and destination projects, enter 0–24 hours plus 0–59 minutes, and provide a reason.' : 'Select an employee and project, enter 0–24 hours plus 0–59 minutes, and provide a reason.' });
+       return;
+     }
+     if (selectedDate > todayManilaDate()) {
+@@ -255,20 +258,30 @@ export default function SuperAdminManpowerTrackerModal({ open, onClose }: Props)
+ 
+     setSavingAdjustment(true);
+     setMessage(null);
+-    const { error } = await supabase.rpc('adjust_manpower_time', {
+-      p_user_id: adjustmentEmployeeId,
+-      p_project_id: adjustmentProjectId,
+-      p_work_date: selectedDate,
+-      p_delta_minutes: adjustmentDirection === 'add' ? totalMinutes : -totalMinutes,
+-      p_reason: adjustmentReason.trim(),
+-    });
++    const { error } = isTransfer
++      ? await supabase.rpc('transfer_manpower_time', {
++        p_user_id: adjustmentEmployeeId,
++        p_source_project_id: adjustmentProjectId,
++        p_destination_project_id: transferDestinationProjectId,
++        p_work_date: selectedDate,
++        p_minutes: totalMinutes,
++        p_reason: adjustmentReason.trim(),
++      })
++      : await supabase.rpc('adjust_manpower_time', {
++        p_user_id: adjustmentEmployeeId,
++        p_project_id: adjustmentProjectId,
++        p_work_date: selectedDate,
++        p_delta_minutes: adjustmentDirection === 'add' ? totalMinutes : -totalMinutes,
++        p_reason: adjustmentReason.trim(),
++      });
+     if (error) {
+       setMessage({ type: 'error', text: error.message || 'Unable to save the manpower adjustment.' });
+     } else {
+       setAdjustmentHours('');
+       setAdjustmentMinutes('');
+       setAdjustmentReason('');
+-      setMessage({ type: 'success', text: 'Manpower adjustment saved with an audit record.' });
++      setTransferDestinationProjectId('');
++      setMessage({ type: 'success', text: isTransfer ? 'Manpower time transferred with paired audit records.' : 'Manpower adjustment saved with an audit record.' });
+       await fetchTracker(selectedDate);
+     }
+     setSavingAdjustment(false);
+@@ -336,18 +349,19 @@ export default function SuperAdminManpowerTrackerModal({ open, onClose }: Props)
+         ) : tab === 'adjustments' ? (
+           <>
+             <section className="rounded-2xl bg-slate-50 p-3 dark:bg-[#303632]">
+-              <div className="mb-3"><h3 className="text-sm font-bold text-slate-900 dark:text-white">Audited manpower correction</h3><p className="mt-0.5 text-[10px] text-slate-500">Use this to clean up earlier lapses. Select the affected work date, then add or deduct the exact hours and minutes. The original timer is preserved.</p></div>
++              <div className="mb-3"><h3 className="text-sm font-bold text-slate-900 dark:text-white">Audited manpower correction</h3><p className="mt-0.5 text-[10px] text-slate-500">Use this to clean up earlier lapses. Add or deduct time, or transfer it between projects. The original timer is preserved.</p></div>
+               <div className="grid gap-2 sm:grid-cols-2">
+                 <input type="date" value={selectedDate} max={todayManilaDate()} onChange={(event) => setSelectedDate(event.target.value)} className="min-h-10 rounded-xl bg-white px-3 text-xs outline-none dark:bg-[#292f2b] dark:text-white" aria-label="Work date" />
+                 <select value={adjustmentEmployeeId} onChange={(event) => setAdjustmentEmployeeId(event.target.value)} className="min-h-10 rounded-xl bg-white px-3 text-xs outline-none dark:bg-[#292f2b] dark:text-white"><option value="">Select employee</option>{employees.filter((employee) => employee.is_active).map((employee) => <option key={employee.id} value={employee.id}>{employee.full_name || employee.employee_id || 'Employee'}</option>)}</select>
+-                <select value={adjustmentProjectId} onChange={(event) => setAdjustmentProjectId(event.target.value)} className="min-h-10 rounded-xl bg-white px-3 text-xs outline-none dark:bg-[#292f2b] dark:text-white"><option value="">Select project</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}{project.is_active ? '' : ' (inactive)'}</option>)}</select>
+-                <select value={adjustmentDirection} onChange={(event) => setAdjustmentDirection(event.target.value as 'add' | 'deduct')} className="min-h-10 rounded-xl bg-white px-3 text-xs outline-none dark:bg-[#292f2b] dark:text-white"><option value="add">Add time</option><option value="deduct">Deduct time</option></select>
++                <select value={adjustmentProjectId} onChange={(event) => setAdjustmentProjectId(event.target.value)} className="min-h-10 rounded-xl bg-white px-3 text-xs outline-none dark:bg-[#292f2b] dark:text-white"><option value="">{adjustmentDirection === 'transfer' ? 'From project' : 'Select project'}</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}{project.is_active ? '' : ' (inactive)'}</option>)}</select>
++                <select value={adjustmentDirection} onChange={(event) => setAdjustmentDirection(event.target.value as 'add' | 'deduct' | 'transfer')} className="min-h-10 rounded-xl bg-white px-3 text-xs outline-none dark:bg-[#292f2b] dark:text-white"><option value="add">Add time</option><option value="deduct">Deduct time</option><option value="transfer">Transfer time</option></select>
++                {adjustmentDirection === 'transfer' ? <select value={transferDestinationProjectId} onChange={(event) => setTransferDestinationProjectId(event.target.value)} className="min-h-10 rounded-xl bg-white px-3 text-xs outline-none dark:bg-[#292f2b] dark:text-white"><option value="">To project</option>{projects.filter((project) => project.id !== adjustmentProjectId).map((project) => <option key={project.id} value={project.id}>{project.name}{project.is_active ? '' : ' (inactive)'}</option>)}</select> : null}
+                 <div className="grid grid-cols-2 gap-2"><input type="number" min="0" max="24" inputMode="numeric" value={adjustmentHours} onChange={(event) => setAdjustmentHours(event.target.value)} placeholder="Hours" className="min-h-10 rounded-xl bg-white px-3 text-xs outline-none dark:bg-[#292f2b] dark:text-white" /><input type="number" min="0" max="59" inputMode="numeric" value={adjustmentMinutes} onChange={(event) => setAdjustmentMinutes(event.target.value)} placeholder="Minutes" className="min-h-10 rounded-xl bg-white px-3 text-xs outline-none dark:bg-[#292f2b] dark:text-white" /></div>
+               </div>
+               <textarea value={adjustmentReason} onChange={(event) => setAdjustmentReason(event.target.value)} placeholder="Reason for correction" maxLength={500} rows={2} className="mt-2 w-full resize-none rounded-xl bg-white px-3 py-2 text-xs outline-none dark:bg-[#292f2b] dark:text-white" />
+-              <div className="mt-2 flex items-center justify-between gap-3"><p className="text-[10px] text-slate-500">Maximum correction: 24 hours per work date.</p><button type="button" onClick={saveAdjustment} disabled={savingAdjustment || selectedDate > todayManilaDate()} className="min-h-9 rounded-xl bg-slate-900 px-3 text-xs font-bold text-white disabled:opacity-40 dark:bg-white dark:text-slate-900">{savingAdjustment ? 'Saving…' : `${adjustmentDirection === 'add' ? 'Add' : 'Deduct'} time`}</button></div>
++              <div className="mt-2 flex items-center justify-between gap-3"><p className="text-[10px] text-slate-500">Maximum correction: 24 hours per work date. Transfers cannot make the source total negative.</p><button type="button" onClick={saveAdjustment} disabled={savingAdjustment || selectedDate > todayManilaDate()} className="min-h-9 rounded-xl bg-slate-900 px-3 text-xs font-bold text-white disabled:opacity-40 dark:bg-white dark:text-slate-900">{savingAdjustment ? 'Saving…' : adjustmentDirection === 'transfer' ? 'Transfer time' : `${adjustmentDirection === 'add' ? 'Add' : 'Deduct'} time`}</button></div>
+             </section>
+-            <section><div className="mb-2"><h3 className="text-sm font-bold text-slate-900 dark:text-white">Adjustments on {selectedDate}</h3></div>{adjustments.length ? <div className="space-y-2">{adjustments.map((adjustment) => { const employee = employeeMap.get(adjustment.user_id); const project = projectMap.get(adjustment.project_id); return <div key={adjustment.id} className="grid gap-1 rounded-2xl bg-slate-50 px-3 py-2.5 dark:bg-[#303632] sm:grid-cols-[1fr_1fr_auto]"><div className="min-w-0"><p className="truncate text-xs font-bold text-slate-900 dark:text-white">{employee?.full_name || 'Employee'}</p><p className="text-[10px] text-slate-500">{project?.name || 'Project'}</p></div><p className="text-[10px] text-slate-500">{adjustment.reason}</p><span className={`font-mono text-xs font-bold ${adjustment.delta_minutes > 0 ? 'text-cyan-700 dark:text-cyan-300' : 'text-amber-700 dark:text-amber-300'}`}>{adjustment.delta_minutes > 0 ? '+' : ''}{adjustment.delta_minutes}m</span></div>; })}</div> : <p className="rounded-2xl bg-slate-50 px-4 py-8 text-center text-sm text-slate-500 dark:bg-[#303632]">No adjustments for this date.</p>}</section>
++            <section><div className="mb-2"><h3 className="text-sm font-bold text-slate-900 dark:text-white">Adjustments on {selectedDate}</h3></div>{adjustments.length ? <div className="space-y-2">{adjustments.map((adjustment) => { const employee = employeeMap.get(adjustment.user_id); const project = projectMap.get(adjustment.project_id); const transferLabel = adjustment.transfer_id ? adjustment.delta_minutes > 0 ? 'Transfer in' : 'Transfer out' : null; return <div key={adjustment.id} className="grid gap-1 rounded-2xl bg-slate-50 px-3 py-2.5 dark:bg-[#303632] sm:grid-cols-[1fr_1fr_auto]"><div className="min-w-0"><p className="truncate text-xs font-bold text-slate-900 dark:text-white">{employee?.full_name || 'Employee'}</p><p className="text-[10px] text-slate-500">{project?.name || 'Project'}{transferLabel ? ` · ${transferLabel}` : ''}</p></div><p className="text-[10px] text-slate-500">{adjustment.reason}</p><span className={`font-mono text-xs font-bold ${adjustment.delta_minutes > 0 ? 'text-cyan-700 dark:text-cyan-300' : 'text-amber-700 dark:text-amber-300'}`}>{adjustment.delta_minutes > 0 ? '+' : ''}{adjustment.delta_minutes}m</span></div>; })}</div> : <p className="rounded-2xl bg-slate-50 px-4 py-8 text-center text-sm text-slate-500 dark:bg-[#303632]">No adjustments for this date.</p>}</section>
+           </>
+         ) : (
+           <>
+diff --git a/supabase/migrations/20261013054802_restore_payroll_cutoff_offset_absence.sql b/supabase/migrations/20261013055822_restore_payroll_cutoff_offset_absence.sql
+similarity index 100%
+rename from supabase/migrations/20261013054802_restore_payroll_cutoff_offset_absence.sql
+rename to supabase/migrations/20261013055822_restore_payroll_cutoff_offset_absence.sql
+diff --git a/supabase/migrations/20261019022824_transfer_manpower_time.sql b/supabase/migrations/20261019022824_transfer_manpower_time.sql
+new file mode 100644
+index 0000000..23e93a1
+--- /dev/null
++++ b/supabase/migrations/20261019022824_transfer_manpower_time.sql
+@@ -0,0 +1,108 @@
++-- Transfer time by recording an equal negative and positive adjustment in one
++-- audited, atomic transaction. Original manpower timer sessions stay intact.
++
++alter table public.manpower_time_adjustments
++  add column if not exists transfer_id uuid;
++
++create index if not exists manpower_time_adjustments_transfer_id_idx
++  on public.manpower_time_adjustments(transfer_id)
++  where transfer_id is not null;
++
++create or replace function public.transfer_manpower_time(
++  p_user_id uuid,
++  p_source_project_id uuid,
++  p_destination_project_id uuid,
++  p_work_date date,
++  p_minutes integer,
++  p_reason text
++)
++returns uuid
++language plpgsql
++security definer
++set search_path = ''
++as $function$
++declare
++  v_transfer_id uuid := gen_random_uuid();
++  v_today date := (statement_timestamp() at time zone 'Asia/Manila')::date;
++  v_now timestamptz := statement_timestamp();
++  v_start timestamptz := (p_work_date + time '00:00') at time zone 'Asia/Manila';
++  v_end timestamptz := ((p_work_date + 1) + time '00:00') at time zone 'Asia/Manila';
++  v_source_minutes integer := 0;
++  v_reason text := btrim(coalesce(p_reason, ''));
++begin
++  if not exists (
++    select 1
++    from public.profiles p
++    where p.id = (select auth.uid())
++      and p.role = 'super_admin'
++      and p.is_active = true
++  ) then
++    raise exception 'Only an active Super Admin can transfer manpower time';
++  end if;
++
++  if p_work_date is null or p_work_date > v_today then
++    raise exception 'A manpower transfer cannot use a future work date';
++  end if;
++  if p_minutes is null or p_minutes < 1 or p_minutes > 1440 then
++    raise exception 'Transfer must be between 1 and 1440 minutes';
++  end if;
++  if char_length(v_reason) < 3 then
++    raise exception 'A reason of at least 3 characters is required';
++  end if;
++  if p_source_project_id is null or p_destination_project_id is null or p_source_project_id = p_destination_project_id then
++    raise exception 'Choose two different projects for a manpower transfer';
++  end if;
++  if not exists (select 1 from public.profiles p where p.id = p_user_id and p.role = 'employee') then
++    raise exception 'Employee not found';
++  end if;
++  if not exists (select 1 from public.manpower_projects mp where mp.id = p_source_project_id)
++     or not exists (select 1 from public.manpower_projects mp where mp.id = p_destination_project_id) then
++    raise exception 'Project not found';
++  end if;
++
++  select coalesce(sum(greatest(
++    0,
++    floor(extract(epoch from (
++      least(coalesce(ms.ended_at, v_now), v_end) - greatest(ms.started_at, v_start)
++    )) / 60)
++  )), 0)::integer
++  into v_source_minutes
++  from public.manpower_sessions ms
++  where ms.user_id = p_user_id
++    and ms.project_id = p_source_project_id
++    and ms.started_at < v_end
++    and coalesce(ms.ended_at, v_now) > v_start;
++
++  select v_source_minutes + coalesce(sum(a.delta_minutes), 0)::integer
++  into v_source_minutes
++  from public.manpower_time_adjustments a
++  where a.user_id = p_user_id
++    and a.project_id = p_source_project_id
++    and a.work_date = p_work_date;
++
++  if v_source_minutes < p_minutes then
++    raise exception 'The source project only has % available minute(s) on this work date', greatest(v_source_minutes, 0);
++  end if;
++
++  insert into public.manpower_time_adjustments(
++    user_id, project_id, work_date, delta_minutes, transfer_id, reason, created_by
++  )
++  values
++    (p_user_id, p_source_project_id, p_work_date, -p_minutes, v_transfer_id, v_reason, (select auth.uid())),
++    (p_user_id, p_destination_project_id, p_work_date, p_minutes, v_transfer_id, v_reason, (select auth.uid()));
++
++  perform public.log_audit_event(
++    'manpower_time_transferred',
++    'manpower_project',
++    p_source_project_id,
++    'Transferred ' || p_minutes::text || ' manpower minute(s) for employee ' || p_user_id::text
++      || ' on ' || p_work_date::text || ' from project ' || p_source_project_id::text
++      || ' to project ' || p_destination_project_id::text || '. Reason: ' || v_reason
++  );
++
++  return v_transfer_id;
++end;
++$function$;
++
++revoke all on function public.transfer_manpower_time(uuid, uuid, uuid, date, integer, text) from public, anon;
++grant execute on function public.transfer_manpower_time(uuid, uuid, uuid, date, integer, text) to authenticated;
+diff --git a/supabase/migrations/20261019045422_harden_manpower_adjustments_grants.sql b/supabase/migrations/20261019045422_harden_manpower_adjustments_grants.sql
+new file mode 100644
+index 0000000..ea0a8c7
+--- /dev/null
++++ b/supabase/migrations/20261019045422_harden_manpower_adjustments_grants.sql
+@@ -0,0 +1,11 @@
++-- Audit table: authenticated users may only read (RLS policies scope the rows).
++-- All writes go through the SECURITY DEFINER RPCs (adjust_manpower_time,
++-- transfer_manpower_time), which run as the function owner.
++revoke all on table public.manpower_time_adjustments from public, anon, authenticated;
++grant select on table public.manpower_time_adjustments to authenticated;
++grant all on table public.manpower_time_adjustments to service_role;
++
++-- Trigger functions are never called directly; they do not need EXECUTE for
++-- API roles. Triggers keep firing because privileges are not checked at fire time.
++revoke execute on function public.add_approved_offset_manpower() from public, anon, authenticated;
++revoke execute on function public.capture_offset_manpower_context() from public, anon, authenticated;

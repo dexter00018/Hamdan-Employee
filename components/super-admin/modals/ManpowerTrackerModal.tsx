@@ -35,6 +35,7 @@ type ManpowerAdjustment = {
   project_id: string;
   work_date: string;
   delta_minutes: number;
+  transfer_id: string | null;
   reason: string;
   created_at: string;
 };
@@ -85,7 +86,8 @@ export default function SuperAdminManpowerTrackerModal({ open, onClose }: Props)
   const [projectCode, setProjectCode] = useState('');
   const [adjustmentEmployeeId, setAdjustmentEmployeeId] = useState('');
   const [adjustmentProjectId, setAdjustmentProjectId] = useState('');
-  const [adjustmentDirection, setAdjustmentDirection] = useState<'add' | 'deduct'>('add');
+  const [transferDestinationProjectId, setTransferDestinationProjectId] = useState('');
+  const [adjustmentDirection, setAdjustmentDirection] = useState<'add' | 'deduct' | 'transfer'>('add');
   const [adjustmentHours, setAdjustmentHours] = useState('');
   const [adjustmentMinutes, setAdjustmentMinutes] = useState('');
   const [adjustmentReason, setAdjustmentReason] = useState('');
@@ -123,7 +125,7 @@ export default function SuperAdminManpowerTrackerModal({ open, onClose }: Props)
         .order('started_at', { ascending: true }),
       supabase
         .from('manpower_time_adjustments')
-        .select('id,user_id,project_id,work_date,delta_minutes,reason,created_at')
+        .select('id,user_id,project_id,work_date,delta_minutes,transfer_id,reason,created_at')
         .eq('work_date', date)
         .order('created_at', { ascending: false }),
     ]);
@@ -244,8 +246,9 @@ export default function SuperAdminManpowerTrackerModal({ open, onClose }: Props)
     const hours = adjustmentHours.trim() ? Number(adjustmentHours) : 0;
     const minutes = adjustmentMinutes.trim() ? Number(adjustmentMinutes) : 0;
     const totalMinutes = hours * 60 + minutes;
-    if (!adjustmentEmployeeId || !adjustmentProjectId || !Number.isInteger(hours) || !Number.isInteger(minutes) || hours < 0 || hours > 24 || minutes < 0 || minutes > 59 || totalMinutes < 1 || totalMinutes > 1440 || adjustmentReason.trim().length < 3) {
-      setMessage({ type: 'error', text: 'Select an employee and project, enter 0–24 hours plus 0–59 minutes, and provide a reason.' });
+    const isTransfer = adjustmentDirection === 'transfer';
+    if (!adjustmentEmployeeId || !adjustmentProjectId || (isTransfer && (!transferDestinationProjectId || transferDestinationProjectId === adjustmentProjectId)) || !Number.isInteger(hours) || !Number.isInteger(minutes) || hours < 0 || hours > 24 || minutes < 0 || minutes > 59 || totalMinutes < 1 || totalMinutes > 1440 || adjustmentReason.trim().length < 3) {
+      setMessage({ type: 'error', text: isTransfer ? 'Select an employee, different source and destination projects, enter 0–24 hours plus 0–59 minutes, and provide a reason.' : 'Select an employee and project, enter 0–24 hours plus 0–59 minutes, and provide a reason.' });
       return;
     }
     if (selectedDate > todayManilaDate()) {
@@ -255,20 +258,30 @@ export default function SuperAdminManpowerTrackerModal({ open, onClose }: Props)
 
     setSavingAdjustment(true);
     setMessage(null);
-    const { error } = await supabase.rpc('adjust_manpower_time', {
-      p_user_id: adjustmentEmployeeId,
-      p_project_id: adjustmentProjectId,
-      p_work_date: selectedDate,
-      p_delta_minutes: adjustmentDirection === 'add' ? totalMinutes : -totalMinutes,
-      p_reason: adjustmentReason.trim(),
-    });
+    const { error } = isTransfer
+      ? await supabase.rpc('transfer_manpower_time', {
+        p_user_id: adjustmentEmployeeId,
+        p_source_project_id: adjustmentProjectId,
+        p_destination_project_id: transferDestinationProjectId,
+        p_work_date: selectedDate,
+        p_minutes: totalMinutes,
+        p_reason: adjustmentReason.trim(),
+      })
+      : await supabase.rpc('adjust_manpower_time', {
+        p_user_id: adjustmentEmployeeId,
+        p_project_id: adjustmentProjectId,
+        p_work_date: selectedDate,
+        p_delta_minutes: adjustmentDirection === 'add' ? totalMinutes : -totalMinutes,
+        p_reason: adjustmentReason.trim(),
+      });
     if (error) {
       setMessage({ type: 'error', text: error.message || 'Unable to save the manpower adjustment.' });
     } else {
       setAdjustmentHours('');
       setAdjustmentMinutes('');
       setAdjustmentReason('');
-      setMessage({ type: 'success', text: 'Manpower adjustment saved with an audit record.' });
+      setTransferDestinationProjectId('');
+      setMessage({ type: 'success', text: isTransfer ? 'Manpower time transferred with paired audit records.' : 'Manpower adjustment saved with an audit record.' });
       await fetchTracker(selectedDate);
     }
     setSavingAdjustment(false);
@@ -336,18 +349,19 @@ export default function SuperAdminManpowerTrackerModal({ open, onClose }: Props)
         ) : tab === 'adjustments' ? (
           <>
             <section className="rounded-2xl bg-slate-50 p-3 dark:bg-[#303632]">
-              <div className="mb-3"><h3 className="text-sm font-bold text-slate-900 dark:text-white">Audited manpower correction</h3><p className="mt-0.5 text-[10px] text-slate-500">Use this to clean up earlier lapses. Select the affected work date, then add or deduct the exact hours and minutes. The original timer is preserved.</p></div>
+              <div className="mb-3"><h3 className="text-sm font-bold text-slate-900 dark:text-white">Audited manpower correction</h3><p className="mt-0.5 text-[10px] text-slate-500">Use this to clean up earlier lapses. Add or deduct time, or transfer it between projects. The original timer is preserved.</p></div>
               <div className="grid gap-2 sm:grid-cols-2">
                 <input type="date" value={selectedDate} max={todayManilaDate()} onChange={(event) => setSelectedDate(event.target.value)} className="min-h-10 rounded-xl bg-white px-3 text-xs outline-none dark:bg-[#292f2b] dark:text-white" aria-label="Work date" />
                 <select value={adjustmentEmployeeId} onChange={(event) => setAdjustmentEmployeeId(event.target.value)} className="min-h-10 rounded-xl bg-white px-3 text-xs outline-none dark:bg-[#292f2b] dark:text-white"><option value="">Select employee</option>{employees.filter((employee) => employee.is_active).map((employee) => <option key={employee.id} value={employee.id}>{employee.full_name || employee.employee_id || 'Employee'}</option>)}</select>
-                <select value={adjustmentProjectId} onChange={(event) => setAdjustmentProjectId(event.target.value)} className="min-h-10 rounded-xl bg-white px-3 text-xs outline-none dark:bg-[#292f2b] dark:text-white"><option value="">Select project</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}{project.is_active ? '' : ' (inactive)'}</option>)}</select>
-                <select value={adjustmentDirection} onChange={(event) => setAdjustmentDirection(event.target.value as 'add' | 'deduct')} className="min-h-10 rounded-xl bg-white px-3 text-xs outline-none dark:bg-[#292f2b] dark:text-white"><option value="add">Add time</option><option value="deduct">Deduct time</option></select>
+                <select value={adjustmentProjectId} onChange={(event) => setAdjustmentProjectId(event.target.value)} className="min-h-10 rounded-xl bg-white px-3 text-xs outline-none dark:bg-[#292f2b] dark:text-white"><option value="">{adjustmentDirection === 'transfer' ? 'From project' : 'Select project'}</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}{project.is_active ? '' : ' (inactive)'}</option>)}</select>
+                <select value={adjustmentDirection} onChange={(event) => setAdjustmentDirection(event.target.value as 'add' | 'deduct' | 'transfer')} className="min-h-10 rounded-xl bg-white px-3 text-xs outline-none dark:bg-[#292f2b] dark:text-white"><option value="add">Add time</option><option value="deduct">Deduct time</option><option value="transfer">Transfer time</option></select>
+                {adjustmentDirection === 'transfer' ? <select value={transferDestinationProjectId} onChange={(event) => setTransferDestinationProjectId(event.target.value)} className="min-h-10 rounded-xl bg-white px-3 text-xs outline-none dark:bg-[#292f2b] dark:text-white"><option value="">To project</option>{projects.filter((project) => project.id !== adjustmentProjectId).map((project) => <option key={project.id} value={project.id}>{project.name}{project.is_active ? '' : ' (inactive)'}</option>)}</select> : null}
                 <div className="grid grid-cols-2 gap-2"><input type="number" min="0" max="24" inputMode="numeric" value={adjustmentHours} onChange={(event) => setAdjustmentHours(event.target.value)} placeholder="Hours" className="min-h-10 rounded-xl bg-white px-3 text-xs outline-none dark:bg-[#292f2b] dark:text-white" /><input type="number" min="0" max="59" inputMode="numeric" value={adjustmentMinutes} onChange={(event) => setAdjustmentMinutes(event.target.value)} placeholder="Minutes" className="min-h-10 rounded-xl bg-white px-3 text-xs outline-none dark:bg-[#292f2b] dark:text-white" /></div>
               </div>
               <textarea value={adjustmentReason} onChange={(event) => setAdjustmentReason(event.target.value)} placeholder="Reason for correction" maxLength={500} rows={2} className="mt-2 w-full resize-none rounded-xl bg-white px-3 py-2 text-xs outline-none dark:bg-[#292f2b] dark:text-white" />
-              <div className="mt-2 flex items-center justify-between gap-3"><p className="text-[10px] text-slate-500">Maximum correction: 24 hours per work date.</p><button type="button" onClick={saveAdjustment} disabled={savingAdjustment || selectedDate > todayManilaDate()} className="min-h-9 rounded-xl bg-slate-900 px-3 text-xs font-bold text-white disabled:opacity-40 dark:bg-white dark:text-slate-900">{savingAdjustment ? 'Saving…' : `${adjustmentDirection === 'add' ? 'Add' : 'Deduct'} time`}</button></div>
+              <div className="mt-2 flex items-center justify-between gap-3"><p className="text-[10px] text-slate-500">Maximum correction: 24 hours per work date. Transfers cannot make the source total negative.</p><button type="button" onClick={saveAdjustment} disabled={savingAdjustment || selectedDate > todayManilaDate()} className="min-h-9 rounded-xl bg-slate-900 px-3 text-xs font-bold text-white disabled:opacity-40 dark:bg-white dark:text-slate-900">{savingAdjustment ? 'Saving…' : adjustmentDirection === 'transfer' ? 'Transfer time' : `${adjustmentDirection === 'add' ? 'Add' : 'Deduct'} time`}</button></div>
             </section>
-            <section><div className="mb-2"><h3 className="text-sm font-bold text-slate-900 dark:text-white">Adjustments on {selectedDate}</h3></div>{adjustments.length ? <div className="space-y-2">{adjustments.map((adjustment) => { const employee = employeeMap.get(adjustment.user_id); const project = projectMap.get(adjustment.project_id); return <div key={adjustment.id} className="grid gap-1 rounded-2xl bg-slate-50 px-3 py-2.5 dark:bg-[#303632] sm:grid-cols-[1fr_1fr_auto]"><div className="min-w-0"><p className="truncate text-xs font-bold text-slate-900 dark:text-white">{employee?.full_name || 'Employee'}</p><p className="text-[10px] text-slate-500">{project?.name || 'Project'}</p></div><p className="text-[10px] text-slate-500">{adjustment.reason}</p><span className={`font-mono text-xs font-bold ${adjustment.delta_minutes > 0 ? 'text-cyan-700 dark:text-cyan-300' : 'text-amber-700 dark:text-amber-300'}`}>{adjustment.delta_minutes > 0 ? '+' : ''}{adjustment.delta_minutes}m</span></div>; })}</div> : <p className="rounded-2xl bg-slate-50 px-4 py-8 text-center text-sm text-slate-500 dark:bg-[#303632]">No adjustments for this date.</p>}</section>
+            <section><div className="mb-2"><h3 className="text-sm font-bold text-slate-900 dark:text-white">Adjustments on {selectedDate}</h3></div>{adjustments.length ? <div className="space-y-2">{adjustments.map((adjustment) => { const employee = employeeMap.get(adjustment.user_id); const project = projectMap.get(adjustment.project_id); const transferLabel = adjustment.transfer_id ? adjustment.delta_minutes > 0 ? 'Transfer in' : 'Transfer out' : null; return <div key={adjustment.id} className="grid gap-1 rounded-2xl bg-slate-50 px-3 py-2.5 dark:bg-[#303632] sm:grid-cols-[1fr_1fr_auto]"><div className="min-w-0"><p className="truncate text-xs font-bold text-slate-900 dark:text-white">{employee?.full_name || 'Employee'}</p><p className="text-[10px] text-slate-500">{project?.name || 'Project'}{transferLabel ? ` · ${transferLabel}` : ''}</p></div><p className="text-[10px] text-slate-500">{adjustment.reason}</p><span className={`font-mono text-xs font-bold ${adjustment.delta_minutes > 0 ? 'text-cyan-700 dark:text-cyan-300' : 'text-amber-700 dark:text-amber-300'}`}>{adjustment.delta_minutes > 0 ? '+' : ''}{adjustment.delta_minutes}m</span></div>; })}</div> : <p className="rounded-2xl bg-slate-50 px-4 py-8 text-center text-sm text-slate-500 dark:bg-[#303632]">No adjustments for this date.</p>}</section>
           </>
         ) : (
           <>
