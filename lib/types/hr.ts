@@ -5,7 +5,7 @@ export type EmployeeSummary = { id?: string; full_name?: string | null; is_activ
 
 export type AttendanceDispute = {
   id: string;
-  attendance_log_id: string | null;
+  attendance_log_id: number | null;
   dispute_date: string;
   dispute_type: 'TimeIn' | 'TimeOut' | null;
   claimed_time_in: string | null;

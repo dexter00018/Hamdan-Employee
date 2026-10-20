@@ -4,7 +4,7 @@ import { computeLateMinutes } from './attendance-rules';
 export const HR_ATTENDANCE_PAGE_SIZE = 6;
 export type HRAttendanceFilter = 'all' | 'present' | 'late' | 'early-out' | 'absent' | 'leave' | 'offset';
 export type HRAttendanceRecord = {
-  id: string;
+  id: number;
   user_id: string;
   log_date: string;
   time_in: string | null;
@@ -74,5 +74,5 @@ export function filterHRAttendance(records: HRAttendanceRecord[], filters: HRAtt
     if (includeStatus && !matchesHRAttendanceStatus(record, filters.status, timeOutHour)) return false;
     const item = hrAttendancePresentation(record, timeOutHour);
     return !search || `${record.profiles?.full_name || ''} ${record.profiles?.employee_id || ''} ${record.log_date} ${item.display.label} ${item.remarks}`.toLowerCase().includes(search);
-  }).sort((left, right) => right.log_date.localeCompare(left.log_date) || (right.time_in || '').localeCompare(left.time_in || '') || left.id.localeCompare(right.id));
+  }).sort((left, right) => right.log_date.localeCompare(left.log_date) || (right.time_in || '').localeCompare(left.time_in || '') || left.id - right.id);
 }

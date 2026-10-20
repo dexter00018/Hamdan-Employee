@@ -4,7 +4,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import Spinner from '@/components/Spinner';
 import ModalShell from '@/components/shared/ModalShell';
 
-type EditingLog = { id: string; employeeName: string; timeInLocal: string; timeOutLocal: string; status: string };
+type EditingLog = { id: number; employeeName: string; timeInLocal: string; timeOutLocal: string; status: string };
 type Props = { editingLog: EditingLog | null; logSaving: boolean; saveEditLog: () => void | Promise<void>; setEditingLog: Dispatch<SetStateAction<EditingLog | null>> };
 
 export default function EditAttendanceModal({ editingLog, logSaving, saveEditLog, setEditingLog }: Props) {

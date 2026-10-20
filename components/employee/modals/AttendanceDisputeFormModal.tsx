@@ -6,7 +6,7 @@ import ModalShell from '@/components/shared/ModalShell';
 
 type DisputeType = 'TimeIn' | 'TimeOut';
 type Step = 'choice' | 'form' | 'confirm';
-type Form = { attendanceLogId: string | null; date: string; timeLocal: string; reason: string; type: DisputeType };
+type Form = { attendanceLogId: number | null; date: string; timeLocal: string; reason: string; type: DisputeType };
 type Eligibility = { timeIn: { eligible: boolean; reason: string }; timeOut: { eligible: boolean; reason: string } };
 type Props = { open: boolean; onClose: () => void; disputeChoiceEligibility: Eligibility; disputeForm: Form; disputeMsg: { type: 'success' | 'error'; text: string } | null; disputeSaving: boolean; disputeStep: Step; disputeTypeLocked: RefObject<boolean>; formatTimeLocal: (value: string) => string; handleDisputeDateChange: (value: string) => void; proceedToDisputeConfirm: () => void; selectDisputeType: (type: DisputeType) => void; setDisputeForm: Dispatch<SetStateAction<Form>>; setDisputeStep: Dispatch<SetStateAction<Step>>; submitDispute: () => void | Promise<void> };
 

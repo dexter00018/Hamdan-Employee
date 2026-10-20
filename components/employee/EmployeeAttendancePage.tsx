@@ -22,7 +22,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type AttendanceLog = {
-  id: string;
+  id: number;
   log_date: string;
   time_in: string | null;
   time_out: string | null;

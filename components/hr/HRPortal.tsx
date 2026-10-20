@@ -27,6 +27,7 @@ import { countChargeableLeaveDays } from '@/lib/leave-rules';
 import { computeAttendanceStatus, computeLateMinutes } from '@/lib/attendance-rules';
 
 import { errorMessage, type AttendanceDispute, type LeaveRequest } from '@/lib/types/hr';
+import type { Database } from '@/lib/database.types';
 import SeasonalDecor from '@/components/seasonal/SeasonalDecor';
 
 const AttendanceInsightsModal = dynamic(() => import('@/components/hr/modals/AttendanceInsightsModal'));
@@ -48,7 +49,7 @@ const EmployeeDocumentsModal = dynamic(() => import('@/components/hr/modals/Empl
 const HRActionCenterModal = dynamic(() => import('@/components/hr/modals/HRActionCenterModal'));
 
 type AttendanceLog = {
-  id: string;
+  id: number;
   user_id: string;
   log_date: string;
   time_in: string | null;
@@ -57,7 +58,7 @@ type AttendanceLog = {
   late_offset_minutes?: number | null;
   early_out_offset_minutes?: number | null;
   absent_offset_minutes?: number | null;
-  early_out_offset_requests?: Array<{ status: 'Pending' | 'Approved' | 'Rejected'; required_minutes: number }>;
+  early_out_offset_requests?: Array<{ status: string; required_minutes: number }>;
   profiles?: { full_name: string | null; employee_id?: string | null };
 };
 
@@ -175,7 +176,7 @@ export default function HRPortal({ view = 'dashboard', initialEmployeeId = '' }:
     setLeaveCreditsLoading(true);
     const year = new Date().getFullYear();
     const [profRes, govRes, creditsRes] = await Promise.all([
-      supabase.from('profiles').select('id, full_name, employee_id').eq('role', 'employee').eq('is_active', true).order('full_name'),
+      supabase.rpc('get_employee_roster'),
       supabase.from('employee_government_ids').select('user_id, employment_status'),
       supabase.from('leave_credits').select('user_id, total_credits, used_credits').eq('year', year),
     ]);
@@ -838,12 +839,7 @@ export default function HRPortal({ view = 'dashboard', initialEmployeeId = '' }:
         .or('is_active.eq.true,resigned_date.not.is.null', { referencedTable: 'profiles' })
         .order('log_date', { ascending: false })
         .order('time_in', { ascending: false, nullsFirst: false }),
-      supabase
-        .from('profiles')
-        .select('id, full_name, employee_id, designation, avatar_url, employee_email, resigned_date')
-        .eq('role', 'employee')
-        .or('is_active.eq.true,resigned_date.not.is.null')
-        .order('full_name'),
+      supabase.rpc('get_employee_roster', { p_mode: 'hr_history' }),
     ]);
 
     if (att.error) {
@@ -948,7 +944,7 @@ export default function HRPortal({ view = 'dashboard', initialEmployeeId = '' }:
       }
 
       if (announcementId) {
-        const updatePayload: Record<string, any> = {
+        const updatePayload: Database['public']['Tables']['announcements']['Update'] = {
           ...publication,
           content: announcementContent,
           updated_at: new Date().toISOString(),
@@ -1147,8 +1143,10 @@ export default function HRPortal({ view = 'dashboard', initialEmployeeId = '' }:
           .eq('id', dispute.id)
           .single();
 
+        if (!disputeRow) throw new Error('Linked dispute not found.');
+
         const { error } = await supabase.from('attendance_logs').upsert([{
-          user_id: disputeRow?.user_id,
+          user_id: disputeRow.user_id,
           log_date: dispute.dispute_date,
           time_in: dispute.claimed_time_in,
           status: newStatus,
@@ -1468,7 +1466,7 @@ export default function HRPortal({ view = 'dashboard', initialEmployeeId = '' }:
       setAvatarUploading(false);
     }
 
-    const updatePayload: Record<string, any> = {
+    const updatePayload: Database['public']['Tables']['profiles']['Update'] = {
       full_name: editing.full_name,
       employee_id: editing.employee_id,
       designation: editing.designation,

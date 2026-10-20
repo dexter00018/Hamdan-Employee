@@ -6,7 +6,7 @@ import ModalShell from '@/components/shared/ModalShell';
 
 type OverviewKind = 'present' | 'late' | 'leave' | 'notTimedIn';
 type Meta = { title: string; description: string; empty: string; tone: string };
-type RecordItem = { id: string; full_name?: string | null; employee_id?: string | null; designation?: string | null; time_in?: string | null; status?: string | null; leave_type?: string | null; start_date?: string | null; end_date?: string | null; profiles?: { full_name?: string | null } | null; employee?: { full_name?: string | null } | null };
+type RecordItem = { id: string | number; full_name?: string | null; employee_id?: string | null; designation?: string | null; time_in?: string | null; status?: string | null; leave_type?: string | null; start_date?: string | null; end_date?: string | null; profiles?: { full_name?: string | null } | null; employee?: { full_name?: string | null } | null };
 type Props = { modal: OverviewKind | null; meta: Meta | null; records: RecordItem[]; initials: (name: string | null) => string; setModal: Dispatch<SetStateAction<OverviewKind | null>> };
 
 export default function DailyOverviewModal({ modal, meta, records, initials, setModal }: Props) {

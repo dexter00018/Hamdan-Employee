@@ -202,7 +202,10 @@ export default function SuperAdminDashboard() {
     const { error } = await supabase.rpc('log_audit_event', {
       p_action: action,
       p_entity_type: entityType,
-      p_entity_id: entityId,
+      // The DB function accepts NULL for p_entity_id at runtime (several
+      // callers log system-level events with no entity), but the generated
+      // arg type is non-nullable because the param has no DEFAULT.
+      p_entity_id: entityId ?? (null as unknown as string),
       p_summary: summary,
     });
     if (error) console.error('Error logging audit event:', error);
@@ -363,7 +366,7 @@ export default function SuperAdminDashboard() {
     new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())
   );
   const [editingLog, setEditingLog] = useState<{
-    id: string;
+    id: number;
     employeeName: string;
     timeInLocal: string; // datetime-local value, in PH time
     timeOutLocal: string; // datetime-local value, in PH time (can be empty)

@@ -6,7 +6,7 @@ import ModalShell from '@/components/shared/ModalShell';
 
 type InsightKind = 'attendance' | 'late' | 'absent' | 'leave';
 type Meta = { title: string; description: string; empty: string; tone: string };
-type RecordItem = { id: string; log_date?: string | null; status?: string | null; time_in?: string | null; profiles?: { full_name?: string | null } | null };
+type RecordItem = { id: number; log_date?: string | null; status?: string | null; time_in?: string | null; profiles?: { full_name?: string | null } | null };
 type Props = { modal: InsightKind | null; meta: Meta | null; records: RecordItem[]; initials: (name: string | null) => string; setModal: Dispatch<SetStateAction<InsightKind | null>> };
 
 export default function AttendanceInsightsModal({ modal, meta, records, initials, setModal }: Props) {

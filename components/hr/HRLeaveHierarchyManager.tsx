@@ -27,12 +27,7 @@ export default function HRLeaveHierarchyManager() {
 
   const fetchEmployees = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id,full_name,employee_id,designation,employee_rank,direct_lead_id,is_active')
-      .eq('role', 'employee')
-      .eq('is_active', true)
-      .order('full_name');
+    const { data, error } = await supabase.rpc('get_employee_roster');
 
     if (error) {
       console.error('Error loading leave hierarchy:', error);
@@ -75,8 +70,8 @@ export default function HRLeaveHierarchyManager() {
     setMessage(null);
     const { error } = await supabase.rpc('set_employee_leave_hierarchy', {
       p_employee_id: selected.id,
-      p_rank: rank || null,
-      p_direct_lead_id: rank === 'Associate' ? directLeadId : null,
+      p_rank: rank || '',
+      p_direct_lead_id: rank === 'Associate' ? directLeadId : undefined,
     });
 
     if (error) {

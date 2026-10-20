@@ -31,7 +31,7 @@ export default function HRAttendanceHistory(props: Props) {
     return { employeeId: props.initialEmployeeId || '', month: props.initialEmployeeId ? '' : today.slice(0, 7), date: props.initialEmployeeId ? '' : today, half: 'all', status: 'all', search: '' };
   });
   const [page, setPage] = useState(1);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
   const setFilter = (patch: Partial<HRAttendanceFilters>) => { setFilters(current => ({ ...current, ...patch })); setPage(1); };
   const records = useMemo(() => {
     const employees = new Map(props.profiles.map(employee => [employee.id, employee]));

@@ -1,5 +1,6 @@
 import { createBrowserClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
+import type { Database } from '@/lib/database.types';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -20,7 +21,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
 //
 // createBrowserClient keeps localStorage AND cookies in sync, so both the
 // client-side app and proxy.ts see the same session.
-export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey, {
+export const supabase = createBrowserClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
     flowType: 'implicit',
   },

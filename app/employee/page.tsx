@@ -1,5 +1,6 @@
 'use client';
 import { getAttendanceStatusDisplay } from '@/lib/attendance-status-display';
+import type { Database } from '@/lib/database.types';
 import { computeLateMinutes } from '@/lib/attendance-rules';
 import { applyPortalTheme } from '@/lib/portal-theme';
 import MobileBottomNav from '@/components/employee/MobileBottomNav';
@@ -79,7 +80,7 @@ export default function EmployeeDashboard() {
   const [offsetModalOpen, setOffsetModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [timeOutLoading, setTimeOutLoading] = useState(false);
-  const [todayLog, setTodayLog] = useState<{ id: string; time_in: string | null; time_out: string | null; status: string | null } | null>(null);
+  const [todayLog, setTodayLog] = useState<{ id: number; time_in: string | null; time_out: string | null; status: string } | null>(null);
 
   // App-wide configurable settings (late cutoff, leave credits default,
   // time-out reminder hour) -- fetched once on load from app_settings,
@@ -763,14 +764,7 @@ export default function EmployeeDashboard() {
     //   using (true);
     // (Sensitive fields like SSS/PhilHealth/TIN live in
     // employee_government_ids, a separate table, and are unaffected.)
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id, full_name, designation, avatar_url, employee_email, role')
-      // Employees only -- HR admins and the super-admin account don't
-      // belong in a colleague directory.
-      .eq('role', 'employee')
-      .eq('is_active', true)
-      .order('full_name', { ascending: true });
+    const { data, error } = await supabase.rpc('get_employee_roster');
 
     if (error) {
       console.error('Error fetching directory:', error);
@@ -1179,7 +1173,7 @@ export default function EmployeeDashboard() {
   // "form"    -> fill in date / time / reason
   // "confirm" -> review everything highlighted before actually submitting
   const [disputeStep, setDisputeStep] = useState<'choice' | 'form' | 'confirm'>('form');
-  const [disputeForm, setDisputeForm] = useState<{ attendanceLogId: string | null; date: string; timeLocal: string; reason: string; type: 'TimeIn' | 'TimeOut' }>({
+  const [disputeForm, setDisputeForm] = useState<{ attendanceLogId: number | null; date: string; timeLocal: string; reason: string; type: 'TimeIn' | 'TimeOut' }>({
     attendanceLogId: null,
     date: '',
     timeLocal: '',
@@ -1230,7 +1224,7 @@ export default function EmployeeDashboard() {
   // be switched; false means it was opened from the generic
   // "+ Missed time-in / time-out" action and the employee can toggle
   // between the two.
-  const openDisputeModal = (attendanceLogId: string | null, date: string, type: 'TimeIn' | 'TimeOut' = 'TimeIn', locked: boolean = true) => {
+  const openDisputeModal = (attendanceLogId: number | null, date: string, type: 'TimeIn' | 'TimeOut' = 'TimeIn', locked: boolean = true) => {
     disputeTypeLocked.current = locked;
     setDisputeForm({ attendanceLogId, date, timeLocal: '', reason: '', type });
     setDisputeMsg(null);
@@ -1407,7 +1401,7 @@ export default function EmployeeDashboard() {
         ? history.find((h) => h.id === disputeForm.attendanceLogId)
         : null;
 
-      const payload: Record<string, any> = {
+      const payload: Database['public']['Tables']['attendance_disputes']['Insert'] = {
         attendance_log_id: disputeForm.attendanceLogId,
         user_id: user.id,
         dispute_date: disputeForm.date,

@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 export type ResolvableAttendanceRecord = {
-  id: string;
+  id: number;
   log_date: string;
   time_in: string | null;
   time_out: string | null;

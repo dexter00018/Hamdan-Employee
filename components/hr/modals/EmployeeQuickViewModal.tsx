@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { getAttendanceStatusDisplay } from '@/lib/attendance-status-display';
 
 type Profile = { id: string; full_name: string | null; employee_id: string | null; designation: string | null; avatar_url: string | null; employee_email: string | null };
-type Attendance = { id: string; log_date: string; time_in: string | null; time_out: string | null; status: string | null; late_offset_minutes?: number | null; early_out_offset_minutes?: number | null };
+type Attendance = { id: number; log_date: string; time_in: string | null; time_out: string | null; status: string | null; late_offset_minutes?: number | null; early_out_offset_minutes?: number | null };
 type Credits = { employment_status?: string | null; total_credits?: number | null; used_credits?: number | null } | null;
 type ExtraInfo = {
   employeeRank: string | null;

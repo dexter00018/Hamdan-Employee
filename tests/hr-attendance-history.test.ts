@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { filterHRAttendance, formatHRAttendanceHours, formatHRAttendanceTime, HR_ATTENDANCE_PAGE_SIZE, hrAttendanceLateMinutes, hrAttendancePresentation, matchesHRAttendanceStatus, type HRAttendanceFilters, type HRAttendanceRecord } from '../lib/hr-attendance-history';
 
-const base: HRAttendanceRecord = { id: 'one', user_id: 'employee-1', log_date: '2026-10-15', time_in: '2026-10-15T01:20:04Z', time_out: '2026-10-15T11:00:07Z', status: 'Late', profiles: { full_name: 'Same Name', employee_id: 'HE-001' } };
+const base: HRAttendanceRecord = { id: 1, user_id: 'employee-1', log_date: '2026-10-15', time_in: '2026-10-15T01:20:04Z', time_out: '2026-10-15T11:00:07Z', status: 'Late', profiles: { full_name: 'Same Name', employee_id: 'HE-001' } };
 const all: HRAttendanceFilters = { employeeId: '', month: '', half: 'all', date: '', status: 'all', search: '' };
 
 describe('HR attendance filters and presentation', () => {
@@ -50,14 +50,14 @@ describe('HR attendance filters and presentation', () => {
   });
 
   it('selects employees by ID rather than matching duplicate names', () => {
-    const other = { ...base, id: 'two', user_id: 'employee-2' };
-    expect(filterHRAttendance([base, other], { ...all, employeeId: 'employee-1' }, 19).map(row => row.id)).toEqual(['one']);
+    const other = { ...base, id: 2, user_id: 'employee-2' };
+    expect(filterHRAttendance([base, other], { ...all, employeeId: 'employee-1' }, 19).map(row => row.id)).toEqual([1]);
   });
 
   it('handles the exact 15th/16th payroll boundary within the selected month', () => {
-    const rows = [base, { ...base, id: 'sixteenth', log_date: '2026-10-16' }, { ...base, id: 'other-month', log_date: '2026-09-16' }];
-    expect(filterHRAttendance(rows, { ...all, month: '2026-10', half: 'H1' }, 19).map(row => row.id)).toEqual(['one']);
-    expect(filterHRAttendance(rows, { ...all, month: '2026-10', half: 'H2' }, 19).map(row => row.id)).toEqual(['sixteenth']);
+    const rows = [base, { ...base, id: 16, log_date: '2026-10-16' }, { ...base, id: 99, log_date: '2026-09-16' }];
+    expect(filterHRAttendance(rows, { ...all, month: '2026-10', half: 'H1' }, 19).map(row => row.id)).toEqual([1]);
+    expect(filterHRAttendance(rows, { ...all, month: '2026-10', half: 'H2' }, 19).map(row => row.id)).toEqual([16]);
   });
 
   it('filters a specific Manila log_date without using the UTC timestamp prefix', () => {
@@ -72,7 +72,7 @@ describe('HR attendance filters and presentation', () => {
   });
 
   it('can count the selected period independently of the current status filter', () => {
-    const rows = [base, { ...base, id: 'present', status: 'Present' }];
+    const rows = [base, { ...base, id: 2, status: 'Present' }];
     expect(filterHRAttendance(rows, { ...all, status: 'late' }, 19)).toHaveLength(1);
     expect(filterHRAttendance(rows, { ...all, status: 'late' }, 19, false)).toHaveLength(2);
   });

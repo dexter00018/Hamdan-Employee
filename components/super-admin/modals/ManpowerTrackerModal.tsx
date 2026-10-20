@@ -112,11 +112,7 @@ export default function SuperAdminManpowerTrackerModal({ open, onClose }: Props)
     setLoading(true);
     const { start, end } = dayBounds(date);
     const [employeeRes, sessionRes, adjustmentRes] = await Promise.all([
-      supabase
-        .from('profiles')
-        .select('id,full_name,employee_id,designation,is_active')
-        .eq('role', 'employee')
-        .order('full_name'),
+      supabase.rpc('get_employee_roster', { p_mode: 'all' }),
       supabase
         .from('manpower_sessions')
         .select('id,user_id,project_id,started_at,ended_at')
