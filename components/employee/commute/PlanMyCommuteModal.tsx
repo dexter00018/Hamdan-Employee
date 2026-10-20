@@ -309,6 +309,32 @@ export default function PlanMyCommuteModal({
     setCommuteHasAttempted(false);
   };
 
+  // Swap From and To, including the exact selected suggestion (coordinates)
+  // behind each field so the next check uses the swapped positions.
+  const swapCommuteEndpoints = () => {
+    const nextOriginText = commuteDestination;
+    const nextOriginAddress = selectedDestinationAddress;
+    const nextDestinationText = commuteOrigin;
+    const nextDestinationAddress = selectedOriginAddress;
+
+    setCommuteOrigin(nextOriginText);
+    setSelectedOriginAddress(nextOriginAddress);
+    setOriginSuggestions(destinationSuggestions);
+    setShowOriginSuggestions(false);
+    setOriginActiveSuggestion(-1);
+    setOriginSearchError(null);
+
+    setCommuteDestination(nextDestinationText);
+    setSelectedDestinationAddress(nextDestinationAddress);
+    setDestinationSuggestions(originSuggestions);
+    setShowDestinationSuggestions(false);
+    setDestinationActiveSuggestion(-1);
+    setDestinationSearchError(null);
+
+    setCommuteError(null);
+    setCommuteUIState('idle');
+  };
+
   // Modal-level accessibility: Escape closes the whole modal (not just an
   // address-suggestion dropdown), focus moves into the modal on open and
   // is trapped inside it while open, and focus returns to whatever
@@ -437,7 +463,7 @@ export default function PlanMyCommuteModal({
     setDestinationSuggestions([]);
     setShowOriginSuggestions(false);
     setShowDestinationSuggestions(false);
-    setCommuteDestination((current) => current || initialDestination || 'Makati City');
+    setCommuteDestination((current) => current || initialDestination || '');
   }, [open, initialDestination]);
 
   const useCurrentLocationForCommute = () => {
@@ -642,30 +668,34 @@ export default function PlanMyCommuteModal({
           className={`${darkMode ? 'dark' : ''} commute-theme-scope fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/45 backdrop-blur-sm p-0 sm:p-4`}
           data-theme={darkMode ? 'dark' : 'light'}
         >
-          <div className={`commute-canvas-surface w-[calc(100%-1rem)] max-w-[620px] max-h-[92dvh] overflow-y-auto rounded-[24px] p-4 shadow-2xl sm:p-6 ${darkMode ? 'bg-slate-950' : 'bg-[#fcfbf8]'}`}>
-            <div className="commute-modal-header sticky top-0 z-50 -mx-4 -mt-4 mb-4 flex items-start justify-between gap-4 border-b border-slate-200/80 bg-[#fcfbf8]/95 dark:!bg-[#1f252d] px-4 pb-3 pt-4 backdrop-blur-xl sm:-mx-6 sm:-mt-6 sm:px-6 sm:pb-4 sm:pt-6">
-              <div className="flex items-start gap-3 min-w-0">
-                <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center flex-shrink-0 text-xl  ">
-                  🌦️
-                </div>
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="mb-0">Plan My Commute</h3>
+          <div className={`commute-canvas-surface w-[calc(100%-1rem)] max-w-[780px] max-h-[92dvh] overflow-y-auto rounded-[24px] p-4 shadow-2xl sm:p-6 ${darkMode ? 'bg-slate-950' : 'bg-[#fcfbf8]'}`}>
+            {/* Header: compact brand row, no illustration clutter. */}
+            <div className="commute-modal-header sticky top-0 z-50 -mx-4 -mt-4 mb-4 border-b border-emerald-100/70 px-4 pb-3 pt-4 backdrop-blur-xl sm:-mx-6 sm:-mt-6 sm:px-5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-11 h-11 rounded-[14px] bg-gradient-to-br from-emerald-500 to-emerald-700 shadow-md shadow-emerald-600/25 flex items-center justify-center flex-shrink-0">
+                    {/* Same navigation icon language the portal uses elsewhere. */}
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m3 11 18-5-7 18-2.4-8.6L3 11Z"/></svg>
                   </div>
-                  <p className="text-slate-400 text-xs mt-1">
-                    Weather and traffic advice across your selected route.
-                  </p>
+                  <div className="min-w-0">
+                    <h3 className="text-[19px] sm:text-xl font-extrabold tracking-tight text-emerald-950 mb-0">
+                      Plan My Commute
+                    </h3>
+                    <p className="text-[11px] sm:text-xs font-medium text-emerald-800/75 mt-0.5">
+                      Get the best route, avoid traffic, and arrive on time.
+                    </p>
+                  </div>
                 </div>
+                <button
+                  ref={commuteCloseButtonRef}
+                  type="button"
+                  onClick={() => onClose()}
+                  className="w-9 h-9 rounded-full bg-white/70 ring-1 ring-emerald-200/60 text-slate-500 flex items-center justify-center hover:bg-white hover:text-slate-800 shadow-sm transition flex-shrink-0"
+                  aria-label="Close commute assistant"
+                >
+                  ×
+                </button>
               </div>
-              <button
-                ref={commuteCloseButtonRef}
-                type="button"
-                onClick={() => onClose()}
-                className="w-11 h-11 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center hover:bg-slate-200 transition flex-shrink-0"
-                aria-label="Close commute assistant"
-              >
-                ×
-              </button>
             </div>
 
             <div className="grid grid-cols-1 gap-4 items-start">
@@ -697,25 +727,37 @@ export default function PlanMyCommuteModal({
                 </div>
               </div>
             )}
-            <section className={`rounded-3xl border border-slate-200 bg-white p-3 sm:p-4 lg:p-5 shadow-sm ${isCommuteFormCollapsed ? 'hidden' : 'block'}`}>
-              <div className="flex items-center justify-between gap-3 mb-3">
-                <div>
-                  <p className="text-[9px] uppercase tracking-[0.16em] font-extrabold text-slate-500">
-                    Plan your route
-                  </p>
-                  <p className="text-[10px] text-slate-400 mt-0.5">
-                    Select an exact address for better route accuracy.
-                  </p>
-                </div>
-                <span title="Address results are limited to the Philippines" className="hidden sm:inline-flex rounded-full bg-white border border-slate-200 px-2.5 py-1 text-[8px] font-extrabold text-slate-500">
-                  PH · Philippines only
+            <section className={`rounded-[20px] p-4 sm:p-5 space-y-4 ${isCommuteFormCollapsed ? 'hidden' : 'block'} cm-card`}>
+              <div className="flex items-center justify-between gap-3">
+                <div className="pl-0.5">
+                <p className="flex items-center gap-1.5 text-[15px] sm:text-[16px] cm-heading">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#047857" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m3 11 18-5-7 18-2.4-8.6L3 11Z"/></svg>
+                  Plan Your Route
+                </p>
+                <p className="text-[11px] sm:text-xs cm-sub mt-0.5 font-medium pl-[23px]">
+                  Enter your starting point and destination to get the best route options.
+                </p>
+              </div>
+                <span title="Address results are limited to the Philippines" className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-white/70 ring-1 ring-slate-200/80 px-3 py-1.5 text-[10px] font-semibold text-slate-500 flex-shrink-0">
+                  🇵🇭 PH - Philippines only
                 </span>
               </div>
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-              <div className="relative">
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="label-branded mb-0">From</label>
-                  <span className="text-[9px] font-bold text-slate-400">Starting point</span>
+            <div className="relative grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-8">
+              {/* Floating swap button: sits on the seam between From and To on
+                  every breakpoint (stacked cards on mobile, two columns on lg). */}
+              <button
+                type="button"
+                onClick={swapCommuteEndpoints}
+                className="absolute left-1/2 top-1/2 z-30 h-10 w-10 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center rounded-full bg-emerald-600 text-white shadow-md ring-2 ring-white dark:ring-[#0b1220] transition hover:bg-emerald-700 active:scale-95"
+                title="Swap starting point and destination"
+                aria-label="Swap starting point and destination"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></svg>
+              </button>
+              <div className="relative order-1 lg:order-none cm-field p-3">
+                <div className="mb-2 flex items-center gap-1.5">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="#059669" aria-hidden="true"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5" fill="#fff"/></svg>
+                  <span className="text-[11px] font-extrabold text-emerald-700">From</span>
                 </div>
                 <div className="relative">
                   {originLocationResolving ? (
@@ -771,7 +813,9 @@ export default function PlanMyCommuteModal({
                       aria-activedescendant={originActiveSuggestion >= 0 ? `commute-origin-option-${originActiveSuggestion}` : undefined}
                     />
 
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-700 text-xs pointer-events-none" aria-hidden="true">⌖</span>
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-600 pointer-events-none" aria-hidden="true">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/><path d="M12 1v3"/><path d="M12 20v3"/><path d="M1 12h3"/><path d="M20 12h3"/></svg>
+                    </span>
 
                     {originSearchLoading && (
                       <div className="absolute right-14 top-1/2 -translate-y-1/2">
@@ -796,8 +840,8 @@ export default function PlanMyCommuteModal({
                             className={`w-full px-3.5 py-3 text-left border-b border-slate-100 last:border-b-0 transition ${index === originActiveSuggestion ? 'bg-blue-50' : 'hover:bg-slate-50'}`}
                           >
                             <div className="flex items-start gap-2.5">
-                              <span className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-xs">
-                                📍
+                              <span className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-emerald-700">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg>
                               </span>
                               <div className="min-w-0">
                                 <p className="text-xs font-extrabold text-slate-900 truncate">
@@ -828,7 +872,7 @@ export default function PlanMyCommuteModal({
                     <button
                       type="button"
                       onClick={useCurrentLocationForCommute}
-                      className="absolute bottom-1.5 right-1.5 z-20 flex h-11 w-11 items-center justify-center rounded-xl border border-blue-200 bg-white text-sm font-bold text-blue-700 shadow-sm transition hover:bg-blue-50   "
+                      className="absolute right-2 top-1/2 z-20 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 shadow-sm transition hover:bg-emerald-100"
                       title="Use my current location"
                       aria-label="Use my current location"
                     >
@@ -838,10 +882,10 @@ export default function PlanMyCommuteModal({
                 </div>
               </div>
 
-              <div className="relative">
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="label-branded mb-0">To</label>
-                  <span className="text-[9px] font-bold text-slate-400">Destination</span>
+              <div className="relative order-3 lg:order-none cm-field p-3">
+                <div className="mb-2 flex items-center gap-1.5">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="#e11d48" aria-hidden="true"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5" fill="#fff"/></svg>
+                  <span className="text-[11px] font-extrabold text-rose-600">To</span>
                 </div>
                 <div className="relative">
                   {selectedDestinationAddress ? (
@@ -912,7 +956,9 @@ export default function PlanMyCommuteModal({
                     aria-activedescendant={destinationActiveSuggestion >= 0 ? `commute-destination-option-${destinationActiveSuggestion}` : undefined}
                   />
 
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-700 text-xs pointer-events-none" aria-hidden="true">●</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-rose-500 pointer-events-none" aria-hidden="true">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5" fill="#fff"/></svg>
+                  </span>
 
                   {destinationSearchLoading && (
                     <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -937,8 +983,8 @@ export default function PlanMyCommuteModal({
                           className={`w-full px-3.5 py-3 text-left border-b border-slate-100 last:border-b-0 transition ${index === destinationActiveSuggestion ? 'bg-blue-50' : 'hover:bg-slate-50'}`}
                         >
                           <div className="flex items-start gap-2.5">
-                            <span className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-xs">
-                              📍
+                            <span className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-rose-500">
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg>
                             </span>
                             <div className="min-w-0">
                               <p className="text-xs font-extrabold text-slate-900 truncate">
@@ -1000,72 +1046,92 @@ export default function PlanMyCommuteModal({
               </div>
             </div>
 
-              <div className="grid grid-cols-2 gap-2.5 mt-3">
-                <div>
-                  <label className="label-branded mb-1.5 block">Date</label>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="cm-field flex min-w-0 flex-col p-3">
+                  <div className="mb-2 flex items-center gap-1.5">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-600" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M16 3v4"/><path d="M8 3v4"/><path d="M3 10h18"/></svg>
+                    <label className="text-[11px] font-bold text-slate-700 mb-0">Date</label>
+                  </div>
                   <input
                     type="date"
                     value={commuteDepartureDate}
                     min={getManilaDateTimeInputs().date}
                     max={getManilaForecastMaxDate()}
                     onChange={(event) => setCommuteDepartureDate(event.target.value)}
-                    className="input-field w-full"
+                    className="input-field h-11 min-h-0 w-full min-w-0"
                   />
                 </div>
-                <div>
-                  <label className="label-branded mb-1.5 block">Departure</label>
+                <div className="cm-field flex min-w-0 flex-col p-3">
+                  <div className="mb-2 flex items-center gap-1.5">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-600" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                    <label className="text-[11px] font-bold text-slate-700 mb-0">Departure Time</label>
+                  </div>
                   <input
                     type="time"
                     step="1800"
                     value={commuteDepartureTime}
                     onChange={(event) => setCommuteDepartureTime(event.target.value)}
-                    className="input-field w-full"
+                    className="input-field h-11 min-h-0 w-full min-w-0"
                   />
                 </div>
               </div>
 
-              <div className="mt-3 pt-3 border-t border-slate-200/80">
-                <p className="text-[9px] uppercase tracking-[0.16em] font-extrabold text-slate-500">
+              <div className="pl-0.5">
+                <p className="flex items-center gap-1.5 text-[15px] sm:text-[16px] cm-heading">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#047857" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v3.5"/><path d="M12 17.5V21"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1.2"/></svg>
                   What do you want to know?
                 </p>
-                <p className="text-[9px] text-slate-400 mt-0.5">
+                <p className="text-[11px] sm:text-xs cm-sub mt-0.5 font-medium pl-[23px]">
                   Select only what you need. This keeps the AI request focused and smaller.
                 </p>
-                <div className="grid grid-cols-2 gap-2 mt-2 sm:grid-cols-4">
+              </div>
+                <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
                   {[
                     {
-                      icon: '☁️',
+                      icon: (
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="M20 12h2"/><path d="m19.07 4.93-1.41 1.41"/><path d="M15.947 12.65a4 4 0 0 0-5.925-4.883"/><path d="M7 14a4 4 0 0 1 0-8 3 3 0 0 1 3 3 3 3 0 0 1 3 3"/><path d="M17.5 16a3.5 3.5 0 0 0-3.5-3.5 3.5 3.5 0 0 0-3.5 3.5 3.5 3.5 0 0 0 3.5 3.5H22"/></svg>
+                      ),
                       value: 'route_weather' as CommuteAdviceOption,
                       label: 'Route weather',
-                      detail: 'Weather along route',
+                      detail: 'Along route',
+                      tile: 'bg-sky-50 border border-sky-100 text-sky-600',
                     },
                     {
-                      icon: '🌧️',
+                      icon: (
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M16 14v6"/><path d="M8 14v6"/><path d="M12 16v6"/></svg>
+                      ),
                       value: 'rain_risk' as CommuteAdviceOption,
                       label: 'Rain risk',
-                      detail: 'Chance and rainfall',
+                      detail: 'Chance & amount',
+                      tile: 'bg-cyan-50 border border-cyan-100 text-cyan-600',
                     },
                     {
-                      icon: '🚗',
+                      icon: (
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/></svg>
+                      ),
                       value: 'traffic_delays' as CommuteAdviceOption,
                       label: 'Traffic delays',
-                      detail: 'ETA and congestion',
+                      detail: 'ETA & congestion',
+                      tile: 'bg-amber-50 border border-amber-100 text-amber-600',
                     },
                     {
-                      icon: '◷',
+                      icon: (
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                      ),
                       value: 'best_departure' as CommuteAdviceOption,
                       label: 'Best departure',
                       detail: 'When to leave',
+                      tile: 'bg-emerald-50 border border-emerald-100 text-emerald-600',
                     },
-                  ].map(({ icon, value, label, detail }) => {
+                  ].map(({ icon, value, label, detail, tile }) => {
                     const selected = commuteAdviceOptions.includes(value);
                     return (
                       <label
                         key={label}
-                        className={`min-h-11 rounded-xl border px-3 py-2 flex items-center gap-2 cursor-pointer transition ${
+                        className={`relative flex min-h-[92px] cursor-pointer flex-col items-center justify-center gap-2 rounded-[16px] border px-2 py-3 text-center transition ${
                           selected
-                            ? 'bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200  '
-                            : 'bg-white border-slate-200 text-slate-600 hover:border-blue-200 hover:bg-blue-50/40  '
+                            ? 'border-emerald-500 bg-emerald-50/80 shadow-sm shadow-emerald-600/10'
+                            : 'border-slate-200 bg-white/60 hover:border-emerald-400/60 hover:bg-emerald-50/40'
                         }`}
                       >
                         <input
@@ -1075,54 +1141,57 @@ export default function PlanMyCommuteModal({
                           onChange={() => toggleCommuteAdviceOption(value)}
                           className="sr-only"
                         />
-                        <span className={`w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 text-xs ${selected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500'}`} aria-hidden="true">
-                          {selected ? '✓' : icon}
-                        </span>
-                        <span className="min-w-0">
-                          <span className="block text-[9px] font-extrabold leading-tight">{label}</span>
-                          <span className="block text-[8px] font-semibold mt-0.5 text-slate-400 leading-tight sm:hidden">
-                            {detail}
+                        {/* Selected confirmation: small check badge on the tile corner. */}
+                        {selected && (
+                          <span className="absolute right-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-600 text-[8px] font-black text-white" aria-hidden="true">
+                            ✓
                           </span>
+                        )}
+                        <span className={`flex h-11 w-11 items-center justify-center rounded-[14px] ${tile}`} aria-hidden="true">
+                          {icon}
+                        </span>
+                        <span className={`block text-[11px] font-bold leading-tight ${selected ? 'text-emerald-900' : 'text-slate-700'}`}>
+                          {label}
+                        </span>
+                        <span className="block text-[9px] font-medium text-slate-400 leading-tight">
+                          {detail}
                         </span>
                       </label>
                     );
                   })}
                 </div>
-                <div className={`mt-2.5 flex items-center gap-2 text-[9px] font-bold ${commuteAdviceOptions.length > 0 ? 'text-blue-700' : 'text-amber-700'}`}>
-                  <span aria-hidden="true">{commuteAdviceOptions.length > 0 ? '✓' : '!'}</span>
-                  <span>
-                    {commuteAdviceOptions.length > 0
-                      ? `${commuteAdviceOptions.length} option${commuteAdviceOptions.length === 1 ? '' : 's'} selected`
-                      : 'Select at least one option'}
-                  </span>
-                </div>
-              </div>
-
-            <div className="mt-3 pt-3 border-t border-slate-200/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="w-7 h-7 rounded-xl bg-violet-50 border border-violet-100 flex items-center justify-center text-xs">
-                    ✨
-                  </span>
-                  <div>
-                    <p className="text-[10px] font-extrabold text-slate-700 leading-none">
-                      AI advisory
-                    </p>
-                    <p className="text-[9px] text-slate-400 mt-1">
-                      Choose recommendation language
-                    </p>
+                {commuteAdviceOptions.length === 0 && (
+                  <div className="cm-hint-strip flex items-center gap-2.5 px-3.5 py-2.5 text-[10px] font-semibold text-amber-800">
+                    <span aria-hidden="true" className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-amber-500 text-[10px] font-black text-white">
+                      !
+                    </span>
+                    Select at least one option to continue
                   </div>
+                )}
+
+            <div className="mt-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="w-11 h-11 rounded-[14px] bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-lg shadow-sm flex-shrink-0">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 2v2.5"/><path d="M12 19.5V22"/><path d="m7.5 5.5 1.8 1.8"/><path d="m14.7 16.7 1.8 1.8"/><path d="M4 12h2.5"/><path d="M17.5 12H20"/><path d="m7.5 18.5 1.8-1.8"/><path d="m14.7 7.3 1.8-1.8"/><circle cx="12" cy="12" r="4.2"/></svg>
+                </span>
+                <div>
+                  <p className="text-[13px] font-black text-slate-900 leading-none">
+                    AI Advisory
+                  </p>
+                  <p className="text-[10px] text-slate-500 mt-1 font-medium">
+                    Choose recommendation language
+                  </p>
                 </div>
               </div>
 
-              <div className="inline-flex w-full sm:w-auto items-center rounded-xl bg-slate-100 p-1 border border-slate-200">
+              <div className="inline-flex w-full sm:w-auto items-center rounded-full bg-slate-100 p-1 border border-slate-200">
                 <button
                   type="button"
                   onClick={() => setCommuteLanguage('en')}
                   aria-pressed={commuteLanguage === 'en'}
-                  className={`flex-1 sm:flex-none min-h-11 px-4 py-2 rounded-lg text-[10px] font-extrabold transition-all ${
+                  className={`flex-1 sm:flex-none min-h-10 px-4 py-2 rounded-full text-[11px] font-extrabold transition-all ${
                     commuteLanguage === 'en'
-                      ? 'bg-white text-slate-950 shadow-sm'
+                      ? 'bg-emerald-600 text-white shadow-sm'
                       : 'text-slate-500 hover:text-slate-800'
                   }`}
                 >
@@ -1132,7 +1201,7 @@ export default function PlanMyCommuteModal({
                   type="button"
                   onClick={() => setCommuteLanguage('tl')}
                   aria-pressed={commuteLanguage === 'tl'}
-                  className={`flex-1 sm:flex-none min-h-11 px-4 py-2 rounded-lg text-[10px] font-extrabold transition-all ${
+                  className={`flex-1 sm:flex-none min-h-10 px-4 py-2 rounded-full text-[11px] font-extrabold transition-all ${
                     commuteLanguage === 'tl'
                       ? 'bg-slate-900 text-white shadow-sm'
                       : 'text-slate-500 hover:text-slate-800'
@@ -1143,15 +1212,22 @@ export default function PlanMyCommuteModal({
               </div>
             </div>
 
-              {((commuteOrigin.trim() && !selectedOriginAddress) ||
-                (commuteDestination.trim() && !selectedDestinationAddress)) && (
-                <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 flex items-start gap-2">
-                  <span className="text-amber-700 font-black" aria-hidden="true">!</span>
-                  <p className="text-[9px] font-semibold text-amber-800">
-                    Select each location from the address suggestions to verify its exact map coordinates.
-                  </p>
-                </div>
-              )}
+              {/* Tip: exact-coordinate verification, emphasized as the amber
+                  variant when a typed place has not been picked from the
+                  suggestion list yet. */}
+              <div className={`flex items-start gap-2.5 px-3.5 py-2.5 ${
+                (commuteOrigin.trim() && !selectedOriginAddress) ||
+                (commuteDestination.trim() && !selectedDestinationAddress)
+                  ? 'cm-hint-strip text-amber-800'
+                  : 'cm-tip'
+              }`}>
+                <span className={`mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-[11px]`} aria-hidden="true">
+                  💡
+                </span>
+                <p className="text-[11px] font-medium text-slate-600 pt-0.5">
+                  Select each location from the address suggestions to verify its exact map coordinates.
+                </p>
+              </div>
 
               <button
                 type="button"
@@ -1167,24 +1243,24 @@ export default function PlanMyCommuteModal({
                   !commuteDepartureDate ||
                   !commuteDepartureTime
                 }
-                className="commute-plan-button sticky bottom-2 z-20 mt-3 flex min-h-[60px] w-full items-center gap-3 rounded-2xl bg-gradient-to-r from-blue-700 via-blue-600 to-indigo-600 px-3.5 text-left text-white shadow-lg transition hover:-translate-y-0.5 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0 sm:static"
+                className="commute-plan-button mt-1 flex min-h-[58px] w-full items-center gap-3.5 rounded-full bg-[#14181b] px-4 py-2.5 text-left text-white shadow-lg shadow-slate-900/20 transition hover:-translate-y-0.5 hover:shadow-xl active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/25" aria-hidden="true">
+                <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-white/10 ring-1 ring-white/15" aria-hidden="true">
                   {commuteLoading ? (
                     <Spinner size="sm" />
                   ) : (
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M8 18h2.5a3.5 3.5 0 0 0 3.5-3.5v-5A3.5 3.5 0 0 1 17.5 6H18"/><path d="m15 3 3 3-3 3"/></svg>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M8 18h2.5a3.5 3.5 0 0 0 3.5-3.5v-5A3.5 3.5 0 0 1 17.5 6H18"/><path d="m15 3 3 3-3 3"/></svg>
                   )}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-[11px] font-black leading-tight">
+                  <span className="block text-[13px] font-extrabold leading-tight">
                     {commuteLoading ? 'Checking live route…' : 'Check Route & Weather'}
                   </span>
-                  <span className="mt-1 block text-[8px] font-semibold text-white/75">
-                    Live traffic · rain risk · best departure
+                  <span className="mt-0.5 block text-[10px] font-medium text-white/70">
+                    Live traffic · Rain risk · Best departure
                   </span>
                 </span>
-                <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-white text-base font-black text-blue-700" aria-hidden="true">→</span>
+                <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-white text-sm font-black text-slate-900" aria-hidden="true">→</span>
               </button>
 
             </section>
@@ -1272,7 +1348,9 @@ export default function PlanMyCommuteModal({
 
             {!commuteHasAttempted && !commuteLoading && (
               <div className="rounded-3xl border border-dashed border-slate-200 bg-white/70 p-8 sm:p-10 lg:min-h-[420px] flex flex-col items-center justify-center text-center">
-                <span className="w-12 h-12 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center text-xl" aria-hidden="true">📍</span>
+                <span className="flex w-12 h-12 items-center justify-center rounded-2xl cm-tile" aria-hidden="true">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg>
+                </span>
                 <p className="mt-3 text-xs font-extrabold text-slate-700">Your trip advice will appear here</p>
                 <p className="mt-1 text-[10px] text-slate-400">Choose your route, departure time, and advice options, then generate.</p>
               </div>

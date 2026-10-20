@@ -2058,8 +2058,12 @@ export default function EmployeeDashboard() {
           border-color: #64748b !important;
           color: #e2e8f0 !important;
         }
+        .commute-theme-scope.dark .commute-modal-header {
+          background: linear-gradient(120deg, #182e21 0%, #1c2a22 55%, #1f252d 100%) !important;
+          border-color: #2c4a38 !important;
+        }
         .commute-theme-scope.dark .commute-plan-button {
-          background: linear-gradient(90deg, #1d4ed8 0%, #2563eb 55%, #4f46e5 100%) !important;
+          background: #059669 !important;
           color: #fff !important;
         }
         .commute-theme-scope.dark [class*="bg-blue-50/"] { background-color: rgba(30, 49, 80, .72) !important; }

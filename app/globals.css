@@ -841,6 +841,200 @@
 .commute-theme-scope .commute-details-chevron {
   transition: transform .2s ease;
 }
+
+/* ==========================================
+   PLAN MY COMMUTE — DARK MODE
+   Scoped to the commute modal only. Author's
+   navy palette; wins over the generic .dark
+   rules via the [data-theme="dark"] attribute.
+   ========================================== */
+
+.commute-theme-scope[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+.commute-theme-scope[data-theme="dark"] .commute-canvas-surface {
+  background: #0b1220 !important;
+  color: #e5edf7;
+  border: 1px solid #26364a;
+}
+
+/* Main cards and neutral surfaces */
+.commute-theme-scope[data-theme="dark"] .commute-canvas-surface [class*="bg-white"],
+.commute-theme-scope[data-theme="dark"] .commute-canvas-surface [class*="bg-slate-50"],
+.commute-theme-scope[data-theme="dark"] .commute-canvas-surface [class*="bg-slate-100"] {
+  background-color: #111d2e !important;
+}
+
+/* Emerald surfaces */
+.commute-theme-scope[data-theme="dark"] .commute-canvas-surface [class*="bg-emerald-50"],
+.commute-theme-scope[data-theme="dark"] .commute-canvas-surface [class*="bg-green-50"] {
+  background-color: #12372f !important;
+}
+
+/* Blue and cyan surfaces */
+.commute-theme-scope[data-theme="dark"] .commute-canvas-surface [class*="bg-blue-50"],
+.commute-theme-scope[data-theme="dark"] .commute-canvas-surface [class*="bg-sky-50"],
+.commute-theme-scope[data-theme="dark"] .commute-canvas-surface [class*="bg-cyan-50"] {
+  background-color: #142b44 !important;
+}
+
+/* Weather alerts */
+.commute-theme-scope[data-theme="dark"] .commute-canvas-surface [class*="bg-amber-50"],
+.commute-theme-scope[data-theme="dark"] .commute-canvas-surface [class*="bg-orange-50"] {
+  background-color: #382b18 !important;
+}
+
+.commute-theme-scope[data-theme="dark"] .commute-canvas-surface [class*="bg-rose-50"],
+.commute-theme-scope[data-theme="dark"] .commute-canvas-surface [class*="bg-red-50"] {
+  background-color: #3b202b !important;
+}
+
+/* Modal header */
+.commute-theme-scope[data-theme="dark"] .commute-canvas-surface .commute-modal-header {
+  background: linear-gradient(135deg, #102a2b, #111d2e) !important;
+  border-color: #294052 !important;
+}
+
+/* Text contrast */
+.commute-theme-scope[data-theme="dark"] .commute-canvas-surface [class*="text-slate-950"],
+.commute-theme-scope[data-theme="dark"] .commute-canvas-surface [class*="text-slate-900"],
+.commute-theme-scope[data-theme="dark"] .commute-canvas-surface [class*="text-emerald-950"] {
+  color: #f1f5f9 !important;
+}
+
+.commute-theme-scope[data-theme="dark"] .commute-canvas-surface [class*="text-slate-700"],
+.commute-theme-scope[data-theme="dark"] .commute-canvas-surface [class*="text-slate-600"] {
+  color: #cbd5e1 !important;
+}
+
+.commute-theme-scope[data-theme="dark"] .commute-canvas-surface [class*="text-slate-500"],
+.commute-theme-scope[data-theme="dark"] .commute-canvas-surface [class*="text-slate-400"] {
+  color: #94a3b8 !important;
+}
+
+/* Borders */
+.commute-theme-scope[data-theme="dark"] .commute-canvas-surface [class*="border-slate-100"],
+.commute-theme-scope[data-theme="dark"] .commute-canvas-surface [class*="border-slate-200"] {
+  border-color: #2b3c52 !important;
+}
+
+.commute-theme-scope[data-theme="dark"] .commute-canvas-surface [class*="border-emerald-100"] {
+  border-color: #245447 !important;
+}
+
+.commute-theme-scope[data-theme="dark"] .commute-canvas-surface [class*="border-blue-200"] {
+  border-color: #31577b !important;
+}
+
+/* Inputs, date/time fields and search boxes */
+.commute-theme-scope[data-theme="dark"] .commute-canvas-surface input,
+.commute-theme-scope[data-theme="dark"] .commute-canvas-surface select,
+.commute-theme-scope[data-theme="dark"] .commute-canvas-surface textarea,
+.commute-theme-scope[data-theme="dark"] .commute-canvas-surface .input-field {
+  background-color: #0f1a2b !important;
+  color: #f1f5f9 !important;
+  border-color: #334155 !important;
+  color-scheme: dark;
+}
+
+.commute-theme-scope[data-theme="dark"] .commute-canvas-surface input::placeholder,
+.commute-theme-scope[data-theme="dark"] .commute-canvas-surface textarea::placeholder {
+  color: #8293a9 !important;
+}
+
+/* Address suggestion dropdowns */
+.commute-theme-scope[data-theme="dark"] .commute-canvas-surface [role="listbox"] {
+  background-color: #111d2e !important;
+  border-color: #334155 !important;
+}
+
+.commute-theme-scope[data-theme="dark"] .commute-canvas-surface [role="option"]:hover {
+  background-color: #1e3047 !important;
+}
+
+/* ==========================================
+   PLAN MY COMMUTE — design tokens
+   One plain system for light (default) and
+   dark (via data-theme). Only used inside the
+   commute modal scope.
+   ========================================== */
+.commute-theme-scope .cm-banner {
+  border-radius: 20px;
+  background: linear-gradient(135deg, #e9f4ec 0%, #f4f9f5 55%, #fdfffd 100%);
+  border: 1px solid #dcE9df30;
+}
+.commute-theme-scope .cm-card {
+  background: #ffffff;
+  border: 1px solid #e4eae6;
+  border-radius: 20px;
+  box-shadow: 0 8px 24px -14px rgba(17, 27, 21, 0.14);
+}
+.commute-theme-scope .cm-field {
+  background: #f7faf8;
+  border: 1px solid #e4eae6;
+  border-radius: 14px;
+}
+.commute-theme-scope .cm-tile {
+  background: #e9f4ec;
+  border: 1px solid #d7e9dd;
+  color: #047857;
+  border-radius: 12px;
+}
+.commute-theme-scope .cm-heading {
+  color: #131c16;
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+.commute-theme-scope .cm-sub {
+  color: #5f6f65;
+}
+.commute-theme-scope .cm-hint-strip {
+  border-radius: 999px;
+  border: 1px solid #f0ddb0;
+  background: #fbf5e4;
+}
+.commute-theme-scope .cm-tip {
+  background: #f4f8f5;
+  border: 1px solid #e4eae6;
+  border-radius: 12px;
+}
+
+/* ---- Dark (author navy palette) ---- */
+.commute-theme-scope[data-theme="dark"] .cm-banner {
+  background: linear-gradient(135deg, #0e2233 0%, #0b1526 55%, #0b1220 100%);
+  border-color: #22354d;
+}
+.commute-theme-scope[data-theme="dark"] .cm-card {
+  background: #111d2e;
+  border-color: #22314a;
+  box-shadow: 0 10px 30px -18px rgba(0, 0, 0, 0.6);
+}
+.commute-theme-scope[data-theme="dark"] .cm-field {
+  background: #0f1a2b;
+  border-color: #26364a;
+}
+.commute-theme-scope[data-theme="dark"] .cm-tile {
+  background: #12372f;
+  border-color: #1d5245;
+  color: #6ee7a8;
+}
+.commute-theme-scope[data-theme="dark"] .cm-heading {
+  color: #f1f5f9;
+}
+.commute-theme-scope[data-theme="dark"] .cm-sub {
+  color: #94a3b8;
+}
+.commute-theme-scope[data-theme="dark"] .cm-hint-strip {
+  background: #2a2113;
+  border-color: #5a4626;
+}
+.commute-theme-scope[data-theme="dark"] .cm-tip {
+  background: #101a29;
+  border-color: #26364a;
+}
 #employee-dashboard-top.seasonal-theme:not(.seasonal-christmas) aside:has(nav[aria-label$="desktop navigation"]),
 #hr-dashboard-top.seasonal-theme:not(.seasonal-christmas) aside:has(nav[aria-label$="desktop navigation"]) {
   border-color: var(--theme-border) !important;
