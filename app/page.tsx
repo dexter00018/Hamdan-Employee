@@ -38,7 +38,7 @@ export default function LoginPage() {
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('role')
+        .select('role, is_active, resigned_date')
         .eq('id', authData.user.id)
         .single();
 
@@ -46,6 +46,16 @@ export default function LoginPage() {
         console.error('Profile fetch error:', profileError);
         throw new Error(
           "You're logged in, but we couldn't find your profile: " + profileError.message
+        );
+      }
+
+      // Deactivated or resigned accounts must not keep the session that
+      // signInWithPassword just created. Resign (is_active=false +
+      // resigned_date) removes portal access; history stays with HR only.
+      if (profile && (profile.is_active === false || profile.resigned_date)) {
+        await supabase.auth.signOut();
+        throw new Error(
+          'This account is no longer active. Please contact HR for assistance.'
         );
       }
 

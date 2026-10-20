@@ -91,7 +91,7 @@ export async function proxy(request: NextRequest) {
   // Logged in -> check their role against what this route allows
   const { data: profile, error } = await supabase
     .from('profiles')
-    .select('role')
+    .select('role, is_active, resigned_date')
     .eq('id', user.id)
     .single();
 
@@ -99,6 +99,25 @@ export async function proxy(request: NextRequest) {
     // Couldn't verify role -> safest is to bounce to login
     const loginUrl = new URL('/', request.url);
     return NextResponse.redirect(loginUrl);
+  }
+
+  // Deactivated or resigned account -> revoke the session and bounce.
+  // is_active=false is the login ban; resigned_date is kept as a second
+  // guard in case the flag pair is ever set out of order.
+  if (profile.is_active === false || profile.resigned_date) {
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      // Revocation is best-effort; the redirect below still applies.
+    }
+    const loginUrl = new URL('/', request.url);
+    const redirectResponse = NextResponse.redirect(loginUrl);
+    request.cookies.getAll().forEach(({ name }) => {
+      if (name.startsWith('sb-')) {
+        redirectResponse.cookies.delete(name);
+      }
+    });
+    return redirectResponse;
   }
 
   const allowedRoles = ROUTE_ROLES[matchedRoute];

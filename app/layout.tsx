@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Plus_Jakarta_Sans, Inter, Oswald } from "next/font/google";
+import localFont from "next/font/local";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Analytics } from "@vercel/analytics/next";
 import ThemeRouteGuard from "@/components/ThemeRouteGuard";
@@ -23,24 +23,44 @@ const themeInitializationScript = `
   })();
 `;
 
-const jakarta = Plus_Jakarta_Sans({
+// Fonts are self-hosted (woff2 vendored under app/fonts) instead of
+// next/font/google. Same families, weights, subsets, and CSS variables as
+// before -- the switch removes a build-time network dependency on
+// fonts.gstatic.com, which made production builds fail intermittently
+// (Google font file fetch errors surface as Turbopack "Module not found").
+const jakarta = localFont({
   variable: "--font-display",
-  subsets: ["latin"],
-  weight: ["500", "600", "700", "800"],
+  display: "swap",
+  src: [
+    { path: "./fonts/plus-jakarta-sans-500-latin.woff2", weight: "500", style: "normal" },
+    { path: "./fonts/plus-jakarta-sans-600-latin.woff2", weight: "600", style: "normal" },
+    { path: "./fonts/plus-jakarta-sans-700-latin.woff2", weight: "700", style: "normal" },
+    { path: "./fonts/plus-jakarta-sans-800-latin.woff2", weight: "800", style: "normal" },
+  ],
 });
 
-const inter = Inter({
+const inter = localFont({
   variable: "--font-sans",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  display: "swap",
+  src: [
+    { path: "./fonts/inter-400-latin.woff2", weight: "400", style: "normal" },
+    { path: "./fonts/inter-500-latin.woff2", weight: "500", style: "normal" },
+    { path: "./fonts/inter-600-latin.woff2", weight: "600", style: "normal" },
+    { path: "./fonts/inter-700-latin.woff2", weight: "700", style: "normal" },
+  ],
 });
 
 // Condensed face reserved only for big stat numbers (the live clock,
 // the summary card counts) — see .stat-number in globals.css.
-const oswald = Oswald({
+const oswald = localFont({
   variable: "--font-stat",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  display: "swap",
+  src: [
+    { path: "./fonts/oswald-400-latin.woff2", weight: "400", style: "normal" },
+    { path: "./fonts/oswald-500-latin.woff2", weight: "500", style: "normal" },
+    { path: "./fonts/oswald-600-latin.woff2", weight: "600", style: "normal" },
+    { path: "./fonts/oswald-700-latin.woff2", weight: "700", style: "normal" },
+  ],
 });
 
 export const metadata: Metadata = {

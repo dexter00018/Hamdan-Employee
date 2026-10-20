@@ -172,7 +172,10 @@ enable_refresh_token_rotation = true
 # Requires enable_refresh_token_rotation = true.
 refresh_token_reuse_interval = 10
 # Allow/disallow new user signups to your project.
-enable_signup = true
+# Phase 1: accounts are provisioned only by HR/admin via the server
+# (create-employee route -> service key admin API). Public sign-ups are off
+# on the hosted project; this keeps local dev consistent. Set 2026-10-20.
+enable_signup = false
 # Allow/disallow anonymous sign-ins to your project.
 enable_anonymous_sign_ins = false
 # Allow/disallow testing manual linking of accounts
