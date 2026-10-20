@@ -1,5 +1,6 @@
 'use client';
 
+import { FolderDown } from 'lucide-react';
 import { LoadingRow } from '@/components/Spinner';
 import ModalShell from '@/components/shared/ModalShell';
 import EmptyState from '@/components/shared/EmptyState';
@@ -15,9 +16,9 @@ type Props = {
 
 export default function EmployeeDocumentsModal({ open, onClose, loading, documents, downloadingId, onDownload }: Props) {
   return (
-    <ModalShell open={open} onClose={onClose} title="My Documents" description="HR-published files" icon="📚" size="md">
+    <ModalShell open={open} onClose={onClose} title="My Documents" description="HR-published files" icon={<FolderDown size={17} strokeWidth={2.4} />} size="md">
       {loading ? <LoadingRow label="Loading documents..." /> : documents.length === 0 ? (
-        <EmptyState icon="📚" title="No documents yet" description="Published files appear here." />
+        <EmptyState icon={<FolderDown size={18} />} title="No documents yet" description="Published files appear here." />
       ) : (
         <div className="space-y-2">
           {documents.map((document) => (

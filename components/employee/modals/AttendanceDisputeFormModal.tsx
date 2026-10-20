@@ -1,6 +1,7 @@
 'use client';
 
 import type { Dispatch, RefObject, SetStateAction } from 'react';
+import { Clock3, TriangleAlert } from 'lucide-react';
 import Spinner from '@/components/Spinner';
 import ModalShell from '@/components/shared/ModalShell';
 
@@ -36,7 +37,7 @@ export default function AttendanceDisputeFormModal({ open, onClose, disputeChoic
                       disputeChoiceEligibility.timeIn.eligible ? 'hover:bg-slate-100' : 'opacity-40 cursor-not-allowed'
                     }`}
                   >
-                    <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0 text-lg">🕗</div>
+                    <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0"><Clock3 size={18} strokeWidth={2.2} /></div>
                     <div className="min-w-0">
                       <p className="font-bold text-slate-900 text-sm">Time In Dispute</p>
                       <p className="text-slate-400 text-xs mt-0.5">
@@ -54,7 +55,7 @@ export default function AttendanceDisputeFormModal({ open, onClose, disputeChoic
                       disputeChoiceEligibility.timeOut.eligible ? 'hover:bg-slate-100' : 'opacity-40 cursor-not-allowed'
                     }`}
                   >
-                    <div className="w-10 h-10 rounded-xl bg-rose-50 flex items-center justify-center flex-shrink-0 text-lg">🕕</div>
+                    <div className="w-10 h-10 rounded-xl bg-rose-50 flex items-center justify-center flex-shrink-0"><Clock3 size={18} strokeWidth={2.2} /></div>
                     <div className="min-w-0">
                       <p className="font-bold text-slate-900 text-sm">Time Out Dispute</p>
                       <p className="text-slate-400 text-xs mt-0.5">
@@ -99,7 +100,7 @@ export default function AttendanceDisputeFormModal({ open, onClose, disputeChoic
                 {!disputeTypeLocked.current && (
                   <div className="flex items-center justify-between gap-2 mb-4 p-2.5 bg-slate-50 rounded-xl border border-slate-100">
                     <span className="text-xs font-bold text-slate-600">
-                      {disputeForm.type === 'TimeOut' ? '🕕 Time Out Dispute' : '🕗 Time In Dispute'}
+                      <span className="inline-flex items-center gap-1"><Clock3 size={12} strokeWidth={2.4} /> {disputeForm.type === 'TimeOut' ? 'Time Out Dispute' : 'Time In Dispute'}</span>
                     </span>
                     <button
                       type="button"
@@ -121,7 +122,7 @@ export default function AttendanceDisputeFormModal({ open, onClose, disputeChoic
                   max={new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())}
                 />
                 {!disputeTypeLocked.current && disputeForm.type === 'TimeOut' && disputeForm.date && !disputeForm.attendanceLogId && (
-                  <p className="text-orange-600 text-[11px] font-medium mb-3 ml-1">⚠️ No time-in recorded on that date yet — you can&apos;t dispute a time-out without one.</p>
+                  <p className="text-orange-600 text-[11px] font-medium mb-3 ml-1"><TriangleAlert size={12} strokeWidth={2.4} className="inline-block align-[-2px] mr-0.5" />No time-in recorded on that date yet — you can&apos;t dispute a time-out without one.</p>
                 )}
                 <div className="mb-3" />
 

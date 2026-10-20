@@ -55,7 +55,7 @@ export default function CompanyCalendarModal({ open, onClose, loading, holidays,
 
   return (
     <ModalShell open={open} onClose={onClose} title="Company Calendar" description="Holidays & non-working days" icon={<CalendarDays className="h-5 w-5 text-indigo-700 dark:text-indigo-300" />} size="md">
-      {loading ? <LoadingRow label="Loading holidays..." /> : holidays.length === 0 ? <EmptyState icon="🗓️" title="No holidays yet" description="HR holidays appear here." /> : <>
+      {loading ? <LoadingRow label="Loading holidays..." /> : holidays.length === 0 ? <EmptyState icon={<CalendarDays size={18} />} title="No holidays yet" description="HR holidays appear here." /> : <>
         {nextHoliday && nextVisual && <section className="relative mb-4 overflow-hidden rounded-2xl border border-purple-200 bg-purple-50 p-4 dark:border-purple-800 dark:bg-purple-950/50">
           <div className="absolute -right-3 -top-3 h-24 w-24 rounded-full bg-white/35 dark:bg-white/5" aria-hidden="true" />
           <div className="relative flex items-center justify-between gap-4">

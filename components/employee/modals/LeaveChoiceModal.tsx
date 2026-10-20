@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
-import { Clock3 } from 'lucide-react';
+import { CalendarDays, Clock3, FileText } from 'lucide-react';
 import ModalShell from '@/components/shared/ModalShell';
 import { supabase } from '@/lib/supabase';
 
@@ -77,7 +77,7 @@ export default function LeaveChoiceModal({ open, onClose, fetchMyLeaves, isRegul
   return <ModalShell open={open} onClose={onClose} title="Leave" description="Choose leave type" size="sm">
     <div className="space-y-3">
       <button type="button" onClick={openRegularLeave} className="flex w-full items-center gap-3 rounded-2xl bg-slate-50 p-4 text-left transition hover:bg-slate-100 dark:bg-[#303632] dark:hover:bg-[#343b36]">
-        <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-green-50 text-lg dark:bg-green-950/35">📝</div>
+        <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-green-50 dark:bg-green-950/35"><FileText size={18} strokeWidth={2.2} /></div>
         <div><p className="text-sm font-bold text-slate-900 dark:text-white">Regular Leave</p><p className="mt-0.5 text-xs text-slate-400">{isRegular ? `${remainingCredits} credits left` : 'New leave request'}</p></div>
       </button>
 
@@ -87,7 +87,7 @@ export default function LeaveChoiceModal({ open, onClose, fetchMyLeaves, isRegul
       </button>
 
       <button type="button" onClick={() => { onClose(); clearSelectedLeave(); setMyLeavesModalOpen(true); void fetchMyLeaves(); }} className="flex w-full items-center gap-3 rounded-2xl bg-slate-50 p-4 text-left transition hover:bg-slate-100 dark:bg-[#303632] dark:hover:bg-[#343b36]">
-        <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-amber-50 text-lg dark:bg-amber-950/35">🗓️</div>
+        <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-amber-50 dark:bg-amber-950/35"><CalendarDays size={18} strokeWidth={2.2} /></div>
         <div><p className="text-sm font-bold text-slate-900 dark:text-white">My Leave Requests</p><p className="mt-0.5 text-xs text-slate-400">{myLeavesCount > 0 ? `${myLeavesCount} request${myLeavesCount === 1 ? '' : 's'}` : 'No requests'}</p></div>
       </button>
     </div>

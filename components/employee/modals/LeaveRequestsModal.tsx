@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import ModalShell from '@/components/shared/ModalShell';
+import { CalendarDays } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 type Leave = { id: string; status: string; leave_type: string; start_date: string; end_date: string; reason?: string | null; hr_notes?: string | null; reviewed_at?: string | null; created_at: string };
@@ -119,7 +120,7 @@ export default function LeaveRequestsModal({ open, onClose, onBackToChoice, canc
             )}
           </div>
         ) : myLeaves.length === 0 ? (
-          <div className="text-center py-10 border-2 border-dashed border-slate-200 rounded-2xl dark:border-slate-700"><p className="text-2xl mb-2">🗓️</p><p className="text-slate-400 text-sm font-medium">No leave requests yet</p></div>
+          <div className="text-center py-10 border-2 border-dashed border-slate-200 rounded-2xl dark:border-slate-700"><p className="mb-2 flex justify-center"><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-400 dark:bg-slate-800"><CalendarDays size={18} /></span></p><p className="text-slate-400 text-sm font-medium">No leave requests yet</p></div>
         ) : (
           <div className="space-y-2">
             {myLeaves.map((leave) => (

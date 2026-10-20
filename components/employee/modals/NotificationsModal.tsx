@@ -1,5 +1,6 @@
 'use client';
 
+import { Bell } from 'lucide-react';
 import ModalShell from '@/components/shared/ModalShell';
 import EmptyState from '@/components/shared/EmptyState';
 
@@ -15,7 +16,7 @@ type Props = {
 
 export default function NotificationsModal({ open, onClose, notifications, unreadCount, readIds, onMarkAllRead, onOpenNotification }: Props) {
   return (
-    <ModalShell open={open} onClose={onClose} title="Notifications" description={`${unreadCount} unread`} icon="🔔" size="md">
+    <ModalShell open={open} onClose={onClose} title="Notifications" description={`${unreadCount} unread`} icon={<Bell size={17} strokeWidth={2.4} />} size="md">
       <div className="mb-3 flex justify-end">
         {notifications.length > 0 && (
           <button type="button" onClick={onMarkAllRead} className="min-h-11 rounded-full px-4 text-xs font-bold text-blue-600 transition hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-blue-950/50">
@@ -24,7 +25,7 @@ export default function NotificationsModal({ open, onClose, notifications, unrea
         )}
       </div>
       {notifications.length === 0 ? (
-        <EmptyState icon="🔔" title="No notifications" description="HR updates appear here." />
+        <EmptyState icon={<Bell size={18} />} title="No notifications" description="HR updates appear here." />
       ) : (
         <div className="space-y-2">
           {notifications.map((notification) => {

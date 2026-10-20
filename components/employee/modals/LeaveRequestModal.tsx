@@ -1,6 +1,7 @@
 'use client';
 
 import type { Dispatch, SetStateAction } from 'react';
+import { CalendarDays, TriangleAlert } from 'lucide-react';
 import Spinner from '@/components/Spinner';
 import ModalShell from '@/components/shared/ModalShell';
 
@@ -88,7 +89,7 @@ export default function LeaveRequestModal({ open, onClose, onBack, countLeaveDay
             {leaveForm.start_date && leaveForm.end_date && (
               <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 mb-3">
                 <p className="text-slate-700 text-xs font-bold">
-                  📅 {countLeaveDays(leaveForm.start_date, leaveForm.end_date)} chargeable working day{countLeaveDays(leaveForm.start_date, leaveForm.end_date) === 1 ? '' : 's'}
+                  <CalendarDays size={12} strokeWidth={2.4} className="inline-block align-[-1px] mr-0.5" />{countLeaveDays(leaveForm.start_date, leaveForm.end_date)} chargeable working day{countLeaveDays(leaveForm.start_date, leaveForm.end_date) === 1 ? '' : 's'}
                 </p>
                 <p className="text-slate-400 text-[10px] mt-1">
                   Weekends and company holidays are excluded.
@@ -103,7 +104,7 @@ export default function LeaveRequestModal({ open, onClose, onBack, countLeaveDay
                   <p className="text-blue-600 text-[10px] font-bold mt-1">Filing for a past date</p>
                 )}
                 {isRegular && remainingCredits < countLeaveDays(leaveForm.start_date, leaveForm.end_date) && (
-                  <p className="text-orange-600 text-[10px] font-bold mt-1">⚠️ This request exceeds your remaining credits.</p>
+                  <p className="text-orange-600 text-[10px] font-bold mt-1"><TriangleAlert size={11} strokeWidth={2.4} className="inline-block align-[-1px] mr-0.5" />This request exceeds your remaining credits.</p>
                 )}
               </div>
             )}

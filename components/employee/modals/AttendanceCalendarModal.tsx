@@ -1,5 +1,6 @@
 'use client';
 
+import { CalendarDays } from 'lucide-react';
 import ModalShell from '@/components/shared/ModalShell';
 
 type Props = {
@@ -17,7 +18,7 @@ type Props = {
 
 export default function AttendanceCalendarModal({ open, onClose, month, onMonthChange, availableMonths, formatMonth, days, selectedDate, onSelectDate, selectedDay }: Props) {
   return (
-    <ModalShell open={open} onClose={onClose} title="Attendance Calendar" description="Monthly attendance" icon="🗓️" size="lg">
+    <ModalShell open={open} onClose={onClose} title="Attendance Calendar" description="Monthly attendance" icon={<CalendarDays size={17} strokeWidth={2.4} />} size="lg">
       <select value={month} onChange={(event) => onMonthChange(event.target.value)} className="input-field mb-4 min-h-11 !py-2 !text-xs">
         {availableMonths.map((value) => <option key={value} value={value}>{formatMonth(value)}</option>)}
       </select>

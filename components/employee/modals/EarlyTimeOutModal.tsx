@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Spinner from '@/components/Spinner';
+import { TriangleAlert } from 'lucide-react';
 import ModalShell from '@/components/shared/ModalShell';
 
 type Props = {
@@ -64,7 +65,7 @@ export default function EarlyTimeOutModal({ open, onClose, expectedTimeOutLabel,
       onClose={onClose}
       title="Time Out Early?"
       description="Use Offset for exact early minutes"
-      icon="⚠️"
+      icon={<TriangleAlert size={17} strokeWidth={2.4} />}
       size="sm"
       closeDisabled={busy}
       footer={

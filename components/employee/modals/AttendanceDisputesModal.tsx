@@ -1,6 +1,7 @@
 'use client';
 
 import type { Dispatch, SetStateAction } from 'react';
+import { ClipboardList } from 'lucide-react';
 import ModalShell from '@/components/shared/ModalShell';
 
 type Dispute = { id: string; status: string; dispute_date: string; dispute_type?: string | null; original_time_in?: string | null; original_time_out?: string | null; claimed_time_in?: string | null; claimed_time_out?: string | null; reason?: string | null; hr_notes?: string | null; reviewed_at?: string | null; created_at: string };
@@ -88,7 +89,7 @@ export default function AttendanceDisputesModal({ open, onClose, cancelDispute, 
                 </div>
               ) : myDisputes.length === 0 ? (
                 <div className="text-center py-10 border-2 border-dashed border-slate-200 rounded-2xl">
-                  <p className="text-2xl mb-2">⚠️</p>
+                  <p className="mb-2 flex justify-center"><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-400 dark:bg-slate-800"><ClipboardList size={18} /></span></p>
                   <p className="text-slate-400 text-sm font-medium">No disputes yet</p>
                 </div>
               ) : (

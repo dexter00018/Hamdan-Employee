@@ -1,5 +1,6 @@
 'use client';
 
+import { FileText, ReceiptText } from 'lucide-react';
 import Spinner, { LoadingRow } from '@/components/Spinner';
 import EmptyState from '@/components/shared/EmptyState';
 import ModalShell from '@/components/shared/ModalShell';
@@ -8,9 +9,9 @@ type Props = { open: boolean; onClose: () => void; loading: boolean; payslips: a
 
 export default function PayslipsModal({ open, onClose, loading, payslips, downloadingId, acknowledgingId, onDownload, onAcknowledge }: Props) {
   return (
-    <ModalShell open={open} onClose={onClose} title="My Payslips" description="Published payslips" icon="🧾" size="md">
+    <ModalShell open={open} onClose={onClose} title="My Payslips" description="Published payslips" icon={<ReceiptText size={17} strokeWidth={2.4} />} size="md">
       {loading ? <LoadingRow label="Loading payslips..." /> : payslips.length === 0 ? (
-        <EmptyState icon="📄" title="No payslips yet" description="Published slips appear here." />
+        <EmptyState icon={<FileText size={18} />} title="No payslips yet" description="Published slips appear here." />
       ) : <div className="space-y-3">
         {payslips.map((payslip) => (
           <article key={payslip.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800 sm:flex sm:items-center sm:justify-between sm:gap-4">

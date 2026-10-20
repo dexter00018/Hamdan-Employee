@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Inbox } from 'lucide-react';
 
 type EmptyStateProps = {
   icon?: ReactNode;
@@ -7,7 +8,7 @@ type EmptyStateProps = {
   action?: ReactNode;
 };
 
-export default function EmptyState({ icon = '📭', title, description, action }: EmptyStateProps) {
+export default function EmptyState({ icon = <Inbox size={20} className="text-slate-300 dark:text-slate-600" />, title, description, action }: EmptyStateProps) {
   return (
     <div className="flex min-h-36 flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 px-5 py-7 text-center dark:border-slate-700 dark:bg-slate-800/60">
       <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-lg shadow-sm dark:bg-slate-900" aria-hidden="true">

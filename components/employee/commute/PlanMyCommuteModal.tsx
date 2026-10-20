@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import Spinner from '@/components/Spinner';
+import { Clock3, CloudRain, Lightbulb, Pencil, TriangleAlert } from 'lucide-react';
 import CommuteResultExperience from '@/components/employee/commute/CommuteResultExperience';
 import {
   formatCommuteClock,
@@ -705,7 +706,7 @@ export default function PlanMyCommuteModal({
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <p className={`text-[8px] font-extrabold uppercase tracking-wider ${commuteUIState === 'partial' ? 'text-orange-700' : 'text-blue-700 '}`}>
-                      {commuteUIState === 'partial' ? '⚠ Partial data' : '● Live'}
+                      {commuteUIState === 'partial' ? <span className="inline-flex items-center gap-0.5"><TriangleAlert size={10} strokeWidth={2.6} className="shrink-0" /> Partial data</span> : '● Live'}
                       {commuteResult ? ` · Updated ${formatCommuteUpdatedAt(commuteResult.freshness?.overall_updated_at || commuteResult.generated_at)}` : ''}
                     </p>
                     <p className="mt-1 truncate text-xs font-black text-slate-900 ">
@@ -714,7 +715,7 @@ export default function PlanMyCommuteModal({
                       {selectedDestinationAddress ? getAddressPrimaryLabel(selectedDestinationAddress) : shortCommutePlace(commuteDestination, 'To')}
                     </p>
                     <p className="mt-1 text-[9px] font-semibold text-slate-500 ">
-                      🕒 Depart {commuteDepartureTime} · {commuteAdviceOptions.length} selected
+                      <Clock3 size={11} strokeWidth={2.4} className="inline-block align-[-1px] mr-0.5" /> Depart {commuteDepartureTime} · {commuteAdviceOptions.length} selected
                     </p>
                   </div>
                   <button
@@ -722,7 +723,7 @@ export default function PlanMyCommuteModal({
                     onClick={() => setIsCommuteFormCollapsed(false)}
                     className="inline-flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center rounded-xl border border-blue-200 bg-white px-3 text-[9px] font-extrabold text-blue-700 shadow-sm transition hover:bg-blue-50   "
                   >
-                    ✏️ Edit
+                    <Pencil size={11} strokeWidth={2.4} className="mr-0.5" /> Edit
                   </button>
                 </div>
               </div>
@@ -1029,7 +1030,7 @@ export default function PlanMyCommuteModal({
                             : 'bg-amber-50 border-amber-200'
                       }`}>
                         <p className="text-[10px] font-extrabold text-slate-900">
-                          ☔ {Math.round(rainChance)}% rain chance
+                          <CloudRain size={11} strokeWidth={2.4} className="inline-block align-[-1px] mr-0.5" /> {Math.round(rainChance)}% rain chance
                           {routeWettest?.location_name ? ` near ${shortCommutePlace(routeWettest.location_name, 'your route')}` : ' at the destination'}
                         </p>
                         <p className="text-[9px] text-slate-600 mt-0.5">
@@ -1221,8 +1222,8 @@ export default function PlanMyCommuteModal({
                   ? 'cm-hint-strip text-amber-800'
                   : 'cm-tip'
               }`}>
-                <span className={`mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-[11px]`} aria-hidden="true">
-                  💡
+                <span className={`mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-white text-amber-600 shadow-sm`} aria-hidden="true">
+                  <Lightbulb size={12} strokeWidth={2.4} />
                 </span>
                 <p className="text-[11px] font-medium text-slate-600 pt-0.5">
                   Select each location from the address suggestions to verify its exact map coordinates.
