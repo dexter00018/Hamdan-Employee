@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
+import { consumeRateLimit } from '@/lib/server/rate-limit';
 
 export async function POST(request: Request) {
   try {
@@ -45,6 +46,12 @@ export async function POST(request: Request) {
 
     if (!['admin', 'super_admin'].includes(callerProfile?.role ?? '')) {
       return NextResponse.json({ error: 'Not authorized.' }, { status: 403 });
+    }
+
+    // Rate limit the duplicate-email probe so it can't be used as a bulk
+    // account enumerator, even from a compromised admin session.
+    if (!(await consumeRateLimit('check-email', callerUser.id, 20, 60))) {
+      return NextResponse.json({ error: 'Too many requests. Please wait a minute.' }, { status: 429 });
     }
 
     // Use the service role client to call the email_exists() Postgres

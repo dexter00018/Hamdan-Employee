@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
+import { consumeRateLimit } from '@/lib/server/rate-limit';
 
 // The n8n workflow is exposed through an ngrok tunnel, which rotates its URL
 // whenever the local ngrok process restarts. Set N8N_PUBLISH_PAYSLIP_WEBHOOK_URL
@@ -75,6 +76,24 @@ export async function POST(request: Request) {
   }
   if (!isAdmin) {
     return NextResponse.json({ error: 'Only HR/admins can publish payslips.' }, { status: 403 });
+  }
+
+  // Bulk publish sessions exist, so the ceiling is generous -- this only
+  // stops runaway/abusive re-firing of the n8n webhook.
+  if (!(await consumeRateLimit('publish-payslip', user.id, 30, 60))) {
+    return NextResponse.json({ error: 'Too many requests. Please wait a minute.' }, { status: 429 });
+  }
+
+  // Idempotency: re-publishing an already-published payslip must not
+  // re-fire the email webhook. The n8n side dedupes via its sent-table,
+  // but skipping here keeps executions clean too.
+  const { data: existingPayslip } = await supabase
+    .from('payslips')
+    .select('published')
+    .eq('id', payslip_id)
+    .single();
+  if (existingPayslip?.published === true) {
+    return NextResponse.json({ published: true, emailTriggered: false, alreadyPublished: true });
   }
 
   const { error: updateError } = await supabase

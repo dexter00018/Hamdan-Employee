@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { PAYSLIP_REAUTH_COOKIE, PAYSLIP_REAUTH_SECONDS, createPayslipReauthToken } from '@/lib/server/employee-ai-reauth';
 import { EmployeeAIError } from '@/lib/server/employee-ai';
+import { consumeRateLimit } from '@/lib/server/rate-limit';
 import { isRecord } from '@/lib/employee/ask-ai';
 
 export const runtime = 'nodejs';
@@ -30,6 +31,11 @@ function failure(error: unknown) {
 export async function POST(request: Request) {
   try {
     const auth = await authenticate();
+    // Brute-force gate: the password verifier below is a real Supabase
+    // sign-in attempt, so cap attempts per account before it runs.
+    if (!(await consumeRateLimit('employee-ask-ai-reauth', auth.userId, 5, 60))) {
+      return json({ success: false, error: 'Too many attempts. Please wait a minute.' }, 429);
+    }
     if (!request.headers.get('content-type')?.startsWith('application/json') || request.headers.get('sec-fetch-site') === 'cross-site') return json({ success: false, error: 'Invalid request.' }, 400);
     let body: unknown;
     try { body = await request.json(); } catch { return json({ success: false, error: 'Invalid JSON.' }, 400); }

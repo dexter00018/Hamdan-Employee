@@ -13,6 +13,7 @@ import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
+import { consumeRateLimit } from '@/lib/server/rate-limit';
 
 export async function POST(req: Request) {
   try {
@@ -71,6 +72,14 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: 'Only admins can reset passwords.' },
         { status: 403 }
+      );
+    }
+
+    // --- Step 1.1: rate limit password resets per admin ---
+    if (!(await consumeRateLimit('admin-update-password', callerUser.id, 10, 60))) {
+      return NextResponse.json(
+        { error: 'Too many requests. Please wait a minute.' },
+        { status: 429 }
       );
     }
 

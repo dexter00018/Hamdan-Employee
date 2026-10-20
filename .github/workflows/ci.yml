@@ -1,0 +1,43 @@
+# CI: verify every push/PR without touching the Supabase database.
+# Runs entirely on GitHub's servers (zero DB usage, zero polling):
+#   1. npm ci
+#   2. TypeScript typecheck
+#   3. ESLint gate (errors only -- warnings are allowed; a NEW error fails)
+#   4. next build (uses the public Supabase URL + a placeholder publishable
+#      key -- NEXT_PUBLIC values are already shipped to every browser)
+#   5. unit tests (pure fakes, no live services)
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: ESLint (errors gate)
+        run: npx eslint . --quiet
+
+      - name: Build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://msoomcjzzudibiyezclj.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: sb_publishable_ci_placeholder
+        run: npm run build
+
+      - name: Unit tests
+        run: npx vitest run

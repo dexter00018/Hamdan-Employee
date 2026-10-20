@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
+import { consumeRateLimit } from '@/lib/server/rate-limit';
 
 // Same ngrok-tunnel setup as publish-payslip. Set N8N_BACKUP_WEBHOOK_URL in
 // Vercel's env vars. Path matches the "Backup Webhook" node's configured
@@ -61,6 +62,14 @@ export async function POST() {
     return NextResponse.json(
       { error: 'Only super admins can trigger a database backup.' },
       { status: 403 }
+    );
+  }
+
+  // A backup triggers a full DB dump through n8n -- rate limit it hard.
+  if (!(await consumeRateLimit('backup-database', user.id, 5, 60))) {
+    return NextResponse.json(
+      { error: 'Too many requests. Please wait a minute.' },
+      { status: 429 }
     );
   }
 

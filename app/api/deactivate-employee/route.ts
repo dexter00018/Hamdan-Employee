@@ -3,6 +3,7 @@ import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { createSupabaseAdminClient } from '@/lib/server/supabase-admin';
 import { canChangeAccountActivation } from '@/lib/account-rules';
+import { consumeRateLimit } from '@/lib/server/rate-limit';
 
 // Service-role client -- same pattern as /api/create-employee. Needed
 // because banning/unbanning a login (auth.users.banned_until) requires
@@ -61,6 +62,11 @@ export async function POST(request: Request) {
         { error: 'Only Super Admins can deactivate or reactivate accounts.' },
         { status: 403 }
       );
+    }
+
+    // --- Step 1.5: rate limit account deactivations per super_admin ---
+    if (!(await consumeRateLimit('deactivate-employee', callerUser.id, 5, 60))) {
+      return NextResponse.json({ error: 'Too many requests. Please wait a minute.' }, { status: 429 });
     }
 
     // --- Step 2: Caller is confirmed super_admin -- safe to use the

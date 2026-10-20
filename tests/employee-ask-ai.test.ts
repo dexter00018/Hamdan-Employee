@@ -34,14 +34,16 @@ const unlockedContext = (client: SupabaseClient) => ({ ...context(client), paysl
 
 describe('Ask AI owner authorization', () => {
   it('signs payslip unlocks for one employee and a short expiry only', () => {
-    const previous = process.env.N8N_EMPLOYEE_AI_WEBHOOK_SECRET;
-    process.env.N8N_EMPLOYEE_AI_WEBHOOK_SECRET = 'x'.repeat(64);
+    const previous = process.env.EMPLOYEE_ASK_AI_REAUTH_SECRET;
+    // The reauth secret no longer falls back to the n8n webhook secret --
+    // signing must be configured with its own dedicated value.
+    process.env.EMPLOYEE_ASK_AI_REAUTH_SECRET = 'x'.repeat(64);
     const token = createPayslipReauthToken('alice', 1_000_000);
     expect(verifyPayslipReauthToken(token, 'alice', 1_000_000)).toBe(true);
     expect(verifyPayslipReauthToken(token, 'bob', 1_000_000)).toBe(false);
     expect(verifyPayslipReauthToken(`${token.slice(0, -1)}a`, 'alice', 1_000_000)).toBe(false);
     expect(verifyPayslipReauthToken(token, 'alice', 1_000_000 + 601_000)).toBe(false);
-    process.env.N8N_EMPLOYEE_AI_WEBHOOK_SECRET = previous;
+    process.env.EMPLOYEE_ASK_AI_REAUTH_SECRET = previous;
   });
   it('never downloads another employee PDF when an ID is spoofed', async () => {
     const db = fakeClient({ payslips: [slip('bobs-slip', 'bob'), slip('alice-slip', 'alice')] });
@@ -298,7 +300,7 @@ describe('conversation, profile, and complete periods', () => {
     const call = vi.fn().mockResolvedValue({ ...classification, intent: 'own_leave_history', metric: 'approved_count', period: 'current_month' });
     const result = await answerEmployeeQuestion(context(db.client), call);
     expect(result.answer).toContain('1 approved leave request');
-    expect(result.answer).toContain(dates.end + ' ? ' + dates.end + ': Approved');
+    expect(result.answer).toContain(dates.end + ' – ' + dates.end + ': Approved');
     expect(result.answer).not.toContain(': Pending');
   });
 });

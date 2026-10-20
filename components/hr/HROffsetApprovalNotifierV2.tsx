@@ -78,14 +78,14 @@ export default function HROffsetApprovalNotifierV2() {
 
     const pending = (pendingRes.data || []) as OffsetRequest[];
     const history = (historyRes.data || []) as OffsetRequest[];
-    const usage = ((usageRes.data || []) as any[]).map((row) => ({ ...row, attendance_log_id: String(row.attendance_log_id), usage_type: row.usage_type === 'absent' ? 'absent' : 'late' })) as OffsetUsageRequest[];
-    const early = ((earlyOutRes.data || []) as any[]).map((row) => ({ ...row, attendance_log_id: String(row.attendance_log_id) })) as EarlyOutOffsetRequest[];
+    const usage = ((usageRes.data || []) as Array<Record<string, unknown>>).map((row) => ({ ...row, attendance_log_id: String(row.attendance_log_id), usage_type: (row.usage_type === 'absent' ? 'absent' : 'late') as 'absent' | 'late' })) as OffsetUsageRequest[];
+    const early = ((earlyOutRes.data || []) as Array<Record<string, unknown>>).map((row) => ({ ...row, attendance_log_id: String(row.attendance_log_id) })) as EarlyOutOffsetRequest[];
 
     setRequests(pending);
     setEarnedHistory(history);
     setUsageRequests(usage);
     setEarlyOutRequests(early);
-    setBalances(((balanceRes.data || []) as any[]).map((row) => ({
+    setBalances(((balanceRes.data || []) as Array<Record<string, unknown>>).map((row) => ({
       ...row,
       approved_minutes: Number(row.approved_minutes || 0),
       reserved_minutes: Number(row.reserved_minutes || 0),
@@ -100,16 +100,17 @@ export default function HROffsetApprovalNotifierV2() {
     ].filter((id): id is string => Boolean(id)))];
     const attendanceIds = [...new Set([...usage.map((r) => Number(r.attendance_log_id)), ...early.map((r) => Number(r.attendance_log_id))].filter(Number.isFinite))];
 
+    type AttendanceLogRow = { id: number | string; log_date: string; time_in: string | null; time_out: string | null; status: string | null };
     const [profileRes, attendanceRes] = await Promise.all([
-      userIds.length ? supabase.from('profiles').select('id,full_name,employee_id').in('id', userIds) : Promise.resolve({ data: [], error: null } as any),
-      attendanceIds.length ? supabase.from('attendance_logs').select('id,log_date,time_in,time_out,status').in('id', attendanceIds) : Promise.resolve({ data: [], error: null } as any),
+      userIds.length ? supabase.from('profiles').select('id,full_name,employee_id').in('id', userIds) : Promise.resolve({ data: [] as EmployeeProfile[], error: null }),
+      attendanceIds.length ? supabase.from('attendance_logs').select('id,log_date,time_in,time_out,status').in('id', attendanceIds) : Promise.resolve({ data: [] as AttendanceLogRow[], error: null }),
     ]);
 
     if (profileRes.error) console.error('Error fetching Offset profiles:', profileRes.error);
     if (attendanceRes.error) console.error('Error fetching Offset attendance:', attendanceRes.error);
 
     setProfiles(Object.fromEntries(((profileRes.data || []) as EmployeeProfile[]).map((profile) => [profile.id, profile])));
-    setAttendanceLogs(Object.fromEntries(((attendanceRes.data || []) as any[]).map((row) => [String(row.id), { ...row, id: String(row.id) }])));
+    setAttendanceLogs(Object.fromEntries(((attendanceRes.data || []) as AttendanceLogRow[]).map((row) => [String(row.id), { ...row, id: String(row.id) }])));
     setLoading(false);
     window.dispatchEvent(new Event('hr:offset-updated'));
   }, []);

@@ -107,12 +107,15 @@ describe('dedicated HR Attendance route', () => {
     expect(readFileSync(new URL('../app/hr/attendance/page.tsx', import.meta.url), 'utf8')).toContain('<HRPortal view="attendance"');
   });
 
-  it('inherits the HR role guard and retains the employee-only active profile query', () => {
+  it('inherits the HR role guard and keeps resigned history visible in the attendance query', () => {
     const proxy = readFileSync(new URL('../proxy.ts', import.meta.url), 'utf8');
     expect(proxy).toContain("'/hr': ['admin']");
     expect(proxy).toContain("'/hr/:path*'");
     expect(portal).toContain(".eq('profiles.role', 'employee')");
-    expect(portal).toContain(".eq('profiles.is_active', true)");
+    // Resign status design: HR attendance shows active employees' records
+    // plus resigned employees' history rows (new records stop only after
+    // the last working day), so the old strict is_active filter is gone.
+    expect(portal).toContain(".or('is_active.eq.true,resigned_date.not.is.null', { referencedTable: 'profiles' })");
     expect(portal).toContain('if (isAttendancePage) { void refreshAllData(); void fetchLeaveRequests(); }');
   });
 });

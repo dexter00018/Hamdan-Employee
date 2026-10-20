@@ -6,7 +6,10 @@ export const PAYSLIP_REAUTH_SECONDS = 10 * 60;
 type Payload = { purpose: 'employee-ai-payslip'; user_id: string; exp: number };
 
 function secret() {
-  return process.env.EMPLOYEE_ASK_AI_REAUTH_SECRET || process.env.N8N_EMPLOYEE_AI_WEBHOOK_SECRET || '';
+  // Dedicated secret only -- no fallback to the n8n webhook secret. The two
+  // protect different systems, and reusing one value halves the blast radius
+  // of either leak. Configure EMPLOYEE_ASK_AI_REAUTH_SECRET in Vercel.
+  return process.env.EMPLOYEE_ASK_AI_REAUTH_SECRET || '';
 }
 function b64url(input: string | Buffer) {
   return Buffer.from(input).toString('base64url');

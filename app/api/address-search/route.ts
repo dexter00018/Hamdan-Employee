@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
+import { createServerClient } from '@supabase/ssr';
+import { consumeRateLimit } from '@/lib/server/rate-limit';
 
 // Copy this file to: app/api/address-search/route.ts
 // Photon is a public fair-use service, so this route limits duplicate traffic,
@@ -23,6 +26,43 @@ const parseJson = (value: string): PhotonPayload | null => {
 };
 
 export async function GET(request: NextRequest) {
+  // This proxy used to be reachable by anyone on the internet. Require a
+  // signed-in session and cap lookups per user before touching Photon.
+  const cookieStore = await cookies();
+  const supabaseServer = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll();
+        },
+        setAll() {},
+      },
+    }
+  );
+
+  const { data: { user } } = await supabaseServer.auth.getUser();
+  if (!user) {
+    return NextResponse.json(
+      { error: 'Not authenticated.' },
+      { status: 401, headers: { 'Cache-Control': 'no-store' } }
+    );
+  }
+
+  if (!(await consumeRateLimit('address-search', user.id, 30, 60))) {
+    return NextResponse.json(
+      {
+        error: 'Too many address lookups. Please wait a minute.',
+        code: 'ADDRESS_SEARCH_RATE_LIMITED',
+      },
+      {
+        status: 429,
+        headers: { 'Cache-Control': 'no-store', 'Retry-After': '60' },
+      }
+    );
+  }
+
   const { searchParams } = new URL(request.url);
   const query = String(searchParams.get('q') ?? '').trim();
   const reverseLatParam = searchParams.get('lat');

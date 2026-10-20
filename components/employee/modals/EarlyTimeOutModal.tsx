@@ -25,7 +25,7 @@ export default function EarlyTimeOutModal({ open, onClose, expectedTimeOutLabel,
   const [offsetLoading, setOffsetLoading] = useState(false);
   const [offsetError, setOffsetError] = useState<string | null>(null);
 
-  const useOffset = async () => {
+  const handleSubmitOffset = async () => {
     setOffsetLoading(true);
     setOffsetError(null);
     try {
@@ -80,7 +80,7 @@ export default function EarlyTimeOutModal({ open, onClose, expectedTimeOutLabel,
           <button
             type="button"
             className="min-h-11 rounded-xl bg-emerald-700 px-3 text-xs font-bold text-white transition hover:bg-emerald-800 disabled:opacity-50"
-            onClick={() => void useOffset()}
+            onClick={() => void handleSubmitOffset()}
             disabled={busy}
           >
             {offsetLoading ? <span className="flex items-center justify-center gap-2"><Spinner size="sm"/>Processing…</span> : 'Use Offset'}

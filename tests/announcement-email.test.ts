@@ -44,7 +44,7 @@ describe('announcement email automation', () => {
       { json: { email: 'banned@example.com', banned_until: '2999-01-01' } },
       { json: { email: 'deleted@example.com', deleted_at: '2026-01-01' } },
     ], config);
-    expect(mails.map((m: any) => m.json.toEmail)).toEqual(['one@example.com', 'two@example.com']);
+    expect(mails.map((m: { json: { toEmail?: string } }) => m.json.toEmail)).toEqual(['one@example.com', 'two@example.com']);
   });
   it('test mode sends only to the configured tester', () => {
     const mails = buildEmails([{ json: { email: 'employee@example.com' } }], { ...config, testMode: true, testEmail: 'tester@example.com' });
