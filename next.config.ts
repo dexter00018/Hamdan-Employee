@@ -7,11 +7,13 @@ const SUPABASE_HOST = "msoomcjzzudibiyezclj.supabase.co";
 
 const csp = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline'",
+  "script-src 'self' 'unsafe-inline'" + (process.env.NODE_ENV === "production" ? "" : " 'unsafe-eval'"),
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https://" + SUPABASE_HOST,
   "font-src 'self' data:",
-  "connect-src 'self' https://" + SUPABASE_HOST + " wss://" + SUPABASE_HOST,
+  // Dev only: allow the Turbopack HMR websocket (ws://localhost). 'self'
+  // already covers app traffic in production, where no relaxations apply.
+  "connect-src 'self' https://" + SUPABASE_HOST + " wss://" + SUPABASE_HOST + (process.env.NODE_ENV === "production" ? "" : " ws:"),
   "frame-ancestors 'none'",
   "object-src 'none'",
   "base-uri 'self'",
