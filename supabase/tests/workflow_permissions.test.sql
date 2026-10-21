@@ -1,6 +1,9 @@
 begin;
 
-select plan(13);
+select plan(15);
+
+select ok(exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'release_holiday_absences'), 'holiday-absence release helper exists');
+select ok(not has_function_privilege('anon', 'public.release_holiday_absences(date)', 'execute'), 'anonymous clients cannot release holiday Absent marks');
 
 select ok(exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'attendance_disputes' and policyname = 'Employees can file own disputes' and cmd = 'INSERT'), 'employees can file attendance disputes');
 select ok(exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'attendance_disputes' and policyname = 'Admins can review disputes' and cmd = 'UPDATE'), 'only the review policy updates attendance disputes');

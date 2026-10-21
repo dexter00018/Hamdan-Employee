@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       announcements: {
@@ -1596,6 +1621,7 @@ export type Database = {
         }[]
       }
       reinstate_employee: { Args: { p_user_id: string }; Returns: undefined }
+      release_holiday_absences: { Args: { p_date: string }; Returns: number }
       resign_employee: {
         Args: { p_last_day: string; p_user_id: string }
         Returns: number
@@ -1783,6 +1809,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       user_role: ["super_admin", "hr", "employee"],

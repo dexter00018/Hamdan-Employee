@@ -6,13 +6,30 @@ import Spinner, { LoadingRow } from '@/components/Spinner';
 import ModalShell from '@/components/shared/ModalShell';
 
 type Holiday = { id: string; holiday_date: string; name: string };
-type Props = { open: boolean; onClose: () => void; addHoliday: () => void | Promise<void>; deleteHoliday: (id: string) => void | Promise<void>; holidayMsg: { type: 'success' | 'error'; text: string } | null; holidaySaving: boolean; holidays: Holiday[]; holidaysLoading: boolean; newHolidayDate: string; newHolidayName: string; setNewHolidayDate: Dispatch<SetStateAction<string>>; setNewHolidayName: Dispatch<SetStateAction<string>> };
+type AbsentReleases = { date: string; count: number } | null;
+type Props = { open: boolean; onClose: () => void; addHoliday: () => void | Promise<void>; deleteHoliday: (id: string) => void | Promise<void>; holidayMsg: { type: 'success' | 'error'; text: string } | null; holidaySaving: boolean; holidays: Holiday[]; holidaysLoading: boolean; newHolidayDate: string; newHolidayName: string; setNewHolidayDate: Dispatch<SetStateAction<string>>; setNewHolidayName: Dispatch<SetStateAction<string>>; absentReleases: AbsentReleases; releaseHolidayAbsences: () => void | Promise<void> };
 
-export default function HolidaysModal({ open, onClose, addHoliday, deleteHoliday, holidayMsg, holidaySaving, holidays, holidaysLoading, newHolidayDate, newHolidayName, setNewHolidayDate, setNewHolidayName }: Props) {
+export default function HolidaysModal({ open, onClose, addHoliday, deleteHoliday, holidayMsg, holidaySaving, holidays, holidaysLoading, newHolidayDate, newHolidayName, setNewHolidayDate, setNewHolidayName, absentReleases, releaseHolidayAbsences }: Props) {
   return (
     <ModalShell open={open} onClose={onClose} title="Holidays" description="Non-working dates" icon={<CalendarRange size={17} strokeWidth={2.4}/>} size="lg" closeDisabled={holidaySaving}>
           <div className="overflow-y-auto flex-1 pr-1">
             {holidayMsg && <div className={`p-2.5 rounded-xl text-xs font-bold mb-3 ${holidayMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>{holidayMsg.text}</div>}
+
+            {absentReleases && (
+              <div className="p-2.5 rounded-xl text-xs mb-3 bg-amber-50 border border-amber-200">
+                <p className="font-bold text-amber-700">
+                  This day is already behind us and {absentReleases.count} employee{absentReleases.count === 1 ? ' was' : 's were'} auto-marked Absent before the holiday was declared.
+                </p>
+                <button
+                  type="button"
+                  onClick={releaseHolidayAbsences}
+                  disabled={holidaySaving}
+                  className="btn-primary !w-auto !py-1.5 !text-xs !px-4 mt-2 disabled:opacity-50"
+                >
+                  {holidaySaving ? 'Releasing...' : `Release ${absentReleases.count} false Absent mark${absentReleases.count === 1 ? '' : 's'}`}
+                </button>
+              </div>
+            )}
 
             <div className="flex flex-col sm:flex-row gap-2 mb-4">
               <input

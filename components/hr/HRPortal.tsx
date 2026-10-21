@@ -219,6 +219,7 @@ export default function HRPortal({ view = 'dashboard', initialEmployeeId = '' }:
     holidays, holidaysLoading, setHolidaysFetched,
     newHolidayDate, setNewHolidayDate, newHolidayName, setNewHolidayName, holidaySaving, holidayMsg,
     holidaysOpen, setHolidaysOpen, toggleHolidays, addHoliday, deleteHoliday, fetchHolidays,
+    absentReleases, releaseHolidayAbsences,
   } = useHrHolidays({ verify });
 
   const {
@@ -563,7 +564,7 @@ export default function HRPortal({ view = 'dashboard', initialEmployeeId = '' }:
 
         <AnnouncementsModal announcementAlreadyPublished={announcementAlreadyPublished} open={announcementOpen} onClose={() => setAnnouncementOpen(false)} announcementContent={announcementContent} announcementId={announcementId} announcementImageInputRef={announcementImageInputRef} announcementImagePreview={announcementImagePreview} announcementImageUrl={announcementImageUrl} announcementLoading={announcementLoading} announcementMsg={announcementMsg} announcementRemoveImage={announcementRemoveImage} announcementSaving={announcementSaving} announcementUpdatedAt={announcementUpdatedAt} clearAnnouncementImage={clearAnnouncementImage} handleAnnouncementImageChange={handleAnnouncementImageChange} publishAnnouncement={() => saveAnnouncement(true)} saveAnnouncement={() => saveAnnouncement(false)} setAnnouncementContent={setAnnouncementContent} />
 
-        <HolidaysModal open={holidaysOpen} onClose={() => setHolidaysOpen(false)} addHoliday={addHoliday} deleteHoliday={deleteHoliday} holidayMsg={holidayMsg} holidaySaving={holidaySaving} holidays={holidays} holidaysLoading={holidaysLoading} newHolidayDate={newHolidayDate} newHolidayName={newHolidayName} setNewHolidayDate={setNewHolidayDate} setNewHolidayName={setNewHolidayName} />
+        <HolidaysModal open={holidaysOpen} onClose={() => setHolidaysOpen(false)} addHoliday={addHoliday} deleteHoliday={deleteHoliday} holidayMsg={holidayMsg} holidaySaving={holidaySaving} holidays={holidays} holidaysLoading={holidaysLoading} newHolidayDate={newHolidayDate} newHolidayName={newHolidayName} setNewHolidayDate={setNewHolidayDate} setNewHolidayName={setNewHolidayName} absentReleases={absentReleases} releaseHolidayAbsences={releaseHolidayAbsences} />
 
         {/* Requests are managed from Quick Actions; retained here only as a non-rendered fallback. */}
         <HrPendingRequestsSections disputes={disputes} disputesLoading={disputesLoading} disputeMsg={disputeMsg} disputeActionLoadingId={disputeActionLoadingId} approveDispute={approveDispute} rejectDispute={rejectDispute} setSelectedDisputeDetail={setSelectedDisputeDetail} setDisputesHistoryModalOpen={setDisputesHistoryModalOpen} leaveRequests={leaveRequests} leaveRequestsLoading={leaveRequestsLoading} leaveMsg={leaveMsg} leaveActionLoadingId={leaveActionLoadingId} approveLeave={approveLeave} rejectLeave={rejectLeave} countLeaveDays={countLeaveDays} getLeaveBalance={getLeaveBalance} leaveHrNotes={leaveHrNotes} setLeaveHrNotes={setLeaveHrNotes} setSelectedLeaveDetail={setSelectedLeaveDetail} setLeaveHistoryModalOpen={setLeaveHistoryModalOpen} />
