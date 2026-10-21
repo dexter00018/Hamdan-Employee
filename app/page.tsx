@@ -72,8 +72,10 @@ export default function LoginPage() {
       } else {
         throw new Error(`Unrecognized role: "${profile?.role}". Please contact the Super Admin.`);
       }
-
-      router.refresh();
+      // No router.refresh() here: a refresh re-renders the just-navigated
+      // dashboard, remounting it mid-fetch and aborting/re-running the
+      // badge queries (double Supabase reads on every login). The target
+      // page fetches its own data fresh on mount anyway.
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Incorrect email or password.');
     } finally {
