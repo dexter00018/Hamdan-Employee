@@ -2,6 +2,33 @@
 import { getAttendanceStatusDisplay } from '@/lib/attendance-status-display';
 import type { Database } from '@/lib/database.types';
 import { computeLateMinutes } from '@/lib/attendance-rules';
+import {
+  computeAttendanceStreak,
+  computeCurrentCutoffKey,
+  countLeaveDays as countLeaveDaysUtil,
+  countLeaveHolidays as countLeaveHolidaysUtil,
+  daysUntilHoliday,
+  disputeClaimed,
+  disputeFieldLabel,
+  disputeOriginal,
+  disputeTypeLabel,
+  directoryInitials,
+  formatCreditValue,
+  formatDisputeTimePh,
+  formatHolidayDate,
+  formatHiredDate,
+  formatLateDuration,
+  formatMonthLabel,
+  formatMonthOnly,
+  formatOffsetShort,
+  isLeaveStatus,
+  isTimeInOnTime,
+  isTimeOutComplete,
+  maskValue,
+  matchesCutoff,
+  splitHolidays,
+  streakMessageFor,
+} from '@/lib/employee/dashboard-utils';
 import { applyPortalTheme } from '@/lib/portal-theme';
 import MobileBottomNav from '@/components/employee/MobileBottomNav';
 import EmployeeSummaryCard from '@/components/employee/EmployeeSummaryCard';
@@ -856,14 +883,6 @@ export default function EmployeeDashboard() {
     setHolidaysLoading(false);
   };
 
-  const directoryInitials = (name: string | null) =>
-    (name || '?')
-      .split(' ')
-      .map((n) => n[0])
-      .slice(0, 2)
-      .join('')
-      .toUpperCase();
-
   const filteredDirectory = useMemo(() => {
     const q = directorySearch.trim().toLowerCase();
     if (!q) return directoryEmployees;
@@ -1187,26 +1206,11 @@ export default function EmployeeDashboard() {
   );
 
   // Count chargeable leave days: Monday-Friday, excluding company holidays.
-  const countLeaveDays = (start: string, end: string) => {
-    if (!start || !end || end < start) return 0;
-    let count = 0;
-    const [sy, sm, sd] = start.split('-').map(Number);
-    const [ey, em, ed] = end.split('-').map(Number);
-    const d = new Date(Date.UTC(sy, sm - 1, sd));
-    const endDate = new Date(Date.UTC(ey, em - 1, ed));
-    while (d <= endDate) {
-      const day = d.getUTCDay();
-      const dateKey = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
-      if (day !== 0 && day !== 6 && !companyHolidayDateSet.has(dateKey)) count++;
-      d.setUTCDate(d.getUTCDate() + 1);
-    }
-    return count;
-  };
+  // Pure implementations live in lib/employee/dashboard-utils; these thin
+  // wrappers bind the company-holiday set so the modal props stay stable.
+  const countLeaveDays = (start: string, end: string) => countLeaveDaysUtil(start, end, companyHolidayDateSet);
 
-  const countLeaveHolidays = (start: string, end: string) => {
-    if (!start || !end || end < start) return 0;
-    return companyHolidays.filter((holiday) => holiday.holiday_date >= start && holiday.holiday_date <= end).length;
-  };
+  const countLeaveHolidays = (start: string, end: string) => countLeaveHolidaysUtil(start, end, companyHolidays);
 
   // --- Attendance Disputes ---
   // Employees can dispute a day tagged "Late" (claiming they actually
@@ -1290,19 +1294,9 @@ export default function EmployeeDashboard() {
   const hasPendingDispute = (dateStr: string, type: 'TimeIn' | 'TimeOut') =>
     myDisputes.some((d) => d.dispute_date === dateStr && d.status === 'Pending' && (d.dispute_type || 'TimeIn') === type);
 
-  // Human-friendly label + before/after times for a dispute, regardless
-  // of whether it's a TimeIn or TimeOut dispute -- shared by the "My
-  // Disputes" list and its detail view.
-  const disputeTypeLabel = (d: any) => {
-    const dType = d.dispute_type || 'TimeIn';
-    if (dType === 'TimeOut') return 'Missed time-out';
-    return d.attendance_log_id ? 'Late tag dispute' : 'Missed time-in';
-  };
-  const disputeOriginal = (d: any) => ((d.dispute_type || 'TimeIn') === 'TimeOut' ? d.original_time_out : d.original_time_in);
-  const disputeClaimed = (d: any) => ((d.dispute_type || 'TimeIn') === 'TimeOut' ? d.claimed_time_out : d.claimed_time_in);
-  const disputeFieldLabel = (d: any) => ((d.dispute_type || 'TimeIn') === 'TimeOut' ? 'Time-Out' : 'Time-In');
-  const formatDisputeTimePh = (iso: string) =>
-    new Date(iso).toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' });
+  // disputeTypeLabel / disputeOriginal / disputeClaimed / disputeFieldLabel /
+  // formatDisputeTimePh are pure helpers now in lib/employee/dashboard-utils,
+  // imported above and passed straight into AttendanceDisputesModal.
 
   // Whether the currently-open dispute modal was launched from a
   // specific row (Late tag / missed time-out link -- type is fixed) or
@@ -1352,28 +1346,9 @@ export default function EmployeeDashboard() {
     setDisputeStep('form');
   };
 
-  // Same cutoffs used everywhere else in this file (configurable late
-  // cutoff, configurable time-out cutoff -- Super Admin -> App
-  // Settings) -- used here to decide whether each option on the
-  // "choice" screen is actually worth disputing.
-  const isTimeInOnTime = (timeInIso: string) => {
-    const parts = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Manila',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }).formatToParts(new Date(timeInIso)).reduce((acc: any, p) => { acc[p.type] = p.value; return acc; }, {});
-    const minutesSinceMidnight = parseInt(parts.hour, 10) * 60 + parseInt(parts.minute, 10);
-    return minutesSinceMidnight < lateCutoffHour * 60 + lateCutoffMinute;
-  };
-
-  const isTimeOutComplete = (timeOutIso: string) => {
-    const manilaHour = parseInt(
-      new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', hour12: false }).format(new Date(timeOutIso)),
-      10
-    );
-    return manilaHour >= timeOutReminderHour;
-  };
+  // isTimeInOnTime / isTimeOutComplete are pure helpers in
+  // lib/employee/dashboard-utils; they take the cutoff values as arguments
+  // so they can also be unit-tested independently of app settings.
 
   // Whether each dispute type is actually worth offering on the "choice"
   // screen for the date currently selected. If no date is chosen yet
@@ -1388,13 +1363,13 @@ export default function EmployeeDashboard() {
     }
     const match = history.find((h) => h.log_date === disputeForm.date);
 
-    const timeIn = match?.time_in && isTimeInOnTime(match.time_in)
+    const timeIn = match?.time_in && isTimeInOnTime(match.time_in, lateCutoffHour, lateCutoffMinute)
       ? { eligible: false, reason: 'Already on time -- nothing to dispute.' }
       : { eligible: true, reason: '' };
 
     const timeOut = !match?.time_in
       ? { eligible: false, reason: 'No time-in recorded yet for this date.' }
-      : match?.time_out && isTimeOutComplete(match.time_out)
+      : match?.time_out && isTimeOutComplete(match.time_out, timeOutReminderHour)
         ? { eligible: false, reason: 'Already timed out -- nothing to dispute.' }
         : { eligible: true, reason: '' };
 
@@ -1487,13 +1462,8 @@ export default function EmployeeDashboard() {
     }
   };
 
-  // Masks a value except for its first 2 characters, e.g. "34" + dots
-  // for the rest -- shows just enough to help the employee recognize
-  // "yes, this is my number" without exposing the whole thing.
-  const maskValue = (value: string) => {
-    if (value.length <= 2) return value;
-    return value.slice(0, 2) + '•'.repeat(value.length - 2);
-  };
+  // maskValue is a pure helper in lib/employee/dashboard-utils (imported
+  // above); it lets the gov-ID rows show just enough to recognize a number.
 
   // Renders one masked/unmaskable government ID row, e.g. SSS Number.
   const renderGovIdRow = (label: string, value: string | null, fieldKey: 'sss' | 'philhealth' | 'pagibig' | 'tin') => (
@@ -1517,35 +1487,10 @@ export default function EmployeeDashboard() {
     </div>
   );
 
-  // Hired Date isn't sensitive like a government ID number, so it's
-  // just shown plainly -- no masking/eye icon needed.
-  const formatHiredDate = (dateStr: string) => {
-    const [y, m, d] = dateStr.split('-').map(Number);
-    return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-  };
-
   // --- Summary card calculations ---
-  // log_date is a plain "YYYY-MM-DD" string, so we parse it manually
-  // instead of `new Date(log_date)` to avoid the browser's local
-  // timezone shifting it into the wrong day/month.
-  //
-  // Period key format: "YYYY-MM:ALL" (whole month), "YYYY-MM:H1"
-  // (days 1-15), or "YYYY-MM:H2" (days 16 to end of month).
-  const matchesCutoff = (logDate: string | undefined, cutoffKey: string) => {
-    if (!logDate || !cutoffKey) return false;
-    const [ym, half] = cutoffKey.split(':');
-    if (!logDate.startsWith(ym)) return false;
-    if (half === 'ALL') return true;
-    const day = parseInt(logDate.split('-')[2], 10);
-    return half === 'H1' ? day <= 15 : day >= 16;
-  };
-
-  const currentCutoffKey = useMemo(() => {
-    const now = new Date();
-    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const half = now.getDate() <= 15 ? 'H1' : 'H2';
-    return `${ym}:${half}`;
-  }, []);
+  // matchesCutoff + computeCurrentCutoffKey (cutoff period logic) live in
+  // lib/employee/dashboard-utils, imported above.
+  const currentCutoffKey = useMemo(() => computeCurrentCutoffKey(), []);
 
   // Today's date in Manila -- used to decide whether a "no time out"
   // row is eligible for a missed-time-out dispute (only past days;
@@ -1561,69 +1506,26 @@ export default function EmployeeDashboard() {
     .slice(0, 3);
 
   // --- Attendance Streak badge ---
-  // Counts consecutive work days (most recent first) that are neither
-  // "Late" nor "Absent" -- an approved Leave day doesn't break the streak,
-  // it's just skipped over.
-  const attendanceStreak = useMemo(() => {
-    const sorted = [...history]
-      .filter((l) => l.log_date && l.log_date <= todayManila)
-      .sort((a, b) => (a.log_date < b.log_date ? 1 : -1));
-    let streak = 0;
-    for (const log of sorted) {
-      const status = log.status?.toLowerCase() ?? '';
-      if (status === 'late' || status === 'absent') break;
-      if (status.includes('leave')) continue;
-      streak += 1;
-    }
-    return streak;
-  }, [history, todayManila]);
+  // computeAttendanceStreak + streakMessageFor live in
+  // lib/employee/dashboard-utils.
+  const attendanceStreak = useMemo(
+    () => computeAttendanceStreak(history, todayManila),
+    [history, todayManila]
+  );
 
-  const streakMessage =
-    attendanceStreak === 0 ? 'Start your streak today!' :
-    attendanceStreak < 5 ? 'Nice start!' :
-    attendanceStreak < 10 ? 'Great job!' :
-    attendanceStreak < 20 ? 'Impressive!' : 'Outstanding!';
+  const streakMessage = streakMessageFor(attendanceStreak);
 
   // Split holidays into upcoming (today included) and past, each sorted
   // nearest-first, for the Company Calendar modal.
-  const { upcomingHolidays, pastHolidays } = useMemo(() => {
-    const upcoming = companyHolidays
-      .filter((h) => h.holiday_date >= todayManila)
-      .sort((a, b) => (a.holiday_date < b.holiday_date ? -1 : 1));
-    const past = companyHolidays
-      .filter((h) => h.holiday_date < todayManila)
-      .sort((a, b) => (a.holiday_date < b.holiday_date ? 1 : -1));
-    return { upcomingHolidays: upcoming, pastHolidays: past };
-  }, [companyHolidays, todayManila]);
+  const { upcomingHolidays, pastHolidays } = useMemo(
+    () => splitHolidays(companyHolidays, todayManila),
+    [companyHolidays, todayManila]
+  );
 
-  const formatHolidayDate = (dateStr: string) => {
-    const [y, m, d] = dateStr.split('-').map(Number);
-    return new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
-  };
-
-  const daysUntilHoliday = (dateStr: string) => {
-    const [y, m, d] = dateStr.split('-').map(Number);
-    const [ty, tm, td] = todayManila.split('-').map(Number);
-    return Math.round((Date.UTC(y, m - 1, d) - Date.UTC(ty, tm - 1, td)) / 86400000);
-  };
-
-  // Top-card inputs (Batch A): the next upcoming company holiday. The
-  // cutoff overview lives in the Cutoff Status panel now, so these cards
-  // don't repeat attendance stats. Remaining credits reuse the shared
-  // `remainingCredits` derived above.
-  const formatCreditValue = (value: number) =>
-    Number.isInteger(value) ? String(value) : value.toFixed(1);
-  // Compact offset readout, matching the Offset modal's "3h 20m" style.
-  const formatOffsetShort = (minutes: number) => {
-    const safe = Math.max(0, Math.round(minutes));
-    const hrs = Math.floor(safe / 60);
-    const mins = safe % 60;
-    if (hrs && mins) return `${hrs}h ${mins}m`;
-    if (hrs) return `${hrs}h`;
-    return `${mins}m`;
-  };
+  // formatHolidayDate / daysUntilHoliday / formatCreditValue /
+  // formatOffsetShort are pure helpers now in lib/employee/dashboard-utils.
   const nextHoliday = upcomingHolidays[0] ?? null;
-  const nextHolidayDays = nextHoliday ? daysUntilHoliday(nextHoliday.holiday_date) : null;
+  const nextHolidayDays = nextHoliday ? daysUntilHoliday(nextHoliday.holiday_date, todayManila) : null;
 
   // If the employee has filtered Attendance History to a specific
   // cutoff, the summary cards follow that same cutoff. Otherwise,
@@ -1632,18 +1534,7 @@ export default function EmployeeDashboard() {
 
   // The grace cutoff gates Late status; its full duration starts at 9:00 AM.
   const getMinutesLate = (timeInIso: string) => computeLateMinutes(timeInIso, lateCutoffHour, lateCutoffMinute);
-
-  const formatLateDuration = (mins: number) => {
-    if (mins <= 0) return '0 min';
-    const h = Math.floor(mins / 60);
-    const m = mins % 60;
-    return h === 0 ? `${m} min` : `${h}h ${m}m`;
-  };
-
-  // "Leave" here now covers any type-specific status ("Sick Leave",
-  // "Vacation Leave", "Emergency Leave") set by settle_leave_day(), not
-  // just the literal word "Leave" -- match by substring.
-  const isLeaveStatus = (s: string | null | undefined) => (s ?? '').toLowerCase().includes('leave');
+  // formatLateDuration + isLeaveStatus live in lib/employee/dashboard-utils.
 
   const summary = useMemo(() => {
     const cutoffLogs = history.filter(log => matchesCutoff(log.log_date, summaryCutoffKey));
@@ -1726,19 +1617,8 @@ export default function EmployeeDashboard() {
     return Array.from(months).sort().reverse();
   }, [availableCutoffs]);
 
-  const formatMonthOnly = (ym: string) => {
-    const [y, m] = ym.split('-').map(Number);
-    return new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-  };
-
-  const formatMonthLabel = (key: string) => {
-    const [ym, half] = key.split(':');
-    const [y, m] = ym.split('-').map(Number);
-    const monthName = new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long' });
-    if (half === 'ALL') return `${monthName} ${y} (Whole Month)`;
-    const lastDay = new Date(y, m, 0).getDate();
-    return half === 'H1' ? `${monthName} 1-15, ${y}` : `${monthName} 16-${lastDay}, ${y}`;
-  };
+  // formatMonthOnly / formatMonthLabel are pure helpers in
+  // lib/employee/dashboard-utils (imported above).
 
   // --- Monthly Attendance Calendar ---
   const [attendanceCalendarOpen, setAttendanceCalendarOpen] = useState(false);
@@ -2606,7 +2486,7 @@ export default function EmployeeDashboard() {
       {directoryModalOpen && <EmployeeDirectoryModal open={directoryModalOpen} onClose={() => setDirectoryModalOpen(false)} loading={directoryLoading} total={directoryEmployees.length} search={directorySearch} onSearchChange={setDirectorySearch} employees={filteredDirectory} initials={directoryInitials} />}
 
       {/* Company Calendar Modal */}
-      {calendarModalOpen && <CompanyCalendarModal open={calendarModalOpen} onClose={() => setCalendarModalOpen(false)} loading={holidaysLoading} holidays={companyHolidays} upcoming={upcomingHolidays} past={pastHolidays} formatDate={formatHolidayDate} daysUntil={daysUntilHoliday} />}
+      {calendarModalOpen && <CompanyCalendarModal open={calendarModalOpen} onClose={() => setCalendarModalOpen(false)} loading={holidaysLoading} holidays={companyHolidays} upcoming={upcomingHolidays} past={pastHolidays} formatDate={formatHolidayDate} daysUntil={(dateStr) => daysUntilHoliday(dateStr, todayManila)} />}
 
       {leaveModalOpen && <LeaveRequestModal open={leaveModalOpen} onClose={() => setLeaveModalOpen(false)} onBack={() => { setLeaveModalOpen(false); setLeaveChoiceModalOpen(true); }} countLeaveDays={countLeaveDays} countLeaveHolidays={countLeaveHolidays} fallbackLeaveCredits={fallbackLeaveCredits} isRegular={isRegular} leaveCredits={leaveCredits} leaveForm={leaveForm} leaveMsg={leaveMsg} leaveSaving={leaveSaving} remainingCredits={remainingCredits} setLeaveForm={setLeaveForm} submitLeave={submitLeave} todayManila={todayManila} upcomingApprovedLeaves={upcomingApprovedLeaves} />}
 
