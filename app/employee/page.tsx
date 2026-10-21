@@ -26,6 +26,7 @@ import { CheckCircle2, CircleX, Clock3, LogOut } from 'lucide-react';
 import { APP_SETTING_DEFINITIONS, DEFAULT_APP_SETTINGS, normalizeAppSettings, type AppSettingsValues } from '@/lib/app-settings';
 import { resolveSeasonalTheme, SEASONAL_THEME_PRESENTATION } from '@/lib/seasonal-theme';
 import { useVerificationDialog } from '@/components/shared/useVerificationDialog';
+import CenterLoader from '@/components/shared/CenterLoader';
 import SeasonalDecor from '@/components/seasonal/SeasonalDecor';
 
 const SummaryDetailModal = dynamic(() => import('@/components/employee/modals/SummaryDetailModal'));
@@ -275,6 +276,9 @@ export default function EmployeeDashboard() {
   );
   const [historyMonthLoading, setHistoryMonthLoading] = useState(false);
   const [initLoading, setInitLoading] = useState(true);
+  // Realtime handlers re-run initializeDashboard; the centered loading
+  // screen belongs to the very first load only, so track completion.
+  const [hasInitialized, setHasInitialized] = useState(false);
   const [pendingLeavesCount, setPendingLeavesCount] = useState(0);
   const [pendingDisputesCount, setPendingDisputesCount] = useState(0);
   const [newPayslipsCount, setNewPayslipsCount] = useState(0);
@@ -649,6 +653,7 @@ export default function EmployeeDashboard() {
     setNewPayslipsCount(payslipsCountRes.count ?? 0);
     setOpenSupportCount(supportCountRes.count ?? 0);
     setLeaveCredits(leaveCreditsRes.data ?? null);
+    setHasInitialized(true);
     setInitLoading(false);
   };
 
@@ -1971,6 +1976,7 @@ export default function EmployeeDashboard() {
 
   return (
     <main id="employee-dashboard-top" className={`${dashboardStyles.dashboard} dashboard-shell employee-dashboard relative min-h-screen overflow-x-hidden p-3 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:p-4 sm:pb-[calc(6rem+env(safe-area-inset-bottom))] md:p-6 md:pb-[calc(6rem+env(safe-area-inset-bottom))] lg:p-4 ${seasonalTheme.active ? `seasonal-theme seasonal-${seasonalTheme.variant} seasonal-${seasonalTheme.intensity}` : ''}`}>
+      <CenterLoader placement="fixed" show={initLoading && !hasInitialized} label="Loading your portal…" />
       <style jsx global>{`
         /* DARK MODE — neutral dark gray, not pure black. */
         .dark { color-scheme: dark; }

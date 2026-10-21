@@ -1606,3 +1606,16 @@ html.dark [class~="to-orange-700"] { --tw-gradient-to: #442c20 !important; }
   .halloween-graveyard { height: 10rem; }
 }
 @media (prefers-reduced-motion: reduce) { .halloween-props * { animation: none !important; } }
+
+/* CenterLoader: the "H" tile beats with a double pulse (lub-dub), and its
+   glow widens in sync. */
+@keyframes hamdan-heartbeat {
+  0%, 100% { transform: scale(1); box-shadow: 0 10px 30px rgba(47, 189, 108, 0.14); }
+  12% { transform: scale(1.12); box-shadow: 0 14px 36px rgba(47, 189, 108, 0.30); }
+  24% { transform: scale(0.975); }
+  36% { transform: scale(1.07); }
+  55% { transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-\[hamdan-heartbeat_2\.1s_ease-in-out_infinite\] { animation: none !important; }
+}

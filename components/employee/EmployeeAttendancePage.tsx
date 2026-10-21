@@ -9,6 +9,7 @@ import AttendanceResolutionDrawer, {
 } from "@/components/employee/attendance/AttendanceResolutionDrawer";
 import { applyPortalTheme } from "@/lib/portal-theme";
 import { supabase } from "@/lib/supabase";
+import CenterLoader from "@/components/shared/CenterLoader";
 import {
   CalendarDays,
   ChevronDown,
@@ -221,6 +222,9 @@ export default function EmployeeAttendancePage() {
   const [filter, setFilter] = useState<AttendanceFilter>("all");
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  // First completed load flips this; realtime-triggered reloads afterward
+  // must not re-show the centered loading screen.
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Earliest log_date already held in memory (YYYY-MM-DD). Months older
   // than this are fetched per-month when the picker selects them.
@@ -369,6 +373,7 @@ export default function EmployeeAttendancePage() {
     if (typeof settingResult.data?.value === "number")
       setTimeOutHour(settingResult.data.value);
     setLeaveCredits(leaveCreditsResult.data ?? null);
+    setHasLoaded(true);
     setLoading(false);
   }, []);
 
@@ -709,6 +714,7 @@ export default function EmployeeAttendancePage() {
 
   return (
     <main className={`${frameStyles.page} dashboard-shell employee-attendance min-h-screen bg-slate-50 text-slate-900 transition-colors dark:bg-[#202521] dark:text-white`}>
+      <CenterLoader placement="fixed" show={loading && !hasLoaded} label="Loading attendance…" />
       <div className={`${frameStyles.frame} grid`}>
         <EmployeeDesktopSidebar
           employeeName={employeeName}

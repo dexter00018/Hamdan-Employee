@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import CenterLoader from '@/components/shared/CenterLoader';
 
 type ModalShellProps = {
   open: boolean;
@@ -14,6 +15,8 @@ type ModalShellProps = {
   closeDisabled?: boolean;
   className?: string;
   placement?: 'center' | 'right';
+  /** Keep the transition bar up beyond the automatic open animation while data is loading. */
+  busy?: boolean;
 };
 
 const widthClasses = {
@@ -36,12 +39,27 @@ export default function ModalShell({
   closeDisabled = false,
   className = '',
   placement = 'center',
+  busy = false,
 }: ModalShellProps) {
   const titleId = useId();
   const descriptionId = useId();
   const closeRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
   const onCloseRef = useRef(onClose);
+
+  // The modal body renders heavy lists / mounts several components at once,
+  // so every open shows the thin transition bar for a beat (quiets down to
+  // nothing on fast modals; `busy` keeps it up while data still loads).
+  const [opening, setOpening] = useState(false);
+  useEffect(() => {
+    if (!open) {
+      setOpening(false);
+      return;
+    }
+    setOpening(true);
+    const timer = window.setTimeout(() => setOpening(false), 700);
+    return () => window.clearTimeout(timer);
+  }, [open]);
 
   useEffect(() => {
     onCloseRef.current = onClose;
@@ -111,7 +129,7 @@ export default function ModalShell({
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
-        className={`flex w-full flex-col overflow-hidden border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900 ${placement === 'right' ? 'h-full max-h-none rounded-none sm:rounded-[28px]' : 'max-h-[92dvh] rounded-[28px]'} ${widthClasses[size]} ${className}`}
+        className={`relative flex w-full flex-col overflow-hidden border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900 ${placement === 'right' ? 'h-full max-h-none rounded-none sm:rounded-[28px]' : 'max-h-[92dvh] rounded-[28px]'} ${widthClasses[size]} ${className}`}
       >
         <header className="flex flex-shrink-0 items-start gap-3 border-b border-slate-200 px-4 py-4 dark:border-slate-700 sm:px-6">
           {icon && (
@@ -140,6 +158,8 @@ export default function ModalShell({
             ×
           </button>
         </header>
+
+        <CenterLoader placement="inside" show={opening || !!busy} />
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5">
           {children}

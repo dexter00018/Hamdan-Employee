@@ -18,6 +18,7 @@ import dynamic from 'next/dynamic';
 import { BadgeAlert, CalendarCheck2, CalendarDays, CalendarRange, Coins, ContactRound, FileChartColumn, FolderDown, LifeBuoy, Megaphone, RefreshCw, Search } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useVerificationDialog } from '@/components/shared/useVerificationDialog';
+import CenterLoader from '@/components/shared/CenterLoader';
 import { APP_SETTING_DEFINITIONS, DEFAULT_APP_SETTINGS, normalizeAppSettings, type AppSettingsValues } from '@/lib/app-settings';
 import { resolveSeasonalTheme, SEASONAL_THEME_PRESENTATION } from '@/lib/seasonal-theme';
 import { computeLateMinutes } from '@/lib/attendance-rules';
@@ -79,6 +80,14 @@ export default function HRPortal({ view = 'dashboard', initialEmployeeId = '' }:
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loadingData, setLoadingData] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Today-cards scope (Present / Not Timed In): active employees only.
+  // The full attendance/logs fetch still keeps resigned employees' history
+  // for the trend chart, insight overlays, and Reports.
+  const activeEmployeeProfiles = useMemo(
+    () => profiles.filter((profile) => profile.is_active === true),
+    [profiles],
+  );
 
   // Which modal is open: null | 'choice' | 'edit' | 'payslips'
   const [modalMode, setModalMode] = useState<null | 'choice' | 'edit' | 'payslips'>(null);
@@ -296,7 +305,7 @@ export default function HRPortal({ view = 'dashboard', initialEmployeeId = '' }:
 
   const {
     todayManila, todaysLogs, presentTodayCount, lateTodayCount, notYetTimedInToday, onLeaveTodayCount,
-  } = useHrDashboardStats({ attendance, profiles, leaveRequests });
+  } = useHrDashboardStats({ attendance, profiles: activeEmployeeProfiles, leaveRequests });
   const lowLeaveCreditsCount = leaveCreditsData.filter((employee) => {
     if (employee.employment_status !== 'Regular') return false;
     const total = employee.total_credits ?? fallbackLeaveCredits;
@@ -472,6 +481,7 @@ export default function HRPortal({ view = 'dashboard', initialEmployeeId = '' }:
   return (
     <main id="hr-dashboard-top" data-attendance-open={isAttendancePage} className={`dashboard-shell hr-dashboard relative min-h-screen overflow-x-hidden transition-colors ${hrStyles.dashboard} ${seasonalTheme.active ? `seasonal-theme seasonal-${seasonalTheme.variant} seasonal-${seasonalTheme.intensity}` : ''}`}>
       {seasonalTheme.active && seasonalTheme.snowEnabled ? <SeasonalDecor variant={seasonalTheme.variant} intensity={seasonalTheme.intensity} particle={seasonalPresentation.particle} /> : null}
+      <CenterLoader placement="fixed" show={loadingData && !lastUpdatedAt} label="Preparing dashboard…" />
       <HRDesktopSidebar attendanceOpen={isAttendancePage} darkMode={darkMode} leaveRequestCount={pendingLeaveCount} disputeCount={pendingDisputesCount} onDashboard={goDashboard} onAttendance={openAttendanceLog} onEmployees={() => setEmployeesListOpen(true)} onLeave={() => { setSelectedLeaveDetail(null); setLeaveHistoryModalOpen(true); }} onDisputes={() => { setSelectedDisputeDetail(null); setDisputesHistoryModalOpen(true); }} onPayslips={() => setEmployeesListOpen(true)} onDocuments={openDocuments} onAnnouncements={() => setAnnouncementOpen(true)} onHolidays={openHolidays} onReports={openReports} onHelpdesk={openHelpdesk} onToggleTheme={toggleTheme} onLogout={handleLogout} />
       <div className={`seasonal-content relative z-[3] ${hrStyles.content}`}>
         {incomingRequestAlert ? <div role="status" aria-live="polite" className="fixed inset-x-3 top-3 z-[80] mx-auto flex max-w-md items-center gap-3 rounded-2xl border border-green-300 bg-white p-3 shadow-2xl dark:border-green-800 dark:!bg-[#17231b] sm:left-auto sm:right-5 sm:top-5 sm:mx-0"><span className={`grid h-11 w-11 flex-none place-items-center rounded-2xl text-white shadow ${incomingRequestAlert.type === 'dispute' ? 'bg-gradient-to-br from-orange-500 to-red-700' : 'bg-gradient-to-br from-blue-500 to-indigo-700'}`}>{incomingRequestAlert.type === 'dispute' ? <BadgeAlert size={22} strokeWidth={2.8}/> : <CalendarCheck2 size={22} strokeWidth={2.8}/>}</span><button type="button" onClick={() => { if (incomingRequestAlert.type === 'dispute') { setSelectedDisputeDetail(null); setDisputesHistoryModalOpen(true); } else { setSelectedLeaveDetail(null); setLeaveHistoryModalOpen(true); } setIncomingRequestAlert(null); }} className="min-w-0 flex-1 text-left"><span className="block text-xs font-extrabold text-slate-950 dark:!text-white">{incomingRequestAlert.title}</span><span className="mt-0.5 block text-[10px] leading-relaxed text-slate-600 dark:!text-slate-300">{incomingRequestAlert.detail}</span><span className="mt-1 block text-[10px] font-bold text-green-700 dark:!text-green-300">Tap to review</span></button><button type="button" onClick={() => setIncomingRequestAlert(null)} className="grid h-9 w-9 flex-none place-items-center rounded-full bg-slate-100 text-lg text-slate-600 dark:!bg-[#29362d] dark:!text-white" aria-label="Dismiss notification">Ãƒâ€”</button></div> : null}

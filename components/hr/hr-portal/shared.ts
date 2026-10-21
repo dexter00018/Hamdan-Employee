@@ -38,6 +38,7 @@ export type Profile = {
   designation: string | null;
   avatar_url: string | null;
   employee_email: string | null;
+  is_active?: boolean;
   resigned_date?: string | null;
 };
 
