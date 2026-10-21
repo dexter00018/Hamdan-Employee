@@ -262,6 +262,18 @@ export default function EmployeeDashboard() {
   const [message, setMessage] = useState('');
   const [profile, setProfile] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
+  // Mirror of `history` for the bounded initial read's keep-older merge
+  // (initializeDashboard has empty deps, so it can't close over state).
+  const historyRef = useRef<any[]>([]);
+  useEffect(() => {
+    historyRef.current = history;
+  }, [history]);
+  // Earliest log_date held in memory (YYYY-MM-DD). Cutoff months older
+  // than this are fetched on demand when their cutoff is selected.
+  const [historyCoveredFrom, setHistoryCoveredFrom] = useState(
+    () => `${new Date().getFullYear()}-01-01`,
+  );
+  const [historyMonthLoading, setHistoryMonthLoading] = useState(false);
   const [initLoading, setInitLoading] = useState(true);
   const [pendingLeavesCount, setPendingLeavesCount] = useState(0);
   const [pendingDisputesCount, setPendingDisputesCount] = useState(0);
@@ -585,7 +597,10 @@ export default function EmployeeDashboard() {
     const [profileRes, govIdRes, historyRes, leavesCountRes, disputesCountRes, payslipsCountRes, supportCountRes, leaveCreditsRes] = await Promise.all([
       supabase.from('profiles').select('full_name, employee_id, designation, role, avatar_url').eq('id', user.id).single(),
       supabase.from('employee_government_ids').select('sss_number, philhealth_number, pagibig_number, tin_number, hired_date, employment_status').eq('user_id', user.id).maybeSingle(),
-      supabase.from('attendance_logs').select('id, log_date, time_in, time_out, status, late_offset_minutes, early_out_offset_minutes').eq('user_id', user.id).order('log_date', { ascending: false }),
+      // Bounded to the current year: the unbounded read grew with every
+      // month of employment, slowing each dashboard entry. Older months
+      // load on demand when a prior-year cutoff is selected below.
+      supabase.from('attendance_logs').select('id, log_date, time_in, time_out, status, late_offset_minutes, early_out_offset_minutes').eq('user_id', user.id).gte('log_date', `${year}-01-01`).order('log_date', { ascending: false }),
       supabase.from('leave_requests').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'Pending'),
       supabase.from('attendance_disputes').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'Pending'),
       supabase.from('payslips').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('published', true).is('acknowledged_at', null),
@@ -619,7 +634,14 @@ export default function EmployeeDashboard() {
       setMessage('Error: ' + historyError.message);
     }
 
-    setHistory(historyData || []);
+    setHistory(() => {
+      // Realtime-triggered reloads re-read only the current-year bound;
+      // keep any prior-year months already loaded on demand instead of
+      // wiping the cutoff the employee may be viewing.
+      const older = historyRef.current.filter(log => log.log_date < `${year}-01-01`);
+      if (older.length === 0) return historyData || [];
+      return [...older, ...(historyData || [])].sort((a, b) => (a.log_date < b.log_date ? 1 : -1));
+    });
     const foundTodayLog = historyData?.find(log => log.log_date === today);
     setTodayLog(foundTodayLog ?? null);
     setPendingLeavesCount(leavesCountRes.count ?? 0);
@@ -1622,6 +1644,21 @@ export default function EmployeeDashboard() {
     // attendance log for it yet, so the dropdown (defaulted to this
     // cutoff) always has a matching option to display.
     months.add(currentCutoffKey.split(':')[0]);
+    // The initial history read is bounded to the current year, so derive
+    // older months from the employee's hired date instead -- this keeps
+    // the dropdown complete while prior-year months load on demand.
+    const hired = governmentIds?.hired_date;
+    if (typeof hired === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(hired)) {
+      const now = new Date();
+      const [hy, hm] = hired.split('-').map(Number);
+      for (let year = hy; year <= now.getFullYear(); year++) {
+        const firstMonth = year === hy ? hm : 1;
+        const lastMonth = year === now.getFullYear() ? now.getMonth() + 1 : 12;
+        for (let month = firstMonth; month <= lastMonth; month++) {
+          months.add(`${year}-${String(month).padStart(2, '0')}`);
+        }
+      }
+    }
     const opts: string[] = [];
     months.forEach(ym => {
       opts.push(`${ym}:H1`);
@@ -1630,7 +1667,7 @@ export default function EmployeeDashboard() {
     // String sort works here since "YYYY-MM:H1" < "YYYY-MM:H2"
     // alphabetically, and the zero-padded YYYY-MM sorts correctly too.
     return opts.sort().reverse();
-  }, [history, currentCutoffKey]);
+  }, [history, currentCutoffKey, governmentIds]);
 
   // Just the distinct months (no H1/H2 duplication) for a shorter, easier
   // to scan month picker -- the half is chosen separately via the two
@@ -1658,6 +1695,50 @@ export default function EmployeeDashboard() {
   // --- Monthly Attendance Calendar ---
   const [attendanceCalendarOpen, setAttendanceCalendarOpen] = useState(false);
   const [attendanceCalendarMonth, setAttendanceCalendarMonth] = useState(() => currentCutoffKey.split(':')[0]);
+
+  // On-demand read of a single prior-year month. Fires only when the
+  // Attendance Calendar selects a month that predates historyCoveredFrom
+  // (the current-year bound of the initial read), so in-year switching
+  // stays pure in-memory; prior-year months fetch once, then stay in
+  // memory. Merged non-destructively so a realtime reload never wipes a
+  // month that was fetched this way.
+  useEffect(() => {
+    if (!currentUserId) return;
+    const monthStart = `${attendanceCalendarMonth}-01`;
+    if (monthStart >= historyCoveredFrom) return;
+    let cancelled = false;
+    setHistoryMonthLoading(true);
+    void (async () => {
+      const [year, month] = attendanceCalendarMonth.split('-').map(Number);
+      const monthEnd = `${attendanceCalendarMonth}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`;
+      const { data, error } = await supabase
+        .from('attendance_logs')
+        .select('id, log_date, time_in, time_out, status, late_offset_minutes, early_out_offset_minutes')
+        .eq('user_id', currentUserId)
+        .gte('log_date', monthStart)
+        .lte('log_date', monthEnd)
+        .order('log_date', { ascending: false });
+      if (!cancelled && !error && data) {
+        const fetched = data as any[];
+        setHistory((current) => {
+          const merged = new Map(current.map((log) => [log.id, log]));
+          fetched.forEach((log) => {
+            if (!merged.has(log.id)) merged.set(log.id, log);
+          });
+          return Array.from(merged.values()).sort((a, b) => (a.log_date < b.log_date ? 1 : -1));
+        });
+      } else if (!cancelled && error) {
+        console.error('Error fetching older calendar month:', error.message);
+      }
+      if (!cancelled) {
+        setHistoryCoveredFrom(monthStart);
+        setHistoryMonthLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [attendanceCalendarMonth, historyCoveredFrom, currentUserId]);
   const [selectedAttendanceCalendarDate, setSelectedAttendanceCalendarDate] = useState<string | null>(null);
 
   const changeDashboardCalendarMonth = (offset: number) => {
@@ -2477,7 +2558,7 @@ export default function EmployeeDashboard() {
       {notificationsModalOpen && <NotificationsModal open={notificationsModalOpen} onClose={() => setNotificationsModalOpen(false)} notifications={employeeNotifications} unreadCount={unreadNotificationCount} readIds={readNotificationIds} onMarkAllRead={markAllNotificationsRead} onOpenNotification={openNotificationTarget} />}
 
       {/* Attendance Calendar Modal */}
-      {attendanceCalendarOpen && <AttendanceCalendarModal open={attendanceCalendarOpen} onClose={() => setAttendanceCalendarOpen(false)} month={attendanceCalendarMonth} onMonthChange={(value) => { setAttendanceCalendarMonth(value); setSelectedAttendanceCalendarDate(null); }} availableMonths={Array.from(new Set([attendanceCalendarMonth, ...availableMonths])).sort().reverse()} formatMonth={formatMonthOnly} days={attendanceCalendarDays} selectedDate={selectedAttendanceCalendarDate} onSelectDate={setSelectedAttendanceCalendarDate} selectedDay={selectedAttendanceCalendarDay} />}
+      {attendanceCalendarOpen && <AttendanceCalendarModal open={attendanceCalendarOpen} onClose={() => setAttendanceCalendarOpen(false)} month={attendanceCalendarMonth} onMonthChange={(value) => { setAttendanceCalendarMonth(value); setSelectedAttendanceCalendarDate(null); }} availableMonths={Array.from(new Set([attendanceCalendarMonth, ...availableMonths])).sort().reverse()} formatMonth={formatMonthOnly} days={attendanceCalendarDays} monthLoading={historyMonthLoading} selectedDate={selectedAttendanceCalendarDate} onSelectDate={setSelectedAttendanceCalendarDate} selectedDay={selectedAttendanceCalendarDay} />}
 
       {/* Help Desk / HR Request Modal */}
       {supportModalOpen && <HelpDeskModal open={supportModalOpen} onClose={() => setSupportModalOpen(false)} saving={supportSaving} loading={supportLoading} message={supportMessage} form={supportForm} setForm={setSupportForm} requests={supportRequests} onSubmit={submitSupportRequest} onCancel={cancelSupportRequest} />}

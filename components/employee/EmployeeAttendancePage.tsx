@@ -82,6 +82,11 @@ const monthNames = [
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
+// Shared select list for attendance_logs reads (initial bounded read and
+// the on-demand older-month read must return the same shape).
+const ATTENDANCE_LOG_COLUMNS =
+  "id, log_date, time_in, time_out, status, late_offset_minutes, early_out_offset_minutes, absent_offset_minutes";
+
 function formatDate(date: string) {
   const [year, month, day] = date.split("-").map(Number);
   return new Date(year, month - 1, day).toLocaleDateString("en-US", {
@@ -217,6 +222,12 @@ export default function EmployeeAttendancePage() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Earliest log_date already held in memory (YYYY-MM-DD). Months older
+  // than this are fetched per-month when the picker selects them.
+  const [coveredFrom, setCoveredFrom] = useState(
+    () => `${new Date().getFullYear()}-01-01`,
+  );
+  const [monthLoading, setMonthLoading] = useState(false);
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
   const [monthPickerYear, setMonthPickerYear] = useState(() =>
     Number(manilaMonth().slice(0, 4)),
@@ -249,8 +260,12 @@ export default function EmployeeAttendancePage() {
     );
   }, []);
 
-  // This route fetches once on entry. Attendance changes reach it through the
-  // employee-scoped Realtime subscription below, never through timed polling.
+  // This route fetches once on entry. The initial read is bounded to the
+  // current year -- the record set used to be unbounded and grew with every
+  // month of employment, which made each entry onto this page slower on
+  // phones and desktops alike. Older months (previous years) are fetched
+  // on demand by the picker below. Attendance changes reach this route
+  // through the employee-scoped Realtime subscriptions, never polling.
   const loadAttendance = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -280,10 +295,9 @@ export default function EmployeeAttendancePage() {
         .single(),
       supabase
         .from("attendance_logs")
-        .select(
-          "id, log_date, time_in, time_out, status, late_offset_minutes, early_out_offset_minutes, absent_offset_minutes",
-        )
+        .select(ATTENDANCE_LOG_COLUMNS)
         .eq("user_id", user.id)
+        .gte("log_date", `${currentYear}-01-01`)
         .order("log_date", { ascending: false }),
       supabase
         .from("app_settings")
@@ -323,7 +337,18 @@ export default function EmployeeAttendancePage() {
     if (recordsResult.error) setError(recordsResult.error.message);
     else {
       const nextRecords = (recordsResult.data || []) as AttendanceLog[];
-      setRecords(nextRecords);
+      // Keep any older-month records previously loaded on demand (dates
+      // before the current-year bound) instead of replacing wholesale --
+      // a realtime-triggered reload must not wipe the month being viewed.
+      setRecords((current) => {
+        const keptOlder = current.filter(
+          (record) => record.log_date < `${currentYear}-01-01`,
+        );
+        if (keptOlder.length === 0) return nextRecords;
+        return [...keptOlder, ...nextRecords].sort((left, right) =>
+          right.log_date.localeCompare(left.log_date),
+        );
+      });
       const pendingIds = new Set<string>();
       (usageRequestsResult.data || []).forEach((request) =>
         pendingIds.add(String(request.attendance_log_id)),
@@ -426,6 +451,49 @@ export default function EmployeeAttendancePage() {
       void supabase.removeChannel(channel);
     };
   }, [employeeId, loadAttendance]);
+
+  // On-demand read of a single older month. Fires only when the picker
+  // selects a month before coveredFrom (i.e., a previous year), so within
+  // the current year every month switch stays pure in-memory and instant.
+  useEffect(() => {
+    if (!employeeId) return;
+    const monthStart = `${selectedMonth}-01`;
+    if (monthStart >= coveredFrom) return;
+    let cancelled = false;
+    setMonthLoading(true);
+    void (async () => {
+      const [year, month] = selectedMonth.split("-").map(Number);
+      const monthEnd = `${selectedMonth}-${String(new Date(year, month, 0).getDate()).padStart(2, "0")}`;
+      const { data, error } = await supabase
+        .from("attendance_logs")
+        .select(ATTENDANCE_LOG_COLUMNS)
+        .eq("user_id", employeeId)
+        .gte("log_date", monthStart)
+        .lte("log_date", monthEnd)
+        .order("log_date", { ascending: false });
+      if (!cancelled && !error && data) {
+        const fetched = data as AttendanceLog[];
+        setRecords((current) => {
+          const merged = new Map(current.map((record) => [record.id, record]));
+          fetched.forEach((record) => {
+            if (!merged.has(record.id)) merged.set(record.id, record);
+          });
+          return Array.from(merged.values()).sort((left, right) =>
+            right.log_date.localeCompare(left.log_date),
+          );
+        });
+      } else if (!cancelled && error) {
+        console.error("Error fetching older month:", error.message);
+      }
+      if (!cancelled) {
+        setCoveredFrom(monthStart);
+        setMonthLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedMonth, employeeId, coveredFrom]);
 
   const pickerMonths = useMemo(
     () => monthNames.map((_, index) => `${monthPickerYear}-${String(index + 1).padStart(2, "0")}`),
@@ -813,7 +881,7 @@ export default function EmployeeAttendancePage() {
               Unable to load attendance: {error}
             </div>
           )}
-          <section className="mb-3 grid grid-cols-2 gap-1.5 sm:mb-4 sm:gap-2 lg:grid-cols-4 lg:gap-3">
+          <section className="mb-3 grid grid-cols-4 gap-1.5 sm:mb-4 sm:gap-2 lg:gap-3">
             {summaryCards.map((card) => (
               <button
                 key={card.key}
@@ -824,22 +892,27 @@ export default function EmployeeAttendancePage() {
                   );
                   setPage(1);
                 }}
-                className={`flex min-h-[66px] items-center gap-2 rounded-xl border p-2 text-left transition hover:-translate-y-0.5 lg:min-h-[68px] lg:gap-3 lg:px-4 lg:py-3 ${card.tone} ${filter === card.key ? "ring-2 ring-offset-2 ring-green-500 dark:ring-offset-[#202521]" : ""}`}
+                className={`flex min-h-[54px] items-center gap-1.5 rounded-xl border p-1.5 text-left transition hover:-translate-y-0.5 lg:min-h-[68px] lg:gap-3 lg:px-4 lg:py-3 ${card.tone} ${filter === card.key ? "ring-2 ring-offset-2 ring-green-500 dark:ring-offset-[#202521]" : ""}`}
               >
-                <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-white/80 text-sm font-black shadow-sm dark:bg-black/10 lg:h-8 lg:w-8 lg:text-base">
+                <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg bg-white/80 text-xs font-black shadow-sm dark:bg-black/10 lg:h-8 lg:w-8 lg:text-base">
                   {card.icon}
                 </span>
-                <span className="block min-w-0 lg:min-w-0">
-                  <span className="block text-lg font-black leading-none lg:text-xl">
+                <span className="block min-w-0">
+                  <span className="block text-base font-black leading-none lg:text-xl">
                     {card.value}
                   </span>
-                  <span className="mt-0.5 block text-[9px] font-bold uppercase tracking-wide lg:mt-0 lg:text-xs">
+                  <span className="mt-0.5 block truncate text-[8px] font-bold uppercase tracking-wide lg:text-xs">
                     {card.label}
                   </span>
                 </span>
               </button>
             ))}
           </section>
+          {monthLoading && (
+            <p className="mb-2 px-1 text-[11px] font-bold text-slate-400" role="status">
+              Loading older month...
+            </p>
+          )}
           <section className="overflow-hidden rounded-xl bg-white shadow-[0_8px_30px_rgba(15,23,42,0.06)] dark:bg-[#292f2b] sm:rounded-[1.5rem]">
             <div className="flex flex-col gap-2 border-b border-slate-100 p-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:p-4 lg:px-4 lg:py-3.5 dark:border-[#465049]">
               <div>

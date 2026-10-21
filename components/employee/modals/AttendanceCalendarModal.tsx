@@ -14,14 +14,16 @@ type Props = {
   selectedDate: string | null;
   onSelectDate: (date: string) => void;
   selectedDay: any;
+  monthLoading?: boolean;
 };
 
-export default function AttendanceCalendarModal({ open, onClose, month, onMonthChange, availableMonths, formatMonth, days, selectedDate, onSelectDate, selectedDay }: Props) {
+export default function AttendanceCalendarModal({ open, onClose, month, onMonthChange, availableMonths, formatMonth, days, selectedDate, onSelectDate, selectedDay, monthLoading = false }: Props) {
   return (
     <ModalShell open={open} onClose={onClose} title="Attendance Calendar" description="Monthly attendance" icon={<CalendarDays size={17} strokeWidth={2.4} />} size="lg">
       <select value={month} onChange={(event) => onMonthChange(event.target.value)} className="input-field mb-4 min-h-11 !py-2 !text-xs">
         {availableMonths.map((value) => <option key={value} value={value}>{formatMonth(value)}</option>)}
       </select>
+      {monthLoading && <p className="mb-3 text-[11px] font-bold text-slate-400" role="status">Loading month...</p>}
       <div className="grid grid-cols-7 gap-1 mb-1">
         {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => <div key={day} className="py-1 text-center text-[9px] font-extrabold uppercase tracking-wide text-slate-500 dark:text-slate-300">{day}</div>)}
       </div>
