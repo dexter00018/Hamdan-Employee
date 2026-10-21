@@ -2,7 +2,7 @@ import type { LucideIcon } from 'lucide-react';
 
 type Props = {
   label: string;
-  value: number;
+  value: number | string;
   icon: LucideIcon;
   tone: 'green' | 'orange' | 'yellow' | 'purple' | 'red';
   onClick: () => void;

@@ -22,7 +22,7 @@ import { supabase } from '@/lib/supabase';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
 import Spinner from '@/components/Spinner';
-import { CheckCircle2, CircleX, Clock3, LogOut } from 'lucide-react';
+import { Flame, Hourglass, PartyPopper, TreePalm } from 'lucide-react';
 import { APP_SETTING_DEFINITIONS, DEFAULT_APP_SETTINGS, normalizeAppSettings, type AppSettingsValues } from '@/lib/app-settings';
 import { resolveSeasonalTheme, SEASONAL_THEME_PRESENTATION } from '@/lib/seasonal-theme';
 import { useVerificationDialog } from '@/components/shared/useVerificationDialog';
@@ -282,6 +282,10 @@ export default function EmployeeDashboard() {
   const [pendingLeavesCount, setPendingLeavesCount] = useState(0);
   const [pendingDisputesCount, setPendingDisputesCount] = useState(0);
   const [newPayslipsCount, setNewPayslipsCount] = useState(0);
+  // Offset balance (minutes) for the top card: approved earned-minus-used
+  // transactions minus anything reserved by pending offset requests.
+  const [offsetMinutes, setOffsetMinutes] = useState<number | null>(null);
+  const [offsetReservedMinutes, setOffsetReservedMinutes] = useState(0);
   const [openSupportCount, setOpenSupportCount] = useState(0);
 
   // Government ID numbers / employment details -- fetched from a
@@ -598,7 +602,7 @@ export default function EmployeeDashboard() {
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date());
 
     const year = new Date().getFullYear();
-    const [profileRes, govIdRes, historyRes, leavesCountRes, disputesCountRes, payslipsCountRes, supportCountRes, leaveCreditsRes] = await Promise.all([
+    const [profileRes, govIdRes, historyRes, leavesCountRes, disputesCountRes, payslipsCountRes, supportCountRes, leaveCreditsRes, offsetTransactionsRes, offsetUsageRes, offsetEarlyOutRes, offsetLeaveRes] = await Promise.all([
       supabase.from('profiles').select('full_name, employee_id, designation, role, avatar_url').eq('id', user.id).single(),
       supabase.from('employee_government_ids').select('sss_number, philhealth_number, pagibig_number, tin_number, hired_date, employment_status').eq('user_id', user.id).maybeSingle(),
       // Bounded to the current year: the unbounded read grew with every
@@ -610,6 +614,12 @@ export default function EmployeeDashboard() {
       supabase.from('payslips').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('published', true).is('acknowledged_at', null),
       supabase.from('employee_support_requests').select('id', { count: 'exact', head: true }).eq('user_id', user.id).not('status', 'in', '(Resolved,Cancelled)'),
       supabase.from('leave_credits').select('total_credits, used_credits').eq('user_id', user.id).eq('year', year).maybeSingle(),
+      // Offset card: earned-minus-used balance and everything still held
+      // by pending requests (the same math the Offset modal applies).
+      supabase.from('offset_transactions').select('kind, hours, minutes').eq('user_id', user.id),
+      supabase.from('offset_usage_requests').select('required_minutes, hours').eq('user_id', user.id).eq('status', 'Pending'),
+      supabase.from('early_out_offset_requests').select('required_minutes').eq('user_id', user.id).eq('status', 'Pending'),
+      supabase.from('leave_requests').select('offset_minutes_required').eq('user_id', user.id).eq('status', 'Pending').eq('funding_source', 'offset'),
     ]);
 
     const { data: profileData, error: profileError } = profileRes;
@@ -653,6 +663,21 @@ export default function EmployeeDashboard() {
     setNewPayslipsCount(payslipsCountRes.count ?? 0);
     setOpenSupportCount(supportCountRes.count ?? 0);
     setLeaveCredits(leaveCreditsRes.data ?? null);
+    // Offset balance: same earned/used/converted math as the Offset modal.
+    const offsetTransactions = (offsetTransactionsRes.data || []) as { kind: string; hours: number; minutes: number }[];
+    const balanceMinutes = offsetTransactions.reduce((total, tx) => {
+      const amount = (tx.hours || 0) * 60 + (tx.minutes || 0);
+      return total + (tx.kind === 'earned' ? amount : -amount);
+    }, 0);
+    const pendingUseMinutes = ((offsetUsageRes.data || []) as any[]).reduce(
+      (total, req) => total + Number(req.required_minutes ?? (req.hours || 0) * 60), 0);
+    const pendingEarlyMinutes = ((offsetEarlyOutRes.data || []) as any[]).reduce(
+      (total, req) => total + Number(req.required_minutes || 0), 0);
+    const pendingLeaveMinutes = ((offsetLeaveRes.data || []) as any[]).reduce(
+      (total, req) => total + Number(req.offset_minutes_required || 0), 0);
+    const reserved = pendingUseMinutes + pendingEarlyMinutes + pendingLeaveMinutes;
+    setOffsetMinutes(Math.max(0, balanceMinutes - reserved));
+    setOffsetReservedMinutes(reserved);
     setHasInitialized(true);
     setInitLoading(false);
   };
@@ -1582,6 +1607,24 @@ export default function EmployeeDashboard() {
     return Math.round((Date.UTC(y, m - 1, d) - Date.UTC(ty, tm - 1, td)) / 86400000);
   };
 
+  // Top-card inputs (Batch A): the next upcoming company holiday. The
+  // cutoff overview lives in the Cutoff Status panel now, so these cards
+  // don't repeat attendance stats. Remaining credits reuse the shared
+  // `remainingCredits` derived above.
+  const formatCreditValue = (value: number) =>
+    Number.isInteger(value) ? String(value) : value.toFixed(1);
+  // Compact offset readout, matching the Offset modal's "3h 20m" style.
+  const formatOffsetShort = (minutes: number) => {
+    const safe = Math.max(0, Math.round(minutes));
+    const hrs = Math.floor(safe / 60);
+    const mins = safe % 60;
+    if (hrs && mins) return `${hrs}h ${mins}m`;
+    if (hrs) return `${hrs}h`;
+    return `${mins}m`;
+  };
+  const nextHoliday = upcomingHolidays[0] ?? null;
+  const nextHolidayDays = nextHoliday ? daysUntilHoliday(nextHoliday.holiday_date) : null;
+
   // If the employee has filtered Attendance History to a specific
   // cutoff, the summary cards follow that same cutoff. Otherwise,
   // default to the current cutoff period.
@@ -2170,12 +2213,47 @@ export default function EmployeeDashboard() {
 
         <div className="dashboard-primary-content employee-ai-launcher"><EmployeeAskAI key={currentUserId || 'signed-out'} /></div>
 
-        {/* Current-cutoff attendance overview stays on one row, including mobile. */}
-        <div aria-label={`Attendance overview for ${formatMonthLabel(summaryCutoffKey)}`} className="dashboard-primary-content dashboard-overview">
-          <EmployeeSummaryCard label="Present" value={summary.present} icon={CheckCircle2} tone="green" detail="Working days this cutoff" onClick={() => setSummaryDetailType('present')} />
-          <EmployeeSummaryCard label="Late" value={summary.late} icon={Clock3} tone="orange" detail={`${formatLateDuration(summary.totalLateMinutes)} total`} onClick={() => setSummaryDetailType('late')} />
-          <EmployeeSummaryCard label="Early Out" value={summary.earlyOut} icon={LogOut} tone="yellow" detail="This cutoff" onClick={() => setSummaryDetailType('early-out')} />
-          <EmployeeSummaryCard label="Absent" value={summary.absent} icon={CircleX} tone="red" detail="This cutoff" onClick={() => setSummaryDetailType('absent')} />
+        {/* Top cards: year resources and moments (not attendance stats --
+            the Cutoff Status panel below owns those now). */}
+        <div aria-label="Employee overview" className="dashboard-primary-content dashboard-overview">
+          <EmployeeSummaryCard
+            label="Leave Credits"
+            value={formatCreditValue(remainingCredits)}
+            icon={TreePalm}
+            tone="purple"
+            detail={`of ${formatCreditValue(leaveCredits?.total_credits ?? fallbackLeaveCredits)} credits this year`}
+            onClick={() => setLeaveChoiceModalOpen(true)}
+          />
+          <EmployeeSummaryCard
+            label="Day Streak"
+            value={attendanceStreak}
+            icon={Flame}
+            tone="orange"
+            detail={streakMessage}
+            onClick={openAttendanceFromNav}
+          />
+          <EmployeeSummaryCard
+            label="Offset Hours"
+            value={offsetMinutes !== null ? formatOffsetShort(offsetMinutes) : '—'}
+            icon={Hourglass}
+            tone="green"
+            detail={offsetMinutes === 0
+              ? 'No offset balance yet'
+              : offsetReservedMinutes > 0
+                ? `${formatOffsetShort(offsetReservedMinutes)} held by pending requests`
+                : 'Available for Late / Early Out'}
+            onClick={() => setOffsetModalOpen(true)}
+          />
+          <EmployeeSummaryCard
+            label="Next Holiday"
+            value={nextHoliday && nextHolidayDays !== null ? `${nextHolidayDays}` : '—'}
+            icon={PartyPopper}
+            tone="yellow"
+            detail={nextHoliday && nextHolidayDays !== null
+              ? `${nextHoliday.name} · ${formatHolidayDate(nextHoliday.holiday_date)}`
+              : 'No upcoming holidays'}
+            onClick={() => { setCalendarModalOpen(true); fetchCompanyHolidays(); }}
+          />
         </div>
 
         {/* Main layout */}
@@ -2219,20 +2297,8 @@ export default function EmployeeDashboard() {
                 <p className="font-medium text-slate-700 text-sm">{profile?.employee_id || '---'}</p>
               </div>
 
-              {/* Attendance Streak badge -- consecutive work days without a
-                  Late or Absent tag (approved Leave doesn't break it). */}
-              {!initLoading && (
-                <div className="mt-3 pt-3 border-t border-slate-100">
-                  <div className="flex items-center gap-2.5 bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-100 rounded-2xl p-3">
-                    <div className="w-9 h-9 rounded-xl bg-white flex items-center justify-center flex-shrink-0 text-lg shadow-sm">🔥</div>
-                    <div className="min-w-0">
-                      <p className="font-extrabold text-slate-900 text-sm leading-none">{attendanceStreak}-day streak</p>
-                      <p className="text-orange-600 text-[10px] font-bold uppercase tracking-wide mt-1">{streakMessage}</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
+              {/* Attendance streak moved to the top "Day Streak" card -- keeping
+                  it here duplicated both the streak message and the card. */}
               {!initLoading && (
                 <div className="mt-3">
                   <div className="flex items-center justify-between gap-2 mb-1.5">
