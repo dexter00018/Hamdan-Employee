@@ -13,14 +13,12 @@ import {
   disputeOriginal,
   disputeTypeLabel,
   directoryInitials,
-  formatCreditValue,
   formatDisputeTimePh,
   formatHolidayDate,
   formatHiredDate,
   formatLateDuration,
   formatMonthLabel,
   formatMonthOnly,
-  formatOffsetShort,
   isLeaveStatus,
   isTimeInOnTime,
   isTimeOutComplete,
@@ -31,7 +29,10 @@ import {
 } from '@/lib/employee/dashboard-utils';
 import { applyPortalTheme } from '@/lib/portal-theme';
 import MobileBottomNav from '@/components/employee/MobileBottomNav';
-import EmployeeSummaryCard from '@/components/employee/EmployeeSummaryCard';
+import NextHolidayCard from '@/components/employee/NextHolidayCard';
+import LeaveCreditsCard from '@/components/employee/summary/LeaveCreditsCard';
+import StreakCard from '@/components/employee/summary/StreakCard';
+import OffsetCard from '@/components/employee/summary/OffsetCard';
 import EmployeeQuickActions from '@/components/employee/EmployeeQuickActions';
 import EmployeeDesktopSidebar from '@/components/employee/EmployeeDesktopSidebar';
 import MobileAllToolsSheet from '@/components/employee/MobileAllToolsSheet';
@@ -49,7 +50,6 @@ import { supabase } from '@/lib/supabase';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
 import Spinner from '@/components/Spinner';
-import { Flame, Hourglass, PartyPopper, TreePalm } from 'lucide-react';
 import { APP_SETTING_DEFINITIONS, DEFAULT_APP_SETTINGS, normalizeAppSettings, type AppSettingsValues } from '@/lib/app-settings';
 import { resolveSeasonalTheme, SEASONAL_THEME_PRESENTATION } from '@/lib/seasonal-theme';
 import { useVerificationDialog } from '@/components/shared/useVerificationDialog';
@@ -117,6 +117,7 @@ export default function EmployeeDashboard() {
   const [lateCutoffHour, setLateCutoffHour] = useState(FALLBACK_LATE_CUTOFF_HOUR);
   const [lateCutoffMinute, setLateCutoffMinute] = useState(FALLBACK_LATE_CUTOFF_MINUTE);
   const [fallbackLeaveCredits, setFallbackLeaveCredits] = useState(FALLBACK_LEAVE_CREDITS);
+  const [approvedLeaveRows, setApprovedLeaveRows] = useState<{ leave_type: string; start_date: string; end_date: string }[]>([]);
   const [timeOutReminderHour, setTimeOutReminderHour] = useState(FALLBACK_TIME_OUT_REMINDER_HOUR);
   const [attendanceRecordingEnabled, setAttendanceRecordingEnabled] = useState(true);
   const [seasonalSettings, setSeasonalSettings] = useState<AppSettingsValues>({ ...DEFAULT_APP_SETTINGS });
@@ -629,7 +630,7 @@ export default function EmployeeDashboard() {
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date());
 
     const year = new Date().getFullYear();
-    const [profileRes, govIdRes, historyRes, leavesCountRes, disputesCountRes, payslipsCountRes, supportCountRes, leaveCreditsRes, offsetTransactionsRes, offsetUsageRes, offsetEarlyOutRes, offsetLeaveRes] = await Promise.all([
+    const [profileRes, govIdRes, historyRes, leavesCountRes, disputesCountRes, payslipsCountRes, supportCountRes, leaveCreditsRes, offsetTransactionsRes, offsetUsageRes, offsetEarlyOutRes, offsetLeaveRes, leavesApprovedRes] = await Promise.all([
       supabase.from('profiles').select('full_name, employee_id, designation, role, avatar_url').eq('id', user.id).single(),
       supabase.from('employee_government_ids').select('sss_number, philhealth_number, pagibig_number, tin_number, hired_date, employment_status').eq('user_id', user.id).maybeSingle(),
       // Bounded to the current year: the unbounded read grew with every
@@ -647,6 +648,7 @@ export default function EmployeeDashboard() {
       supabase.from('offset_usage_requests').select('required_minutes, hours').eq('user_id', user.id).eq('status', 'Pending'),
       supabase.from('early_out_offset_requests').select('required_minutes').eq('user_id', user.id).eq('status', 'Pending'),
       supabase.from('leave_requests').select('offset_minutes_required').eq('user_id', user.id).eq('status', 'Pending').eq('funding_source', 'offset'),
+  supabase.from('leave_requests').select('leave_type, start_date, end_date').eq('user_id', user.id).eq('status', 'Approved').gte('start_date', `${year}-01-01`).lte('start_date', `${year}-12-31`),
     ]);
 
     const { data: profileData, error: profileError } = profileRes;
@@ -690,6 +692,7 @@ export default function EmployeeDashboard() {
     setNewPayslipsCount(payslipsCountRes.count ?? 0);
     setOpenSupportCount(supportCountRes.count ?? 0);
     setLeaveCredits(leaveCreditsRes.data ?? null);
+  setApprovedLeaveRows(leavesApprovedRes.data ?? []);
     // Offset balance: same earned/used/converted math as the Offset modal.
     const offsetTransactions = (offsetTransactionsRes.data || []) as { kind: string; hours: number; minutes: number }[];
     const balanceMinutes = offsetTransactions.reduce((total, tx) => {
@@ -882,6 +885,14 @@ export default function EmployeeDashboard() {
     setCompanyHolidays(data || []);
     setHolidaysLoading(false);
   };
+
+  // The holiday feeds the summary card and the notification builder, so
+  // fetch once per login; the modals re-fetch on open when needed.
+  useEffect(() => {
+    if (!currentUserId) return;
+    void fetchCompanyHolidays();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUserId]);
 
   const filteredDirectory = useMemo(() => {
     const q = directorySearch.trim().toLowerCase();
@@ -1101,6 +1112,17 @@ export default function EmployeeDashboard() {
   // settle_leave_day() when a leave_credits row doesn't exist yet for
   // the employee/year.
   const remainingCredits = leaveCredits ? leaveCredits.total_credits - leaveCredits.used_credits : fallbackLeaveCredits;
+
+  // SL/VL usage widgets: chargeable days (weekdays minus declared
+  // holidays) across approved leaves this year. Uses the util directly --
+  // the local countLeaveDays wrapper below is declared later in render.
+  const widgetHolidayDates = new Set(companyHolidays.map((h) => h.holiday_date));
+  const sumApprovedDays = (type: string) => approvedLeaveRows.reduce(
+    (sum, row) => (row.leave_type === type ? sum + countLeaveDaysUtil(row.start_date, row.end_date, widgetHolidayDates) : sum),
+    0
+  );
+  const sickDaysUsed = sumApprovedDays('Sick');
+  const vacationDaysUsed = sumApprovedDays('Vacation');
 
   const fetchMyLeaves = async () => {
     if (!currentUserId) return;
@@ -2096,42 +2118,26 @@ export default function EmployeeDashboard() {
         {/* Top cards: year resources and moments (not attendance stats --
             the Cutoff Status panel below owns those now). */}
         <div aria-label="Employee overview" className="dashboard-primary-content dashboard-overview">
-          <EmployeeSummaryCard
-            label="Leave Credits"
-            value={formatCreditValue(remainingCredits)}
-            icon={TreePalm}
-            tone="purple"
-            detail={`of ${formatCreditValue(leaveCredits?.total_credits ?? fallbackLeaveCredits)} credits this year`}
+          <LeaveCreditsCard
+            remaining={remainingCredits}
+            total={leaveCredits?.total_credits ?? fallbackLeaveCredits}
+            sickUsed={sickDaysUsed}
+            vacationUsed={vacationDaysUsed}
             onClick={() => setLeaveChoiceModalOpen(true)}
           />
-          <EmployeeSummaryCard
-            label="Day Streak"
-            value={attendanceStreak}
-            icon={Flame}
-            tone="orange"
-            detail={streakMessage}
+          <StreakCard
+            streak={attendanceStreak}
+            message={streakMessage}
             onClick={openAttendanceFromNav}
           />
-          <EmployeeSummaryCard
-            label="Offset Hours"
-            value={offsetMinutes !== null ? formatOffsetShort(offsetMinutes) : '—'}
-            icon={Hourglass}
-            tone="green"
-            detail={offsetMinutes === 0
-              ? 'No offset balance yet'
-              : offsetReservedMinutes > 0
-                ? `${formatOffsetShort(offsetReservedMinutes)} held by pending requests`
-                : 'Available for Late / Early Out'}
+          <OffsetCard
+            minutes={offsetMinutes}
+            reserved={offsetReservedMinutes}
             onClick={() => setOffsetModalOpen(true)}
           />
-          <EmployeeSummaryCard
-            label="Next Holiday"
-            value={nextHoliday && nextHolidayDays !== null ? `${nextHolidayDays}` : '—'}
-            icon={PartyPopper}
-            tone="yellow"
-            detail={nextHoliday && nextHolidayDays !== null
-              ? `${nextHoliday.name} · ${formatHolidayDate(nextHoliday.holiday_date)}`
-              : 'No upcoming holidays'}
+          <NextHolidayCard
+            holiday={nextHoliday}
+            days={nextHolidayDays}
             onClick={() => { setCalendarModalOpen(true); fetchCompanyHolidays(); }}
           />
         </div>
