@@ -94,14 +94,15 @@ async function offsetAnswer(client: SupabaseClient, userId: string, c: LiveClass
 
   let txQuery = client.from('offset_transactions').select('kind,hours,minutes,created_at,note').eq('user_id', userId).order('created_at', { ascending: false }).limit(2000);
   if (!balanceMetric) txQuery = txQuery.gte('created_at', startIso).lt('created_at', endExclusive);
-  const [txRes, pendingUseRes, pendingLeaveRes, pendingEarnRes] = await Promise.all([
+  const [txRes, pendingUseRes, pendingLeaveRes, pendingEarnRes, pendingEarlyOutRes] = await Promise.all([
     txQuery,
     client.from('offset_usage_requests').select('hours,required_minutes,status,created_at').eq('user_id', userId).eq('status', 'Pending').limit(1000),
     client.from('leave_requests').select('offset_minutes_required,status,created_at').eq('user_id', userId).eq('funding_source', 'offset').eq('status', 'Pending').limit(1000),
     client.from('offset_requests').select('eligible_hours,status,created_at').eq('user_id', userId).eq('status', 'Pending').limit(1000),
+    client.from('early_out_offset_requests').select('required_minutes,status,created_at').eq('user_id', userId).eq('status', 'Pending').limit(1000),
   ]);
-  if (txRes.error || pendingUseRes.error || pendingLeaveRes.error || pendingEarnRes.error) throw new EmployeeAIError('Unable to read your offset information.');
-  if ((txRes.data?.length ?? 0) >= 2000 || (pendingUseRes.data?.length ?? 0) >= 1000 || (pendingLeaveRes.data?.length ?? 0) >= 1000 || (pendingEarnRes.data?.length ?? 0) >= 1000) throw new EmployeeAIError('Unable to read a complete offset summary.');
+  if (txRes.error || pendingUseRes.error || pendingLeaveRes.error || pendingEarnRes.error || pendingEarlyOutRes.error) throw new EmployeeAIError('Unable to read your offset information.');
+  if ((txRes.data?.length ?? 0) >= 2000 || (pendingUseRes.data?.length ?? 0) >= 1000 || (pendingLeaveRes.data?.length ?? 0) >= 1000 || (pendingEarnRes.data?.length ?? 0) >= 1000 || (pendingEarlyOutRes.data?.length ?? 0) >= 1000) throw new EmployeeAIError('Unable to read a complete offset summary.');
 
   const txRows = txRes.data ?? [];
   let approvedMinutes = 0;
@@ -110,7 +111,10 @@ async function offsetAnswer(client: SupabaseClient, userId: string, c: LiveClass
   }
   const pendingUseMinutes = (pendingUseRes.data ?? []).reduce((sum, row) => sum + Number(row.required_minutes ?? Number(row.hours || 0) * 60), 0);
   const pendingLeaveMinutes = (pendingLeaveRes.data ?? []).reduce((sum, row) => sum + Number(row.offset_minutes_required || 0), 0);
-  const reservedMinutes = pendingUseMinutes + pendingLeaveMinutes;
+  const pendingEarlyOutMinutes = (pendingEarlyOutRes.data ?? []).reduce((sum, row) => sum + Number(row.required_minutes || 0), 0);
+  // Reserved includes pending Early-Out Offset requests, matching the
+  // dashboard Offset Hours card and the Offset modal exactly.
+  const reservedMinutes = pendingUseMinutes + pendingLeaveMinutes + pendingEarlyOutMinutes;
   const availableMinutes = Math.max(0, approvedMinutes - reservedMinutes);
   const pendingEarnCount = pendingEarnRes.data?.length ?? 0;
   const pendingUseCount = pendingUseRes.data?.length ?? 0;

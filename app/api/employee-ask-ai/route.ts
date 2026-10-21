@@ -2,9 +2,10 @@ import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { createSupabaseAdminClient } from '@/lib/server/supabase-admin';
-import { answerEmployeeQuestion, EmployeeAIError } from '@/lib/server/employee-ai';
+import { answerEmployeeQuestion, answerOwnPayslip, currentPayrollCutoff, EmployeeAIError, type Classification } from '@/lib/server/employee-ai';
 import { answerLiveOffsetOrManpower } from '@/lib/server/employee-ai-live';
 import { answerEmployeeProfileQuestion } from '@/lib/server/employee-ai-profile';
+import { answerEmployeeDashboardQuestion, detectChatLanguage, detectPayslipQuestion } from '@/lib/server/employee-ai-dashboard';
 import { PAYSLIP_REAUTH_COOKIE, verifyPayslipReauthToken } from '@/lib/server/employee-ai-reauth';
 import { isRecord, validateHistory } from '@/lib/employee/ask-ai';
 import { answerKnownSystemQuestion } from '@/lib/employee/system-question-answer';
@@ -68,6 +69,36 @@ export async function POST(request: Request) {
     // This handles varied English/Tagalog wording without exposing another employee's private data.
     const profileAnswer = await answerEmployeeProfileQuestion({ client: auth.client, userId: auth.userId, question, language });
     if (profileAnswer) return json({ success: true, ...profileAnswer, request_id: requestId });
+
+    // Dashboard-card questions (attendance streak, upcoming holidays) are
+    // answered locally with the same math as the employee dashboard cards.
+    const dashboardAnswer = await answerEmployeeDashboardQuestion({ client: auth.client, userId: auth.userId, question, language });
+    if (dashboardAnswer) return json({ success: true, ...dashboardAnswer, request_id: requestId });
+
+    // Own-pay questions skip the n8n classifier and go straight to the
+    // verified payslip pipeline (password re-auth still applies).
+    const localPayslip = detectPayslipQuestion(question);
+    if (localPayslip) {
+      const payslipUnlocked = verifyPayslipReauthToken(cookieValue(await cookies(), PAYSLIP_REAUTH_COOKIE), auth.userId);
+      const classification: Classification = {
+        intent: 'own_payslip',
+        metric: localPayslip.metric,
+        period: 'selected_payslip',
+        target_scope: 'self',
+        target_name: '',
+        language: language === 'auto' ? (detectChatLanguage(question, language) === 'tl' ? 'tl' : 'en') : language,
+      };
+      const cutoffOverride = localPayslip.cutoffMode === 'current_month'
+        ? currentPayrollCutoff()
+        : localPayslip.cutoffMode === 'latest' ? null : undefined;
+      const answer = await answerOwnPayslip(
+        { ...auth, question, language, payslipId: body.payslip_id as string | undefined, payslipUnlocked, requestId },
+        classification,
+        undefined,
+        cutoffOverride,
+      );
+      return json({ success: true, answer, request_id: requestId, source: 'own_payslip' });
+    }
 
     // Fast path for known portal/workflow questions. This keeps system help current and
     // avoids an n8n/Gemini round-trip when no private/live employee data is needed.

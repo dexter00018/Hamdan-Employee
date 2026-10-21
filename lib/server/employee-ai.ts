@@ -1,10 +1,15 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { classificationDates, designationPattern, cutoffDates, isRecord, payslipAnswer, payslipCutoffFromQuestion, periodDates, validateClassification, validatePayslip, type Classification, type ChatTurn } from '@/lib/employee/ask-ai';
 import { SYSTEM_KNOWLEDGE, type SystemKnowledgeMetric } from '@/lib/employee/system-knowledge';
+import { readServerAppSettings } from '@/lib/server/app-settings';
+
+export type { Classification } from '@/lib/employee/ask-ai';
 
 export class EmployeeAIError extends Error {
   constructor(message: string, public status = 503, public code?: string) { super(message); }
 }
+// Same fallback the employee dashboard card uses when no leave_credits row exists.
+const FALLBACK_LEAVE_CREDITS = 10;
 export const MAX_PDF_BYTES = 4 * 1024 * 1024;
 export async function workflowCall(url: string | undefined, payload: unknown, timeout = 20_000): Promise<unknown> {
   const secret = process.env.N8N_EMPLOYEE_AI_WEBHOOK_SECRET;
@@ -54,7 +59,7 @@ export async function downloadOwnedPdf(client: SupabaseClient, path: string) {
 }
 type Context = { history?: ChatTurn[]; client: SupabaseClient; userId: string; fullName: string; question: string; language: string; payslipId?: string; payslipUnlocked?: boolean; requestId: string };
 export async function answerEmployeeQuestion(ctx: Context, call = workflowCall) {
-  const { client, userId, question, payslipId, requestId } = ctx;
+  const { client, userId, question, requestId } = ctx;
   const raw = await call(process.env.N8N_EMPLOYEE_AI_CLASSIFIER_URL, { question, history: ctx.history ?? [], current_date: periodDates('today').today, language: ctx.language, request_id: requestId });
   let c: Classification;
   try { c = validateClassification(raw); } catch { throw new EmployeeAIError('I could not safely understand that question. Please rephrase.', 422); }
@@ -123,20 +128,7 @@ export async function answerEmployeeQuestion(ctx: Context, call = workflowCall) 
   }
   if (c.intent === 'unsupported') return { answer: tl ? 'Hindi ko pa matukoy ang eksaktong request. Puwede akong tumulong sa profile/Employee ID/Direct Lead, attendance, leave, Offset, Manpower Tracker, payslip, directory, at portal workflows. Pakilinaw nang kaunti ang gusto mong malaman.' : 'I could not identify the exact request yet. I can help with your profile/Employee ID/Direct Lead, attendance, leave, Offset, Manpower Tracker, payslip, directory, and portal workflows. Please clarify what you want to check.' };
   if (c.intent === 'help') return { answer: tl ? 'Puwede mo akong tanungin tungkol sa sarili mong Employee ID, Rank, Direct Lead, attendance, leave, Offset, Manpower Tracker, payslip, at portal workflows. Puwede rin akong maghanap ng approved work email/designation sa employee directory.' : 'You can ask me about your Employee ID, Rank, Direct Lead, attendance, leave, Offset, Manpower Tracker, payslip, and portal workflows. I can also look up approved work email/designation information in the employee directory.' };
-  if (c.intent === 'own_payslip') {
-    if (ctx.payslipUnlocked !== true) throw new EmployeeAIError(tl ? 'Kailangan munang i-confirm ang password bago ko basahin ang payslip details mo.' : 'Please confirm your password before I read your payslip details.', 403, 'payslip_reauth_required');
-    let cutoff: string | null;
-    try { cutoff = payslipCutoffFromQuestion(c.resolved_question ?? question); }
-    catch (error) { return { answer: tl ? 'Anong cutoff ang gusto mong basahin? Isama ang buwan, dates at taon sa tanong, halimbawa: “Ano ang deductions ko sa August 16–31, 2026?”' : (error as Error).message }; }
-    const slip = await ownedPayslip(client, userId, payslipId, cutoff ?? undefined);
-    const pdf = await downloadOwnedPdf(client, slip.file_path);
-    const result = await call(process.env.N8N_EMPLOYEE_AI_PAYSLIP_URL, { pdf_base64: pdf.toString('base64'), request_id: requestId }, 60_000);
-    try {
-      if (!isRecord(result) || result.success !== true || result.request_id !== requestId) throw new Error('Invalid extraction');
-      const extraction = validatePayslip(result.extraction, ctx.fullName, slip.cutoff_period, { requirePeriod: cutoff !== null, requireName: cutoff !== null });
-      return { answer: payslipAnswer(extraction, c.metric, slip.cutoff_label, tl) };
-    } catch { throw new EmployeeAIError(tl ? 'Hindi ko makumpirma ang pangalan, cutoff, o amounts sa PDF. Buksan ang original payslip o kontakin ang HR.' : 'I could not verify the name, cutoff, or amounts in this PDF. Please open the original payslip or contact HR.', 422); }
-  }
+  if (c.intent === 'own_payslip') return answerOwnPayslip(ctx, c, call);
   if (c.intent === 'directory_by_designation') {
     // Only approved directory fields, with literal designation text (no caller wildcards).
     const { data, error } = await client.from('profiles').select('full_name, employee_email, designation').eq('role', 'employee').eq('is_active', true).ilike('designation', designationPattern(c.target_name)).order('full_name').limit(101);
@@ -163,7 +155,17 @@ export async function answerEmployeeQuestion(ctx: Context, call = workflowCall) 
     if (start.slice(0, 4) !== end.slice(0, 4)) return { answer: tl ? 'Anong taon ng leave credits ang gusto mong tingnan? Isang taon bawat balance.' : 'Which year of leave credits would you like? Balances are recorded per year.' };
     const { data, error } = await client.from('leave_credits').select('total_credits, used_credits').eq('user_id', userId).eq('year', year).maybeSingle();
     if (error) throw new EmployeeAIError('Unable to read your leave balance.');
-    if (!data) return { answer: tl ? `Wala pang recorded leave balance para sa ${year}. Kontakin ang HR.` : `No recorded leave balance for ${year}. Please contact HR.` };
+    if (!data) {
+      // Align with the dashboard card: when no leave_credits row exists yet,
+      // the portal default allocation is what the card (and settle_leave_day)
+      // fall back to, so report that instead of dead-ending on "contact HR".
+      let fallbackCredits: unknown;
+      try { fallbackCredits = (await readServerAppSettings(client, ['default_leave_credits'])).default_leave_credits; } catch { fallbackCredits = undefined; }
+      const total = typeof fallbackCredits === 'number' ? fallbackCredits : FALLBACK_LEAVE_CREDITS;
+      return { answer: tl
+        ? `Wala pang naka-record na leave balance para sa ${year}, kaya ang portal default ang dapat mong asahan: ${total} araw ang allocation, 0 ang nagamit, at ${total} pang natitira.`
+        : `No recorded leave balance for ${year} yet, so the portal default applies: ${total} days allocated, 0 used, and ${total} remaining.` };
+    }
     const remaining = data.total_credits - data.used_credits;
     const values: Record<string, string> = tl ? {
       remaining_credits: `May ${remaining} araw ka pang leave credits para sa ${year}.`,
@@ -231,4 +233,60 @@ export async function answerEmployeeQuestion(ctx: Context, call = workflowCall) 
   const summary = c.metric === 'leave_history_summary' ? `\nApproved: ${counts.approved_count}; Pending: ${counts.pending_count}; Rejected: ${counts.rejected_count}` : '';
   const details = matching.slice(0, 20).map(r => `${r.start_date} – ${r.end_date}: ${r.status}`).join('\n');
   return { answer: heading + summary + (details ? '\n' + details : '') + (matching.length > 20 ? (tl ? '\nUnang 20 requests ang ipinapakita.' : '\nShowing the first 20 requests.') : '') };
+}
+
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+function cutoffPrettyLabel(period: string) {
+  const { start, end } = cutoffDates(period);
+  const [, sm, sd] = start.split('-').map(Number);
+  const [, , ed] = end.split('-').map(Number);
+  return `${MONTH_NAMES[sm - 1]} ${sd}–${ed}, ${end.slice(0, 4)}`;
+}
+
+/** The payroll cutoff period containing the given date, e.g. '2026-10:H1'. */
+export function currentPayrollCutoff(now = new Date()) {
+  const today = periodDates('today', now).today;
+  const y = today.slice(0, 4);
+  const m = today.slice(5, 7);
+  const day = Number(today.slice(8, 10));
+  return `${y}-${m}:H${day <= 15 ? '1' : '2'}`;
+}
+
+// Own-payslip pipeline, callable either from the validated classifier
+// result or from the local payslip fast path in the API route.
+// `cutoffOverride === null` means "latest published"; `undefined` parses the
+// question; a `2026-10:H1`-style period is used verbatim with a graceful
+// fallback to the latest slip (with a clear note) when not published yet.
+export async function answerOwnPayslip(ctx: Context, c: Classification, call = workflowCall, cutoffOverride?: string | null) {
+  const tl = ctx.language === 'tl' || (ctx.language !== 'en' && c.language === 'tl');
+  if (ctx.payslipUnlocked !== true) throw new EmployeeAIError(tl ? 'Kailangan munang i-confirm ang password bago ko basahin ang payslip details mo.' : 'Please confirm your password before I read your payslip details.', 403, 'payslip_reauth_required');
+  let cutoff: string | null;
+  if (cutoffOverride === undefined) {
+    try { cutoff = payslipCutoffFromQuestion(c.resolved_question ?? ctx.question); }
+    catch (error) { return { answer: tl ? 'Anong cutoff ang gusto mong basahin? Isama ang buwan, dates at taon sa tanong, halimbawa: “Ano ang deductions ko sa August 16–31, 2026?”' : (error as Error).message }; }
+  } else {
+    cutoff = cutoffOverride;
+  }
+  let slip;
+  let note = '';
+  try {
+    slip = await ownedPayslip(ctx.client, ctx.userId, ctx.payslipId, cutoff ?? undefined);
+  } catch (error) {
+    // "Ngayong month" asks this cutoff explicitly; if HR has not published
+    // that slip yet, answer with the latest slip and say so, never silently.
+    if (cutoffOverride && error instanceof EmployeeAIError && error.status === 404) {
+      slip = await ownedPayslip(ctx.client, ctx.userId, undefined, undefined);
+      note = tl
+        ? `Wala pang published payslip para sa ${cutoffPrettyLabel(cutoffOverride)}. Ito ang pinakabago mong published payslip.\n`
+        : `No published payslip for ${cutoffPrettyLabel(cutoffOverride)} yet. This is your latest published payslip.\n`;
+    } else throw error;
+  }
+  const pdf = await downloadOwnedPdf(ctx.client, slip.file_path);
+  const result = await call(process.env.N8N_EMPLOYEE_AI_PAYSLIP_URL, { pdf_base64: pdf.toString('base64'), request_id: ctx.requestId }, 60_000);
+  try {
+    if (!isRecord(result) || result.success !== true || result.request_id !== ctx.requestId) throw new Error('Invalid extraction');
+    const extraction = validatePayslip(result.extraction, ctx.fullName, slip.cutoff_period, { requirePeriod: cutoff !== null, requireName: cutoff !== null });
+    return { answer: note + payslipAnswer(extraction, c.metric, slip.cutoff_label, tl) };
+  } catch { throw new EmployeeAIError(tl ? 'Hindi ko makumpirma ang pangalan, cutoff, o amounts sa PDF. Buksan ang original payslip o kontakin ang HR.' : 'I could not verify the name, cutoff, or amounts in this PDF. Please open the original payslip or contact HR.', 422); }
 }

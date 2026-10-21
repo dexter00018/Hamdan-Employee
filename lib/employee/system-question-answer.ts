@@ -4,8 +4,8 @@ type Entry = { terms: string[]; en: string; tl: string };
 const ENTRIES: Entry[] = [
   {
     terms: ['what can ask ai do', 'what can ai help with', 'ask ai help', 'ask ai capabilities', 'ano pwede itanong sa ask ai', 'ano puwede itanong sa ask ai', 'ano kayang sagutin ng ask ai', 'ano kaya ng ask ai'],
-    en: 'Ask AI can help you understand your own attendance, leave, Offset, profile and published payslip information, explain portal workflows, and find approved work-directory details for active employees. Your private answers stay limited to your signed-in account. Ask AI cannot reveal another employee’s private attendance, leave, salary, payslip, personal email, phone, address, IDs, or passwords.',
-    tl: 'Makakatulong ang Ask AI sa pag-intindi ng sarili mong attendance, leave, Offset, profile at published payslip, sa portal workflows, at sa approved work-directory details ng active employees. Ang private answers ay limitado sa sarili mong signed-in account. Hindi nito puwedeng ibigay ang private attendance, leave, salary, payslip, personal email, phone, address, IDs o passwords ng ibang employee.',
+    en: 'Ask AI can help you understand your own attendance, attendance streak, leave, Offset, upcoming company holidays, profile and published payslip information, explain portal workflows, and find approved work-directory details for active employees. Your private answers stay limited to your signed-in account. Ask AI cannot reveal another employee’s private attendance, leave, salary, payslip, personal email, phone, address, IDs, or passwords.',
+    tl: 'Makakatulong ang Ask AI sa pag-intindi ng sarili mong attendance, attendance streak, leave, Offset, susunod na company holidays, profile at published payslip, sa portal workflows, at sa approved work-directory details ng active employees. Ang private answers ay limitado sa sarili mong signed-in account. Hindi nito puwedeng ibigay ang private attendance, leave, salary, payslip, personal email, phone, address, IDs o passwords ng ibang employee.',
   },
   {
     terms: ['manpower tracker', 'project tracker', 'time tracker', 'project timer', 'track project', 'project hours'],
@@ -23,7 +23,7 @@ const ENTRIES: Entry[] = [
     tl: 'Pumipili ang employee mula sa active Manpower projects na ginawa ng Super Admin. Puwedeng mag-add ang Super Admin ng project, optional project code, at mag-activate o mag-deactivate habang preserved ang historical tracked sessions.',
   },
   {
-    terms: ['offset', 'offset hours', 'offset tracker', 'approved offset', 'earn offset'],
+    terms: ['offset', 'offset hours', 'offset tracker', 'approved offset', 'earn offset', 'how does offset work', 'how offset works', 'what is offset', 'ano ang offset', 'paano gumagana ang offset', 'paano ang offset', 'explain offset', 'ipaliwanag ang offset', 'offset works'],
     en: 'Offset is approved time credit from eligible work after 7:00 PM. Earned requests must be approved before becoming usable balance. Only completed whole hours count: 7:59 PM earns 0 hours, while 8:00 PM earns 1 hour. On approval, the eligible OT time is assigned to the employee’s final project at the 7:00 PM cutoff. During the active payroll cutoff only (1–15 or 16–month-end), approved Offset can correct Late, exact-minute Early Out, or one full Absent day for 9 hours. A one-day Leave Using Offset also needs 9 unreserved approved hours. Super Admin can make audited manpower-time adjustments for past records.',
     tl: 'Ang Offset ay approved time credit mula sa eligible work pagkatapos ng 7:00 PM. Kailangan munang ma-approve ang earned request bago maging usable balance. Buong oras lang ang binibilang: 7:59 PM ay 0 oras, habang 8:00 PM ay 1 oras. Kapag na-approve, ang eligible OT time ay ia-assign sa huling project ng employee sa 7:00 PM cutoff. Sa active payroll cutoff lang (1–15 o 16–month-end), puwedeng gamitin ang approved Offset para sa Late, exact-minute Early Out, o isang full-day Absent na 9 oras. Ang one-day Leave Using Offset ay kailangan din ng 9 unreserved approved hours. Puwede ring gumawa ang Super Admin ng audited manpower-time adjustment para sa past records.',
   },
@@ -106,6 +106,16 @@ const ENTRIES: Entry[] = [
     terms: ['hr offset', 'offset management hr', 'offset notification', 'leave hierarchy hr', 'hr quick action', 'hr sidebar'],
     en: 'HR/Admin has Offset Management and Leave Hierarchy in the sidebar and Quick Actions. Pending Offset actions are also included in the HR notification/action center. These are not floating launchers.',
     tl: 'May Offset Management at Leave Hierarchy ang HR/Admin sa sidebar at Quick Actions. Kasama rin ang pending Offset actions sa HR notification/action center. Hindi floating launchers ang mga ito.',
+  },
+  {
+    terms: ['company calendar', 'holiday calendar', 'holiday list', 'holidays ko', 'company holidays', 'walang pasok', 'non working day', 'no work day'],
+    en: 'The Company Calendar shows the holidays HR has set up, one-off or recurring. Ask AI can also tell you the next company holiday and the days remaining before it.',
+    tl: 'Ipinapakita ng Company Calendar ang mga holiday na naka-set ng HR. Kayang sabihin ng Ask AI ang susunod na company holiday at kung ilang araw na lang bago ito.',
+  },
+  {
+    terms: ['attendance streak', 'my streak', 'streak ko', 'consecutive work day', 'how long streak'],
+    en: 'Your attendance streak counts consecutive work days with no Late or Absent tag; approved Leave days are skipped, not counted or broken. It is shown as the Day Streak card on your dashboard and Ask AI can read it for you.',
+    tl: 'Ang attendance streak mo ay bilang ng magkasunod na work days nang walang Late o Absent tag; hindi binibilang o pinuputol ng approved Leave. Ipinapakita ito bilang Day Streak card sa dashboard mo at kayang basahin ng Ask AI.',
   },
   {
     terms: ['notification', 'notifications', 'announcement', 'announcements', 'holiday', 'birthday', 'action center'],
