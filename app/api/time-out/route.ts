@@ -80,6 +80,20 @@ export async function POST(request: Request) {
       );
     }
 
+    // --- Rate limit repeated time-out attempts per account. Fail-opens
+    // when the limiter itself is unreachable: protecting the database
+    // must never block someone from clocking out. ---
+    const { data: rateAllowed, error: rateLimitError } = await createSupabaseAdminClient().rpc(
+      'consume_api_rate_limit',
+      { p_scope: 'time-out', p_user_id: user.id, p_limit: 10, p_window_seconds: 60 }
+    );
+    if (!rateLimitError && rateAllowed !== true) {
+      return NextResponse.json(
+        { error: 'Too many time-out attempts. Please wait a minute and try again.' },
+        { status: 429 }
+      );
+    }
+
     const settingsMap = await readServerAppSettings(supabaseServer, [
       'attendance_recording_enabled',
       'maintenance_mode',

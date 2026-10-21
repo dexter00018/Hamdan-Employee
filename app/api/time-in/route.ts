@@ -90,6 +90,20 @@ export async function POST(request: Request) {
       );
     }
 
+    // --- Step 2.25: Rate limit repeated time-in attempts per account. ---
+    // Fail-opens when the limiter itself is unreachable: protecting the
+    // database must never block someone from clocking in.
+    const { data: rateAllowed, error: rateLimitError } = await createSupabaseAdminClient().rpc(
+      'consume_api_rate_limit',
+      { p_scope: 'time-in', p_user_id: user.id, p_limit: 10, p_window_seconds: 60 }
+    );
+    if (!rateLimitError && rateAllowed !== true) {
+      return NextResponse.json(
+        { error: 'Too many time-in attempts. Please wait a minute and try again.' },
+        { status: 429 }
+      );
+    }
+
     // --- Step 2.5: Read the configurable late cutoff from app_settings
     // (Super Admin -> App Settings). Falls back to the hardcoded
     // defaults above only if the rows are missing/unreachable, so a
