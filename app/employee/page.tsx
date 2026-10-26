@@ -1164,8 +1164,18 @@ export default function EmployeeDashboard() {
     const currentManilaDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date());
     const noticeDays = Math.floor((new Date(`${leaveForm.start_date}T00:00:00+08:00`).getTime() - new Date(`${currentManilaDate}T00:00:00+08:00`).getTime()) / 86_400_000);
     const minimumNotice = Number(seasonalSettings.leave_request_min_notice_days || 0);
-    if (noticeDays < minimumNotice) {
-      setLeaveMsg({ type: 'error', text: `Leave requests require at least ${minimumNotice} day${minimumNotice === 1 ? '' : 's'} notice.` });
+    // Sick Leave may cover an absence after the fact (filed within the
+    // admin-set retroactive window); the advance-notice rule only polices
+    // future and same-day filing for the other leave types.
+    const retroactiveWindow = Number(seasonalSettings.leave_retroactive_window_days ?? 15);
+    const retroactiveSick = leaveForm.leave_type === 'Sick' && noticeDays < 0 && noticeDays >= -retroactiveWindow;
+    if (noticeDays < minimumNotice && !retroactiveSick) {
+      setLeaveMsg({
+        type: 'error',
+        text: leaveForm.leave_type === 'Sick'
+          ? `Sick leave can only be filed up to ${retroactiveWindow} day${retroactiveWindow === 1 ? '' : 's'} back after an absence.`
+          : `Leave requests require at least ${minimumNotice} day${minimumNotice === 1 ? '' : 's'} notice.`,
+      });
       return;
     }
     const requestedDays = countLeaveDays(leaveForm.start_date, leaveForm.end_date);
@@ -2494,7 +2504,7 @@ export default function EmployeeDashboard() {
       {/* Company Calendar Modal */}
       {calendarModalOpen && <CompanyCalendarModal open={calendarModalOpen} onClose={() => setCalendarModalOpen(false)} loading={holidaysLoading} holidays={companyHolidays} upcoming={upcomingHolidays} past={pastHolidays} formatDate={formatHolidayDate} daysUntil={(dateStr) => daysUntilHoliday(dateStr, todayManila)} />}
 
-      {leaveModalOpen && <LeaveRequestModal open={leaveModalOpen} onClose={() => setLeaveModalOpen(false)} onBack={() => { setLeaveModalOpen(false); setLeaveChoiceModalOpen(true); }} countLeaveDays={countLeaveDays} countLeaveHolidays={countLeaveHolidays} fallbackLeaveCredits={fallbackLeaveCredits} isRegular={isRegular} leaveCredits={leaveCredits} leaveForm={leaveForm} leaveMsg={leaveMsg} leaveSaving={leaveSaving} remainingCredits={remainingCredits} setLeaveForm={setLeaveForm} submitLeave={submitLeave} todayManila={todayManila} upcomingApprovedLeaves={upcomingApprovedLeaves} />}
+      {leaveModalOpen && <LeaveRequestModal open={leaveModalOpen} onClose={() => setLeaveModalOpen(false)} onBack={() => { setLeaveModalOpen(false); setLeaveChoiceModalOpen(true); }} countLeaveDays={countLeaveDays} countLeaveHolidays={countLeaveHolidays} fallbackLeaveCredits={fallbackLeaveCredits} isRegular={isRegular} leaveCredits={leaveCredits} leaveForm={leaveForm} leaveMsg={leaveMsg} leaveSaving={leaveSaving} remainingCredits={remainingCredits} retroactiveWindow={Number(seasonalSettings.leave_retroactive_window_days ?? 15)} setLeaveForm={setLeaveForm} submitLeave={submitLeave} todayManila={todayManila} upcomingApprovedLeaves={upcomingApprovedLeaves} />}
 
       {/* Leave Result Toast */}
       {leaveResultToast && (

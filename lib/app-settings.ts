@@ -48,6 +48,7 @@ const APP_SETTING_DEFINITIONS_SOURCE: AppSettingDefinition[] = [
   numberSetting({ key: 'late_grace_minutes', category: 'attendance', label: 'Late Grace Period', description: 'Saved for a future cutoff rule; it does not alter the current Late calculation.', defaultValue: 0, min: 0, max: 60, unit: 'minutes', status: 'future' }),
   numberSetting({ key: 'default_leave_credits', category: 'leave', label: 'Default Leave Credits', description: 'Applied to new Regular employees; existing balances are unchanged.', defaultValue: 10, min: 0, max: 365, unit: 'days/year', status: 'active' }),
   numberSetting({ key: 'leave_request_min_notice_days', category: 'leave', label: 'Minimum Notice', description: 'Reserved minimum notice for future leave-request validation.', defaultValue: 0, min: 0, max: 90, unit: 'days', status: 'future' }),
+  numberSetting({ key: 'leave_retroactive_window_days', category: 'leave', label: 'Sick Leave Retroactive Window', description: 'How many days back after an absence a Sick Leave can still be filed to cover it. Vacation and Emergency always need advance notice.', defaultValue: 15, min: 0, max: 90, unit: 'days', status: 'future' }),
   numberSetting({ key: 'max_consecutive_leave_days', category: 'leave', label: 'Maximum Consecutive Leave', description: 'Reserved maximum duration for future leave validation.', defaultValue: 30, min: 1, max: 365, unit: 'days', status: 'future' }),
   booleanSetting({ key: 'leave_cancellation_allowed', category: 'leave', label: 'Leave Cancellation', description: 'Reserved control for a future employee cancellation workflow.', defaultValue: true, status: 'future' }),
   numberSetting({ key: 'leave_cancel_before_start_hours', category: 'leave', label: 'Cancellation Lead Time', description: 'Reserved cutoff before an approved leave can be cancelled.', defaultValue: 24, min: 0, max: 720, unit: 'hours', status: 'future' }),
@@ -86,6 +87,7 @@ const APP_SETTING_DEFINITIONS_SOURCE: AppSettingDefinition[] = [
 
 const newlyActivatedSettings = new Set([
   'attendance_dispute_window_days', 'leave_request_min_notice_days', 'max_consecutive_leave_days',
+  'leave_retroactive_window_days',
   'leave_cancellation_allowed', 'leave_cancel_before_start_hours', 'helpdesk_enabled',
   'document_download_enabled', 'notification_retention_days', 'notification_sound_enabled',
   'timeout_reminder_enabled', 'payslip_reminders_enabled', 'payslip_ack_reminder_days',

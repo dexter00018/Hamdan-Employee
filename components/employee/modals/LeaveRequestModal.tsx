@@ -7,9 +7,9 @@ import ModalShell from '@/components/shared/ModalShell';
 
 type LeaveForm = { leave_type: string; start_date: string; end_date: string; reason: string };
 type Leave = { id: string; leave_type: string; start_date: string; end_date: string };
-type Props = { open: boolean; onClose: () => void; onBack: () => void; countLeaveDays: (start: string, end: string) => number; countLeaveHolidays: (start: string, end: string) => number; fallbackLeaveCredits: number; isRegular: boolean; leaveCredits: { total_credits: number; used_credits: number } | null; leaveForm: LeaveForm; leaveMsg: { type: 'success' | 'error'; text: string } | null; leaveSaving: boolean; remainingCredits: number; setLeaveForm: Dispatch<SetStateAction<LeaveForm>>; submitLeave: () => void | Promise<void>; todayManila: string; upcomingApprovedLeaves: Leave[] };
+type Props = { open: boolean; onClose: () => void; onBack: () => void; countLeaveDays: (start: string, end: string) => number; countLeaveHolidays: (start: string, end: string) => number; fallbackLeaveCredits: number; isRegular: boolean; leaveCredits: { total_credits: number; used_credits: number } | null; leaveForm: LeaveForm; leaveMsg: { type: 'success' | 'error'; text: string } | null; leaveSaving: boolean; remainingCredits: number; retroactiveWindow: number; setLeaveForm: Dispatch<SetStateAction<LeaveForm>>; submitLeave: () => void | Promise<void>; todayManila: string; upcomingApprovedLeaves: Leave[] };
 
-export default function LeaveRequestModal({ open, onClose, onBack, countLeaveDays, countLeaveHolidays, fallbackLeaveCredits, isRegular, leaveCredits, leaveForm, leaveMsg, leaveSaving, remainingCredits, setLeaveForm, submitLeave, todayManila, upcomingApprovedLeaves }: Props) {
+export default function LeaveRequestModal({ open, onClose, onBack, countLeaveDays, countLeaveHolidays, fallbackLeaveCredits, isRegular, leaveCredits, leaveForm, leaveMsg, leaveSaving, remainingCredits, retroactiveWindow, setLeaveForm, submitLeave, todayManila, upcomingApprovedLeaves }: Props) {
   return (
     <ModalShell open={open} onClose={onClose} title="File a Leave Request" size="sm" closeDisabled={leaveSaving}>
             {/* Credits badge for Regular employees */}
@@ -101,7 +101,11 @@ export default function LeaveRequestModal({ open, onClose, onBack, countLeaveDay
                   </p>
                 )}
                 {leaveForm.start_date < todayManila && (
-                  <p className="text-blue-600 text-[10px] font-bold mt-1">Filing for a past date</p>
+                  <p className="text-blue-600 text-[10px] font-bold mt-1">
+                    {leaveForm.leave_type === 'Sick'
+                      ? `Retroactive filing allowed for Sick leave, up to ${retroactiveWindow} day${retroactiveWindow === 1 ? '' : 's'} back.`
+                      : 'Filing for a past date — only Sick leave is accepted retroactively.'}
+                  </p>
                 )}
                 {isRegular && remainingCredits < countLeaveDays(leaveForm.start_date, leaveForm.end_date) && (
                   <p className="text-orange-600 text-[10px] font-bold mt-1"><TriangleAlert size={11} strokeWidth={2.4} className="inline-block align-[-1px] mr-0.5" />This request exceeds your remaining credits.</p>
