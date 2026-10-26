@@ -324,3 +324,18 @@
   .dashboard :global(.dashboard-stat-label) { font-size: 9px; }
   .dashboard :global(.employee-quick-actions) > button > span:last-child { font-size: 9px; }
 }
+/* Phones only (<768px): let each dashboard section size to its content like
+   the offline/"SS2" state -- a bigger, wider Time In/Out bar and compact
+   Quick Actions tiles, with any leftover viewport left as empty page below.
+   Desktop and tablet keep the fitted, non-scrolling layout. */
+@media (max-width: 767px) {
+  .dashboard { height: auto; min-height: 100dvh; overflow-x: clip; }
+  .dashboard :global(.seasonal-content) { height: auto; grid-template-rows: clamp(62px, 9dvh, 80px) clamp(60px, 9dvh, 80px) auto; }
+  .dashboard :global(.dashboard-main-content) { grid-template-rows: auto clamp(44px, 6dvh, 54px) auto; }
+  .dashboard :global(.employee-work-clock) { min-height: 96px; }
+  .dashboard :global(.dashboard-attendance-action) { gap: 5px; padding: 9px 12px !important; border-radius: 16px; }
+  .dashboard :global(.dashboard-attendance-action) > button { min-height: 46px; padding: 9px 14px; font-size: 15px; line-height: 1.2; }
+  .dashboard :global(.dashboard-attendance-action) > div > p { font-size: 11px; line-height: 1.25; }
+  .dashboard :global(.employee-quick-actions) { grid-template-rows: repeat(2, minmax(64px, auto)) minmax(34px, auto); }
+  .dashboard :global(.dashboard-quick-actions) { min-height: 215px; }
+}
