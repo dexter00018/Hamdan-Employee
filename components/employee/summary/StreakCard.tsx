@@ -1,7 +1,8 @@
 'use client';
 
-import { Flame, History, Sun, Target } from 'lucide-react';
-import { Chip, RichHeader, SummaryCard, Tile, delayStyle } from './summary-shell';
+import { History, Sun, Target } from 'lucide-react';
+import { Chip, PhoneTile, RichHeader, SummaryCard, Tile, delayStyle } from './summary-shell';
+import AnyIcon from '../AnyIcon';
 
 // Attendance streak at the original stat-card height: header on the left,
 // the "4 days" metric right-aligned with the streak message badge under
@@ -12,10 +13,15 @@ export default function StreakCard({ streak, message, onClick }: { streak: numbe
       surface="border border-orange-200 bg-gradient-to-br from-orange-50 to-amber-50 shadow-[0_8px_24px_rgba(15,23,42,0.05)] dark:border-orange-900/60 dark:from-orange-950/40 dark:to-slate-900"
       onClick={onClick}
       aria="View Attendance Streak details"
+      phone={(
+        <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-orange-100/90 to-amber-100/90 dark:border-slate-700 dark:from-orange-950/60 dark:to-amber-950/40">
+          <PhoneTile image="streak_art" value={streak} label="Streak" chevron="bg-orange-500" />
+        </div>
+      )}
       compact={(
         <div className="absolute inset-0 flex items-center gap-1 rounded-2xl bg-gradient-to-br from-orange-100/90 to-amber-100/90 p-1 dark:from-orange-950/60 dark:to-amber-950/40">
-          <span className="cc-pop grid h-8 w-8 flex-shrink-0 place-items-center rounded-xl shadow-sm bg-gradient-to-br from-amber-400 to-orange-500" aria-hidden="true">
-            <Flame className="h-4 w-4 text-white" strokeWidth={2.4} />
+          <span className="cc-pop relative flex h-10 w-10 flex-shrink-0 items-center justify-center" aria-hidden="true">
+            <AnyIcon name="streak_art" size={64} className="relative h-10 w-10" />
           </span>
           <span className="min-w-0 leading-none">
             <span className="block text-base font-black tracking-tight text-slate-900 dark:text-white">{streak}</span>
@@ -26,7 +32,7 @@ export default function StreakCard({ streak, message, onClick }: { streak: numbe
       rich={(
         <div className="relative flex h-full flex-col justify-between overflow-hidden rounded-2xl p-2">
           <RichHeader
-            tile={<Tile icon={Flame} gradient="bg-gradient-to-br from-amber-400 to-orange-500" />}
+            tile={<Tile image="streak_art" gradient="from-amber-400 to-orange-500" />}
             title="Attendance Streak"
             subtitle="Days without being late"
           />

@@ -1,7 +1,8 @@
 'use client';
 
 import type { CSSProperties, ReactNode } from 'react';
-import { ArrowRight, type LucideIcon } from 'lucide-react';
+import { ArrowRight, ChevronRight, type LucideIcon } from 'lucide-react';
+import AnyIcon from '../AnyIcon';
 
 export function delayStyle(seconds: number): CSSProperties {
   return { '--cc-delay': `${seconds}s` } as CSSProperties;
@@ -12,12 +13,33 @@ export function Accent({ icon: Icon, cls, d }: { icon: LucideIcon; cls: string; 
   return <Icon className={`cc-float pointer-events-none absolute hidden lg:block ${cls}`} style={delayStyle(d)} aria-hidden="true" />;
 }
 
-// Gradient icon tile (flat white icon on vivid gradient).
-export function Tile({ icon: Icon, gradient }: { icon: LucideIcon; gradient: string }) {
+// Icon tile for the four summary cards: a bundled 3D emoji render on a
+// soft wash of the card's vivid gradient, for a bold colorful pop.
+export function Tile({ image, gradient }: { image: string; gradient?: string }) {
   return (
-    <span className={`cc-pop grid h-7 w-7 flex-shrink-0 place-items-center rounded-lg shadow-sm ${gradient}`} style={delayStyle(0.1)} aria-hidden="true">
-      <Icon className="h-3.5 w-3.5 text-white" strokeWidth={2.4} />
+    <span className="cc-pop relative grid h-10 w-10 flex-shrink-0 place-items-center" style={delayStyle(0.1)} aria-hidden="true">
+      {gradient && !image.endsWith('_art') && <span className={`absolute inset-0 rounded-full bg-gradient-to-br opacity-30 ${gradient}`} aria-hidden="true" />}
+      <AnyIcon name={image} size={52} className={`relative ${gradient ? 'h-10 w-10' : 'h-8 w-8'} drop-shadow-[0_3px_6px_rgba(15,23,42,0.25)]`} />
     </span>
+  );
+}
+
+// Phone-only compact stat tile: large 3D icon top-left, value + label
+// bottom-left, and a small solid-color circular chevron bottom-right.
+export function PhoneTile({ image, value, label, chevron }: { image: string; value: string | number; label: string; chevron: string }) {
+  return (
+    <div className="absolute inset-0 flex flex-col p-2">
+      <AnyIcon name={image} size={64} className="h-9 w-9 drop-shadow-[0_3px_5px_rgba(15,23,42,0.18)]" />
+      <span className="mt-auto flex w-full items-end justify-between gap-1">
+        <span className="min-w-0 leading-none">
+          <span className="block text-lg font-black tracking-tight text-slate-900 dark:text-white">{value}</span>
+          <span className="mt-1 block truncate text-[9px] font-semibold tracking-[-0.02em] text-slate-600 dark:text-slate-300">{label}</span>
+        </span>
+        <span className={`grid h-[18px] w-[18px] flex-shrink-0 place-items-center rounded-full text-white shadow-sm ${chevron}`} aria-hidden="true">
+          <ChevronRight className="h-2.5 w-2.5" strokeWidth={3.4} />
+        </span>
+      </span>
+    </div>
   );
 }
 
@@ -25,19 +47,21 @@ export function Tile({ icon: Icon, gradient }: { icon: LucideIcon; gradient: str
 // compact icon+value layout below lg (the 4-in-row mobile row), and the
 // rich layout at lg+. The rich layout is sized to the original stat-card
 // height (~110px), so everything inside stays single-row and tight.
-export function SummaryCard({ surface, onClick, aria, compact, rich }: { surface: string; onClick: () => void; aria: string; compact: ReactNode; rich: ReactNode }) {
+// Phones (<768px) get the big vertical tile look instead of the row.
+export function SummaryCard({ surface, onClick, aria, compact, phone, rich }: { surface: string; onClick: () => void; aria: string; compact: ReactNode; phone?: ReactNode; rich: ReactNode }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-label={aria}
-      className={`group relative h-full min-w-0 overflow-hidden text-left transition duration-300 hover:-translate-y-0.5 hover:shadow-lg rounded-2xl ${surface}`}
+      className={`group relative h-full min-w-0 overflow-hidden text-left transition duration-300 hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0 active:scale-[0.985] active:shadow-sm rounded-2xl ${surface}`}
     >
       <span
         className="pointer-events-none absolute inset-0 z-0 -translate-x-full bg-gradient-to-r from-transparent via-white/40 to-transparent transition-transform duration-700 ease-out group-hover:translate-x-full dark:via-white/10"
         aria-hidden="true"
       />
-      <div className="lg:hidden">{compact}</div>
+      <div className="md:hidden">{phone ?? compact}</div>
+      <div className="hidden md:block lg:hidden">{compact}</div>
       <div className="relative hidden h-full lg:block">{rich}</div>
     </button>
   );

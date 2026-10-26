@@ -1,7 +1,8 @@
 'use client';
 
-import { CalendarDays, Check, Clock, Leaf, Sprout } from 'lucide-react';
-import { Chip, RichHeader, SummaryCard, Tile, delayStyle } from './summary-shell';
+import { Check, Clock, Leaf, Sprout } from 'lucide-react';
+import { Chip, PhoneTile, RichHeader, SummaryCard, Tile, delayStyle } from './summary-shell';
+import AnyIcon from '../AnyIcon';
 
 // Leave credits, sized to the original stat-card height: header with the
 // File Leave action, progress bar on the left with the "9 days / 9 left
@@ -12,16 +13,20 @@ export default function LeaveCreditsCard({ remaining, total, sickUsed, vacationU
   const safeRemaining = Math.max(0, remaining);
   const safeTotal = Math.max(0, total);
   const pct = safeTotal > 0 ? Math.min(100, Math.round((safeRemaining / safeTotal) * 100)) : 0;
-  const compactGradient = 'bg-gradient-to-br from-violet-500 to-purple-600';
   return (
     <SummaryCard
       surface="border border-violet-200 bg-gradient-to-br from-violet-50 to-purple-50 shadow-[0_8px_24px_rgba(15,23,42,0.05)] dark:border-violet-900/60 dark:from-violet-950/40 dark:to-slate-900"
       onClick={onClick}
       aria="View Leave Credits details"
+      phone={(
+        <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-sky-100/90 to-blue-100/90 dark:border-slate-700 dark:from-sky-950/60 dark:to-blue-950/40">
+          <PhoneTile image="beach_calendar_art" value={safeRemaining} label="Credits" chevron="bg-blue-500" />
+        </div>
+      )}
       compact={(
         <div className="absolute inset-0 flex items-center gap-1 rounded-2xl bg-gradient-to-br from-violet-100/90 to-purple-100/90 p-1 dark:from-violet-950/60 dark:to-purple-950/40">
-          <span className={`cc-pop grid h-8 w-8 flex-shrink-0 place-items-center rounded-xl shadow-sm ${compactGradient}`} aria-hidden="true">
-            <CalendarDays className="h-4 w-4 text-white" strokeWidth={2.4} />
+          <span className="cc-pop relative flex h-10 w-10 flex-shrink-0 items-center justify-center" aria-hidden="true">
+            <AnyIcon name="beach_calendar_art" size={64} className="relative h-10 w-10" />
           </span>
           <span className="min-w-0 leading-none">
             <span className="block text-base font-black tracking-tight text-slate-900 dark:text-white">{safeRemaining}</span>
@@ -32,7 +37,7 @@ export default function LeaveCreditsCard({ remaining, total, sickUsed, vacationU
       rich={(
         <div className="relative flex h-full flex-col justify-between overflow-hidden rounded-2xl p-2">
           <RichHeader
-            tile={<Tile icon={CalendarDays} gradient="bg-gradient-to-br from-violet-500 to-purple-600" />}
+            tile={<Tile image="beach_calendar_art" gradient="from-violet-500 to-purple-600" />}
             title="Leave Credits"
             subtitle="Available Credits"
             action="File Leave"

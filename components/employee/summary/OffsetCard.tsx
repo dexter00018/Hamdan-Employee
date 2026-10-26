@@ -1,8 +1,9 @@
 'use client';
 
 import { AlarmClock, ArrowRight, Clock, Hourglass } from 'lucide-react';
-import { Chip, RichHeader, SummaryCard, Tile, delayStyle } from './summary-shell';
+import { Chip, PhoneTile, RichHeader, SummaryCard, Tile, delayStyle } from './summary-shell';
 import { formatOffsetShort } from '@/lib/employee/dashboard-utils';
+import Icon3D from '../Icon3D';
 
 // Earned offset time at the original stat-card height. Single unit
 // (minutes) with an explicit Available/Held split so the balance is
@@ -23,10 +24,16 @@ export default function OffsetCard({ minutes, reserved, onClick }: { minutes: nu
       surface="border border-emerald-200 bg-gradient-to-br from-emerald-50 to-green-50 shadow-[0_8px_24px_rgba(15,23,42,0.05)] dark:border-emerald-900/60 dark:from-emerald-950/40 dark:to-slate-900"
       onClick={onClick}
       aria="View Offset Hours details"
+      phone={(
+        <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-emerald-100/90 to-green-100/90 dark:border-slate-700 dark:from-emerald-950/60 dark:to-green-950/40">
+          <PhoneTile image="hourglass_done" value={formatOffsetShort(safe)} label="Offset" chevron="bg-emerald-500" />
+        </div>
+      )}
       compact={(
         <div className="absolute inset-0 flex items-center gap-1 rounded-2xl bg-gradient-to-br from-emerald-100/90 to-green-100/90 p-1 dark:from-emerald-950/60 dark:to-green-950/40">
-          <span className="cc-pop grid h-8 w-8 flex-shrink-0 place-items-center rounded-xl shadow-sm bg-gradient-to-br from-emerald-500 to-green-600" aria-hidden="true">
-            <Hourglass className="h-4 w-4 text-white" strokeWidth={2.4} />
+          <span className="cc-pop relative flex h-10 w-10 flex-shrink-0 items-center justify-center" aria-hidden="true">
+            <span className="absolute inset-0 rounded-full bg-gradient-to-br opacity-30 from-emerald-500 to-green-600" />
+            <Icon3D name="hourglass_done" size={52} className="relative h-10 w-10" />
           </span>
           <span className="min-w-0 leading-none">
             <span className="block text-base font-black tracking-tight text-slate-900 dark:text-white">{formatOffsetShort(safe)}</span>
@@ -37,7 +44,7 @@ export default function OffsetCard({ minutes, reserved, onClick }: { minutes: nu
       rich={(
         <div className="relative flex h-full flex-col justify-between overflow-hidden rounded-2xl p-2">
           <RichHeader
-            tile={<Tile icon={Hourglass} gradient="bg-gradient-to-br from-emerald-500 to-green-600" />}
+            tile={<Tile image="hourglass_done" gradient="from-emerald-500 to-green-600" />}
             title="Offset Hours"
             subtitle="Earned time you can use"
           />

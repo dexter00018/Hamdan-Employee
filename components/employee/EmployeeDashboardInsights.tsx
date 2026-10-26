@@ -1,4 +1,5 @@
-import { CalendarDays, ChartNoAxesColumnIncreasing, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+import Icon3D from './Icon3D';
 
 type SummaryType = 'present' | 'late' | 'early-out' | 'absent';
 type CalendarDay = { date: string; day: number; status: string; holiday: string | null } | null;
@@ -25,7 +26,7 @@ export default function EmployeeDashboardInsights(props: Props) {
   return <div className="dashboard-insight-panels">
     <section className="dashboard-today-status" aria-labelledby="today-status-title">
       <div className="dashboard-panel-heading">
-        <div className="flex items-center gap-2"><ChartNoAxesColumnIncreasing className="shrink-0 text-green-600" size={23} aria-hidden="true" /><div><h2 id="today-status-title">Cutoff Status</h2><p>Attendance overview</p></div></div>
+        <div className="flex items-center gap-2"><Icon3D name="chart_increasing" size={52} className="h-7 w-7" /><div><h2 id="today-status-title">Cutoff Status</h2><p>Attendance overview</p></div></div>
         <button type="button" onClick={props.onAttendance}>View Details</button>
       </div>
       <div className="dashboard-status-list">{rows.map((row) => <button key={row.type} type="button" className="dashboard-status-row" onClick={() => props.onSummary(row.type)} aria-label={`View ${row.label}: ${row.value}`}>
@@ -36,7 +37,7 @@ export default function EmployeeDashboardInsights(props: Props) {
     </section>
     <section className="dashboard-schedule" aria-labelledby="dashboard-schedule-title">
       <div className="dashboard-panel-heading">
-        <div className="flex items-center gap-2"><CalendarDays className="shrink-0 text-green-600" size={25} aria-hidden="true" /><div><h2 id="dashboard-schedule-title">My Schedule</h2><p>Your monthly attendance</p></div></div>
+        <div className="flex items-center gap-2"><Icon3D name="calendar" size={52} className="h-7 w-7" /><div><h2 id="dashboard-schedule-title">My Schedule</h2><p>Your monthly attendance</p></div></div>
         <div className="dashboard-calendar-nav">
           <button type="button" onClick={() => props.onChangeMonth(-1)} aria-label="Previous month"><ChevronLeft size={16} /></button>
           <button type="button" onClick={props.onOpenCalendar} aria-label={`Open attendance calendar for ${props.monthLabel}`}>{props.monthLabel}</button>

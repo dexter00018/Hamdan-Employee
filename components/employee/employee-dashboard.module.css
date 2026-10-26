@@ -46,7 +46,7 @@
 .heroUtilities blockquote { margin: 9px 0 0; text-align: right; font-size: 12px; font-weight: 600; color: #235547; }
 .heroUtilities cite { display: block; margin-top: 2px; font-size: 10px; font-style: normal; color: var(--dash-muted); }
 .mobileOnly { display: none; }
-.mobileBrand, .hero .mobileTheme { display: none; }
+.mobileBrand, .mobileCompany, .hero .mobileTheme { display: none; }
 .announcement { display: flex; align-items: center; gap: 16px; width: 100%; min-width: 0; border: 1px solid var(--dash-border); border-radius: 17px; padding: 10px 17px; background: var(--dash-surface); color: var(--dash-text); text-align: left; }
 .announcement:hover:enabled { border-color: #8bd8b4; background: #f3fcf7; }
 .announcement:disabled { cursor: default; opacity: 1; }
@@ -65,6 +65,8 @@
 .dashboard :global(.dashboard-stat-detail) { margin-top: 4px; font-size: 11px; line-height: 1.3; }
 .dashboard :global(.dashboard-stat-rail) { opacity: .3; }
 .dashboard :global(.dashboard-quick-actions) > section { height: 100%; display: flex; min-height: 0; flex-direction: column; }
+/* Phone-only mini chevron in Quick Action tiles (colors set per tile below). */
+.dashboard :global(.employee-quick-actions) > button > .qa-chevron { display: none; }
 .dashboard :global(.quick-actions-heading) { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
 .dashboard :global(.quick-actions-heading) > svg { color: #ff9a16; width: 26px; height: 26px; }
 .dashboard :global(.quick-actions-heading) h2, .dashboard :global(.dashboard-panel-heading) h2 { font-size: 16px; font-weight: 700; line-height: 1.25; }
@@ -75,10 +77,9 @@
 .dashboard :global(.employee-quick-actions) > button:nth-child(5) { background: #fff5f2; border-color: #fff0ea; }
 .dashboard :global(.employee-quick-actions) > button:nth-child(6) { background: #fff9e9; border-color: #fff3d0; }
 .dashboard :global(.employee-quick-actions) > button:nth-child(8), .dashboard :global(.employee-quick-actions) > button:last-child { background: #f4f1ff; border-color: #eee7ff; }
-.dashboard :global(.employee-quick-actions) > button > span:nth-last-child(2) { width: 34px; height: 34px; border-radius: 10px; }
-.dashboard :global(.employee-quick-actions) > button > span:last-child { font-size: 11px; font-weight: 550; }
+.dashboard :global(.employee-quick-actions) > button > span:nth-last-child(2) { font-size: 11px; font-weight: 550; }
 .dashboard :global(.employee-quick-actions) > button:last-child { grid-column: 1 / -1; min-height: 48px; flex-direction: row; justify-content: flex-start; padding-inline: 14px; }
-.dashboard :global(.employee-quick-actions) > button:last-child > span:last-child { text-align: left; }
+.dashboard :global(.employee-quick-actions) > button:last-child > span:nth-last-child(2) { text-align: left; }
 .dashboard :global(.dashboard-panel-heading) { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 14px; }
 .dashboard :global(.dashboard-panel-heading) > button { flex-shrink: 0; padding: 6px 9px; border-radius: 8px; background: #e8faf0; font-size: 11px; font-weight: 650; color: #00864d; }
 .dashboard :global(.dashboard-status-list) { display: grid; gap: 7px; flex: 1; }
@@ -175,7 +176,6 @@
   .dashboard :global(.quick-actions-heading), .dashboard :global(.dashboard-panel-heading) { margin-bottom: 9px; }
   .dashboard :global(.employee-quick-actions) { gap: 6px; }
   .dashboard :global(.employee-quick-actions) > button { min-height: 62px; padding-block: 5px; gap: 4px; }
-  .dashboard :global(.employee-quick-actions) > button > span:nth-last-child(2) { width: 28px; height: 28px; }
   .dashboard :global(.employee-quick-actions) > button:last-child { min-height: 38px; }
   .dashboard :global(.dashboard-calendar-days) { grid-auto-rows: minmax(24px, 1fr); }
   .dashboard :global(.dashboard-calendar-day) { width: 24px; height: 24px; }
@@ -202,7 +202,8 @@
   .dashboard :global(.dashboard-today-status) :global(.dashboard-panel-heading) > div > svg { display: none; }
   .dashboard :global(.dashboard-today-status) :global(.dashboard-panel-heading) h2 { font-size: 14px; }
   .dashboard :global(.dashboard-panel-heading) p { font-size: 11px; }
-  .dashboard :global(.employee-quick-actions) > button > span:last-child { font-size: 10px; }
+  .dashboard :global(.employee-quick-actions) > button > span:nth-last-child(2) { font-size: 10px; }
+
   .dashboard :global(.work-clock-brand) { width: 28%; }
   .dashboard :global(.work-clock-content) { gap: 18px; padding: 16px; }
   .dashboard :global(.work-clock-time-in) strong { font-size: 16px; }
@@ -237,8 +238,9 @@
   .welcome { flex: 1; min-width: 0; width: auto; }
   .welcome .desktopGreeting, .desktopCompany, .headerClock, .heroUtilities blockquote, .desktopProfile, .office { display: none; }
   .welcome .mobileBrand { display: block; margin: 0 0 4px; font-size: 9px; line-height: 1.2; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; color: #00a357; }
+  .welcome .mobileCompany { display: inline; color: #7f96a8; }
   .welcome h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: clamp(17px, 4.8vw, 22px); line-height: 1.15; letter-spacing: -.035em; }
-  .welcome > span { margin-top: 4px; font-size: 9px; line-height: 1.2; }
+  .welcome > span { margin-top: 4px; font-size: 9px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .heroUtilities { position: static; flex-shrink: 0; }
   .heroTop { flex-direction: row; gap: 5px; }
   .roundButton { width: 34px; height: 34px; border-color: var(--dash-border); }
@@ -269,7 +271,7 @@
   .dashboard :global(.dashboard-attendance-action) > div { min-height: 0; }
   .dashboard :global(.dashboard-attendance-action) > div > p { font-size: 9px; line-height: 1.2; }
   .announcement { flex-wrap: nowrap; min-height: 0; gap: 8px; padding: 6px 10px; border-radius: 14px; }
-  .announcementIcon { flex-basis: 30px; height: 30px; border-radius: 10px; }
+  .announcementIcon { flex-basis: 34px; height: 34px; border-radius: 10px; }
   .announcementIcon svg { width: 18px; height: 18px; }
   .announcementLabel { padding: 4px 7px; font-size: 8px; letter-spacing: .03em; }
   .announcementText { flex-basis: auto; order: initial; font-size: 11px; }
@@ -282,11 +284,8 @@
   .dashboard :global(.quick-actions-heading) p { display: none; }
   .dashboard :global(.employee-quick-actions) { min-height: 0; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)) minmax(30px, .5fr); gap: 6px; }
   .dashboard :global(.employee-quick-actions) > button { min-height: 0; padding: 4px; gap: 4px; border-radius: 11px; }
-  .dashboard :global(.employee-quick-actions) > button > span:nth-last-child(2) { width: 28px; height: 28px; border-radius: 9px; }
-  .dashboard :global(.employee-quick-actions) > button > span:nth-last-child(2) svg { width: 17px; height: 17px; }
-  .dashboard :global(.employee-quick-actions) > button > span:last-child { font-size: 10px; line-height: 1.15; }
+  .dashboard :global(.employee-quick-actions) > button > span:nth-last-child(2) { font-size: 10px; line-height: 1.15; }
   .dashboard :global(.employee-quick-actions) > button:last-child { min-height: 0; padding: 2px 10px; gap: 8px; }
-  .dashboard :global(.employee-quick-actions) > button:last-child > span:nth-last-child(2) { height: 22px; width: 22px; }
   .dashboard :global(.employee-quick-actions) > button:last-child { padding-right: 58px; }
   :global(body):has(.dashboard) :global(.employee-ai-dock) { bottom: calc(76px + env(safe-area-inset-bottom)); right: 12px; }
   :global(body):has(.dashboard) :global(.employee-ai-dock-button) { width: 44px; height: 44px; border-radius: 14px; }
@@ -310,7 +309,6 @@
   .dashboard :global(.dashboard-quick-actions) { padding: 8px; }
   .dashboard :global(.employee-quick-actions) { gap: 5px; }
   .dashboard :global(.employee-quick-actions) > button { gap: 3px; }
-  .dashboard :global(.employee-quick-actions) > button > span:nth-last-child(2) { width: 24px; height: 24px; border-radius: 8px; }
 }
 @media (max-width: 360px) {
   .hero { padding-inline: 9px; gap: 7px; }
@@ -322,20 +320,94 @@
   .dashboard :global(.dashboard-stat) { padding: 7px; }
   .dashboard :global(.dashboard-stat-value) { font-size: 21px; }
   .dashboard :global(.dashboard-stat-label) { font-size: 9px; }
-  .dashboard :global(.employee-quick-actions) > button > span:last-child { font-size: 9px; }
+  .dashboard :global(.employee-quick-actions) > button > span:nth-last-child(2) { font-size: 9px; }
 }
-/* Phones only (<768px): let each dashboard section size to its content like
-   the offline/"SS2" state -- a bigger, wider Time In/Out bar and compact
-   Quick Actions tiles, with any leftover viewport left as empty page below.
-   Desktop and tablet keep the fitted, non-scrolling layout. */
+/* Phones only (<768px): the stat-tile + work-clock + quick-actions look
+   from the reference mock. Desktop and tablet keep the fitted layout. */
 @media (max-width: 767px) {
   .dashboard { height: auto; min-height: 100dvh; overflow-x: clip; }
-  .dashboard :global(.seasonal-content) { height: auto; grid-template-rows: clamp(62px, 9dvh, 80px) clamp(60px, 9dvh, 80px) auto; }
+  .dashboard :global(.seasonal-content) { height: auto; grid-template-rows: clamp(62px, 9dvh, 80px) clamp(96px, 24dvh, 112px) auto; }
   .dashboard :global(.dashboard-main-content) { grid-template-rows: auto clamp(44px, 6dvh, 54px) auto; }
-  .dashboard :global(.employee-work-clock) { min-height: 96px; }
-  .dashboard :global(.dashboard-attendance-action) { gap: 5px; padding: 9px 12px !important; border-radius: 16px; }
-  .dashboard :global(.dashboard-attendance-action) > button { min-height: 46px; padding: 9px 14px; font-size: 15px; line-height: 1.2; }
-  .dashboard :global(.dashboard-attendance-action) > div > p { font-size: 11px; line-height: 1.25; }
-  .dashboard :global(.employee-quick-actions) { grid-template-rows: repeat(2, minmax(64px, auto)) minmax(34px, auto); }
-  .dashboard :global(.dashboard-quick-actions) { min-height: 215px; }
+
+  /* Work clock: full gradient panel (from the brand band) on the whole card */
+  .dashboard :global(.employee-work-clock) { min-height: 110px; }
+  .dashboard :global(.work-clock-brand) { display: flex; width: 37%; min-width: 108px; padding: 10px 6px; }
+  .dashboard :global(.work-clock-brand) > span:nth-child(2) { width: 52px; height: 52px; border-radius: 999px; }
+  .dashboard :global(.work-clock-brand) > span:nth-child(2) img { width: 32px; height: 32px; }
+  .dashboard :global(.work-clock-brand) > p { margin-top: 6px; font-size: 9px; }
+  .dashboard :global(.work-clock-brand) > span:last-child { margin-top: 6px; padding: 4px 9px; font-size: 9px; }
+  .dashboard :global(.work-clock-content) { padding: 10px 12px 10px 14px; }
+  .dashboard :global(.work-clock-current) > p:nth-child(2) { margin-top: 4px; font-size: clamp(30px, 9vw, 38px); }
+
+  /* Big pill Time In / Out button */
+  .dashboard :global(.dashboard-attendance-action) { gap: 6px; padding: 12px !important; border-radius: 20px; }
+  .dashboard :global(.dashboard-attendance-action) > button { position: relative; min-height: 54px; padding: 10px 16px; border-radius: 999px; font-size: 17px; font-weight: 800; }
+  .dashboard :global(.dashboard-attendance-action) > div > p { font-size: 11px; }
+
+  /* Announcement: bare megaphone on the white bar */
+  .announcement { padding: 7px 10px; }
+  .announcementIcon { flex: 0 0 42px; height: 42px; background: transparent; }
+  .announcementIcon img { width: 40px; height: 40px; }
+
+  /* Quick Actions: pastel tiles, icon top-left, label bottom-left, chevron
+     bottom-right -- like the reference mock. */
+  .dashboard :global(.dashboard-quick-actions) { min-height: 0; }
+  .dashboard :global(.quick-actions-heading) h2 { font-size: 15px; font-weight: 800; }
+  .dashboard :global(.employee-quick-actions) { grid-template-rows: repeat(2, minmax(92px, auto)) minmax(44px, auto); align-content: start; }
+  .dashboard :global(.employee-quick-actions) > button { align-items: flex-start; justify-content: space-between; min-height: 92px; gap: 6px; }
+  .dashboard :global(.employee-quick-actions) > button > span:nth-last-child(3) > span { display: none; }
+  .dashboard :global(.employee-quick-actions) > button > .qa-chevron { display: grid; }
+  .dashboard :global(.employee-quick-actions) > button:nth-child(1) { background: #e3f0ff; border-color: #cfe2ff; }
+  .dashboard :global(.employee-quick-actions) > button:nth-child(2) { background: #e3f8ec; border-color: #cdf0de; }
+  .dashboard :global(.employee-quick-actions) > button:nth-child(3) { background: #efeaff; border-color: #e2daff; }
+  .dashboard :global(.employee-quick-actions) > button:nth-child(4) { background: #fff3e0; border-color: #ffe7c7; }
+  .dashboard :global(.employee-quick-actions) > button:nth-child(5) { background: #ffe9e9; border-color: #ffd6d6; }
+  .dashboard :global(.employee-quick-actions) > button:nth-child(6) { background: #e2f8f1; border-color: #cff0e5; }
+  .dashboard :global(.employee-quick-actions) > button:nth-child(7) { background: #e9f6ff; border-color: #d3ecff; }
+  .dashboard :global(.employee-quick-actions) > button:nth-child(8) { background: #efeaff; border-color: #e2daff; }
+  .dashboard :global(.employee-quick-actions) > button:last-child { background: #e9e6ff; border-color: #d8d2ff; }
+  .dashboard :global(.employee-quick-actions) > button:nth-child(1) > .qa-chevron { background: #4f8ef7; }
+  .dashboard :global(.employee-quick-actions) > button:nth-child(2) > .qa-chevron { background: #34c98e; }
+  .dashboard :global(.employee-quick-actions) > button:nth-child(3) > .qa-chevron { background: #8b74f2; }
+  .dashboard :global(.employee-quick-actions) > button:nth-child(4) > .qa-chevron { background: #f49141; }
+  .dashboard :global(.employee-quick-actions) > button:nth-child(5) > .qa-chevron { background: #ef6a6a; }
+  .dashboard :global(.employee-quick-actions) > button:nth-child(6) > .qa-chevron { background: #2ec4a2; }
+  .dashboard :global(.employee-quick-actions) > button:nth-child(7) > .qa-chevron { background: #38a8f5; }
+  .dashboard :global(.employee-quick-actions) > button:nth-child(8) > .qa-chevron { background: #8b74f2; }
+  .dashboard :global(.employee-quick-actions) > button:last-child > .qa-chevron { background: #6d5df0; }
+  :global(.dark) .dashboard :global(.employee-quick-actions) > button:nth-child(1), :global(.dark) .dashboard :global(.employee-quick-actions) > button:nth-child(7) { background: #233542; border-color: #2b4152; }
+  :global(.dark) .dashboard :global(.employee-quick-actions) > button:nth-child(2) { background: #223b30; border-color: #2c4d3e; }
+  :global(.dark) .dashboard :global(.employee-quick-actions) > button:nth-child(3), :global(.dark) .dashboard :global(.employee-quick-actions) > button:nth-child(8), :global(.dark) .dashboard :global(.employee-quick-actions) > button:last-child { background: #2e2a3f; border-color: #3c3752; }
+  :global(.dark) .dashboard :global(.employee-quick-actions) > button:nth-child(4) { background: #3a2f22; border-color: #4c3d2c; }
+  :global(.dark) .dashboard :global(.employee-quick-actions) > button:nth-child(5) { background: #3a262b; border-color: #4d3138; }
+  :global(.dark) .dashboard :global(.employee-quick-actions) > button:nth-child(6) { background: #22382f; border-color: #2c4a3d; }
+
+  /* Hero: bigger round utilities and name, muted time-of-day greeting */
+  .roundButton { width: 40px; height: 40px; }
+  .hero .mobileTheme { width: 40px; min-height: 40px; height: 40px; }
+  .welcome .mobileBrand { font-size: 12px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--dash-muted); }
+  .welcome h1 { font-size: clamp(18px, 5.4vw, 25px); }
+  .welcome > span { font-size: 9px; }
+}
+/* Tablet band (portrait/landscape between phone and desktop): rows grow
+   with the image icons instead of squeezing them into fixed 1fr slots. */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .dashboard :global(.employee-quick-actions) { grid-template-rows: repeat(2, minmax(76px, auto)) minmax(40px, auto); align-content: start; }
+  .dashboard :global(.employee-quick-actions) > button { min-height: 76px; padding: 6px 4px; }
+}
+
+/* Dark mode: mute the glossy 3D renders slightly so they never glare
+   against the elevated charcoal surfaces. */
+:global(.dark) .dashboard img[src*="/icons3d/"] { filter: saturate(.82) brightness(.94); }
+:global(.dark) .dashboard :global(.cc-art) { filter: saturate(.8) brightness(.94); }
+
+/* Reduced motion: a still dashboard, all entrance/hover motion disabled. */
+@media (prefers-reduced-motion: reduce) {
+  .dashboard :global(*), .dashboard :global(*):before, .dashboard :global(*):after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .dashboard :global(.cc-pop), .dashboard :global(.cc-rise), .dashboard :global(.cc-float) { opacity: 1; transform: none; }
 }

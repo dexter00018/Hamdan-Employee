@@ -1,7 +1,8 @@
 'use client';
 
 import type { CSSProperties } from 'react';
-import { Calendar, Sparkles, TreePalm } from 'lucide-react';
+import { Calendar, ChevronRight, Sparkles, TreePalm } from 'lucide-react';
+import AnyIcon from './AnyIcon';
 
 type Holiday = { name: string; holiday_date: string };
 type Props = { holiday: Holiday | null; days: number | null; onClick: () => void };
@@ -103,11 +104,27 @@ export default function NextHolidayCard({ holiday, days, onClick }: Props) {
         className="pointer-events-none absolute inset-0 z-0 -translate-x-full bg-gradient-to-r from-transparent via-white/40 to-transparent transition-transform duration-700 ease-out group-hover:translate-x-full dark:via-white/10"
         aria-hidden="true"
       />
+      {/* phone (<768px): vertical tile with the big 3D icon and chevron */}
+      <div className={`absolute inset-0 hidden max-md:flex rounded-2xl p-2 ${scene.compactBg}`}>
+        <div className="flex h-full w-full flex-col">
+          <AnyIcon name="holidays_art" size={64} className="h-9 w-9 drop-shadow-[0_3px_5px_rgba(15,23,42,0.18)]" />
+          <span className="mt-auto flex w-full items-end justify-between gap-1">
+            <span className="min-w-0 leading-none">
+              <span className="block text-lg font-black tracking-tight text-slate-900 dark:text-white">{compactValue}</span>
+              <span className="mt-1 block truncate text-[9px] font-semibold tracking-[-0.02em] text-slate-600 dark:text-slate-300">Holiday</span>
+            </span>
+            <span className="grid h-[18px] w-[18px] flex-shrink-0 place-items-center rounded-full bg-violet-500 text-white shadow-sm" aria-hidden="true">
+              <ChevronRight className="h-2.5 w-2.5" strokeWidth={3.4} />
+            </span>
+          </span>
+        </div>
+      </div>
+
       {/* compact (below lg): icon tile + countdown + label, single band */}
-      <div className={`absolute inset-0 flex items-center gap-1 rounded-2xl p-1 lg:hidden ${scene.compactBg}`}>
+      <div className={`absolute inset-0 hidden md:flex items-center gap-1 rounded-2xl p-1 lg:hidden ${scene.compactBg}`}>
         <div className="flex items-center gap-1">
-          <span className="cc-pop grid h-8 w-8 flex-shrink-0 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 shadow-sm" aria-hidden="true">
-            <Calendar className="h-4 w-4 text-white" strokeWidth={2.4} />
+          <span className="cc-pop flex h-8 w-8 flex-shrink-0 items-center justify-center" aria-hidden="true">
+            <AnyIcon name="holidays_art" size={64} className="h-8 w-8" />
           </span>
           <span className="min-w-0 leading-none">
             <span className="block text-base font-black tracking-tight text-slate-900 dark:text-white">{compactValue}</span>

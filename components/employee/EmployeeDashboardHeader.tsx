@@ -2,8 +2,9 @@
 
 import { memo, useEffect, useId, useState } from 'react';
 import Image from 'next/image';
-import { Bell, CalendarDays, UserRound } from 'lucide-react';
+import { UserRound } from 'lucide-react';
 import EmployeeThemeToggle from './EmployeeThemeToggle';
+import Icon3D from './Icon3D';
 import styles from './employee-dashboard.module.css';
 
 type Props = {
@@ -27,7 +28,7 @@ export function HeaderClock() {
     return () => window.clearInterval(timer);
   }, []);
   return <div className={styles.headerClock}>
-    <span className={styles.headerCalendarIcon}><CalendarDays size={30} aria-hidden="true" /></span>
+    <span className={styles.headerCalendarIcon}><Icon3D name="calendar" size={52} className="h-9 w-9" /></span>
     <div><p>{now?.toLocaleDateString('en-US', { timeZone: 'Asia/Manila', weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) || 'Philippine Time'}</p>
       <time>{now?.toLocaleTimeString('en-GB', { timeZone: 'Asia/Manila', hour12: false }) || '--:--:--'}</time>
       <small>Philippine Time</small></div>
@@ -61,19 +62,23 @@ export function OfficeIllustration() {
 }
 
 function EmployeeDashboardHeader(props: Props) {
+  // Time-of-day greeting for the phone hero; desktop keeps "Welcome back".
+  const hour = new Date().getHours();
+  const greeting = hour < 5 ? 'Good Evening' : hour < 12 ? 'Good Morning' : hour < 18 ? 'Good Afternoon' : 'Good Evening';
+  const greetingIcon = hour >= 5 && hour < 18 ? '☀️' : '🌙';
   return <header className={`dashboard-primary-content ${styles.hero}`}>
     <OfficeIllustration />
     <div className={styles.welcome}>
       <p className={styles.desktopGreeting}>Welcome back,</p>
-      <p className={styles.mobileBrand}>Hamdan Engineering</p>
+      <p className={styles.mobileBrand}>{greeting} {greetingIcon}</p>
       <h1 title={props.employeeName}>{props.employeeName}</h1>
-      <span>{props.designation}<span className={styles.desktopCompany}> <b aria-hidden="true">·</b> Hamdan Engineering</span></span>
+      <span>{props.designation}<span className={styles.desktopCompany}> <b aria-hidden="true">·</b> Hamdan Engineering</span><span className={styles.mobileCompany} aria-hidden="true"> · Hamdan Engineering</span></span>
     </div>
     <div className={styles.heroUtilities}>
       <div className={styles.heroTop}>
         <HeaderClock />
         <EmployeeThemeToggle darkMode={props.darkMode} onToggle={props.onToggleTheme} compact className={styles.mobileTheme} />
-        <button type="button" onClick={props.onNotifications} className={styles.roundButton} aria-label={`Notifications${props.unreadCount ? `, ${props.unreadCount} unread` : ''}`}><Bell size={22} />{props.unreadCount > 0 && <span className={styles.notificationBadge}>{props.unreadCount > 9 ? '9+' : props.unreadCount}</span>}</button>
+        <button type="button" onClick={props.onNotifications} className={styles.roundButton} aria-label={`Notifications${props.unreadCount ? `, ${props.unreadCount} unread` : ''}`}><Icon3D name="bell" size={52} className="h-6 w-6 lg:h-7 lg:w-7" />{props.unreadCount > 0 && <span className={styles.notificationBadge}>{props.unreadCount > 9 ? '9+' : props.unreadCount}</span>}</button>
         <button type="button" onClick={props.onProfile} className={`${styles.roundButton} ${styles.desktopProfile}`} aria-label="Open employee profile">{props.avatarUrl ? <Image src={props.avatarUrl} alt="" width={48} height={48} /> : <UserRound size={22} />}</button>
         <button type="button" onClick={props.onMobileMenu} className={`${styles.roundButton} ${styles.mobileOnly}`} aria-label="Open employee menu">{props.avatarUrl ? <Image src={props.avatarUrl} alt="" width={36} height={36} /> : <UserRound size={20} />}</button>
       </div>

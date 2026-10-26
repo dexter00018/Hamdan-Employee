@@ -50,6 +50,7 @@ import { supabase } from '@/lib/supabase';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
 import Spinner from '@/components/Spinner';
+import { ChevronRight, LogIn, LogOut } from 'lucide-react';
 import { APP_SETTING_DEFINITIONS, DEFAULT_APP_SETTINGS, normalizeAppSettings, type AppSettingsValues } from '@/lib/app-settings';
 import { resolveSeasonalTheme, SEASONAL_THEME_PRESENTATION } from '@/lib/seasonal-theme';
 import { useVerificationDialog } from '@/components/shared/useVerificationDialog';
@@ -2238,11 +2239,11 @@ export default function EmployeeDashboard() {
               <div className="dashboard-attendance-action card-style flex flex-col justify-center gap-3">
                 {!todayLog ? (
                   <button onClick={handleTimeIn} disabled={!attendanceRecordingEnabled || loading || initLoading || checkingNetwork || officeNetworkAllowed === false} className="btn-primary dashboard-time-button">
-                    {loading ? <span className="flex items-center justify-center gap-2"><Spinner size="sm"/>Processing...</span> : checkingNetwork ? <span className="flex items-center justify-center gap-2"><Spinner size="sm"/>Checking...</span> : officeNetworkAllowed === false ? (officeNetworkIssue === 'unavailable' ? 'Attendance Unavailable' : 'Not on Office Network') : 'Time In'}
+                    {loading ? <span className="flex items-center justify-center gap-2"><Spinner size="sm"/>Processing...</span> : checkingNetwork ? <span className="flex items-center justify-center gap-2"><Spinner size="sm"/>Checking...</span> : officeNetworkAllowed === false ? (officeNetworkIssue === 'unavailable' ? 'Attendance Unavailable' : 'Not on Office Network') : <span className="inline-flex w-full items-center justify-center gap-2"><LogIn className="hidden max-lg:inline-block h-5 w-5" aria-hidden="true" />Time In<ChevronRight className="absolute right-4 hidden max-lg:block h-5 w-5 opacity-90" aria-hidden="true" /></span>}
                   </button>
                 ) : !todayLog.time_out ? (
                   <button onClick={handleTimeOutClick} disabled={!attendanceRecordingEnabled || timeOutLoading || checkingNetwork || officeNetworkAllowed === false} className="btn-danger dashboard-time-button">
-                    {timeOutLoading ? <span className="flex items-center justify-center gap-2"><Spinner size="sm"/>Processing...</span> : checkingNetwork ? <span className="flex items-center justify-center gap-2"><Spinner size="sm"/>Checking...</span> : officeNetworkAllowed === false ? (officeNetworkIssue === 'unavailable' ? 'Attendance Unavailable' : 'Not on Office Network') : 'Time Out'}
+                    {timeOutLoading ? <span className="flex items-center justify-center gap-2"><Spinner size="sm"/>Processing...</span> : checkingNetwork ? <span className="flex items-center justify-center gap-2"><Spinner size="sm"/>Checking...</span> : officeNetworkAllowed === false ? (officeNetworkIssue === 'unavailable' ? 'Attendance Unavailable' : 'Not on Office Network') : <span className="inline-flex w-full items-center justify-center gap-2"><LogOut className="hidden max-lg:inline-block h-5 w-5" aria-hidden="true" />Time Out<ChevronRight className="absolute right-4 hidden max-lg:block h-5 w-5 opacity-90" aria-hidden="true" /></span>}
                   </button>
                 ) : (
                   <button disabled className="btn-primary dashboard-time-button opacity-50 cursor-not-allowed">Completed for Today</button>

@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { ChevronRight, Megaphone, Paperclip } from 'lucide-react';
+import { ChevronRight, Paperclip } from 'lucide-react';
 import ModalShell from '@/components/shared/ModalShell';
+import Icon3D from './Icon3D';
 import styles from './employee-dashboard.module.css';
 
 type Props = { viewerId: string | null; loading: boolean; error: string | null; content: string; imageUrl: string | null; updatedAt: string | null };
@@ -68,7 +69,7 @@ export default function EmployeeDashboardAnnouncement({ viewerId, loading, error
 
   return <>
     <button type="button" className={`dashboard-announcement ${styles.announcement}`} onClick={openManually} disabled={loading || Boolean(error) || !available} aria-label="View full company announcement">
-      <span className={styles.announcementIcon}><Megaphone size={23} aria-hidden="true" /></span>
+      <span className={styles.announcementIcon}><Icon3D name="megaphone" size={46} className="h-8 w-8" /></span>
       <span className={styles.announcementLabel}>Announcement</span>
       <span className={styles.announcementText}>{loading ? 'Loading announcement…' : error || content || (imageUrl ? 'View announcement attachment' : 'No announcements right now.')}</span>
       {imageUrl && <Paperclip size={17} aria-label="Includes attachment" />}
